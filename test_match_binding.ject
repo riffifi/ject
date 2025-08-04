@@ -1,0 +1,12 @@
+# Test match with variable binding
+print (match 99
+    0 -> "zero"
+    1 -> "one"
+    x -> "value is: " + x
+end)
+
+print (match "unknown"
+    "hello" -> "greeting"
+    "world" -> "planet"
+    name -> "got name: " + name
+end)

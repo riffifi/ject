@@ -1,0 +1,25 @@
+fn greet(name, greeting="Hello", punctuation="!")
+    print greeting + " " + name + punctuation
+end
+
+fn test_math(a, b=10, c=20)
+    return a + b + c
+end
+
+// Test positional arguments
+greet("Alice")
+
+// Test mixed positional and default arguments
+greet("Bob", "Hi")
+
+// Test keyword arguments
+greet("Charlie", punctuation="?")
+
+// Test all keyword arguments
+greet(name="David", greeting="Hey", punctuation="!!!")
+
+// Test math function
+print test_math(5)
+print test_math(5, 15)
+print test_math(5, b=15, c=25)
+print test_math(a=1, b=2, c=3)

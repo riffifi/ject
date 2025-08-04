@@ -1,6 +1,31 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct SourcePosition {
+    pub line: usize,
+    pub column: usize,
+    pub position: usize,
+}
+
+impl SourcePosition {
+    pub fn new(line: usize, column: usize, position: usize) -> Self {
+        SourcePosition { line, column, position }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedToken {
+    pub token: Token,
+    pub position: SourcePosition,
+}
+
+impl LocatedToken {
+    pub fn new(token: Token, position: SourcePosition) -> Self {
+        LocatedToken { token, position }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum InterpolationPart {
     Text(String),
     Expression(String),
@@ -95,6 +120,8 @@ impl fmt::Display for Token {
 pub struct Lexer {
     input: Vec<char>,
     position: usize,
+    line: usize,
+    column: usize,
     current_char: Option<char>,
 }
 
@@ -106,11 +133,24 @@ impl Lexer {
         Lexer {
             input: chars,
             position: 0,
+            line: 1,
+            column: 1,
             current_char,
         }
     }
     
+    fn current_position(&self) -> SourcePosition {
+        SourcePosition::new(self.line, self.column, self.position)
+    }
+    
     fn advance(&mut self) {
+        if let Some('\n') = self.current_char {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
+        
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
     }
@@ -143,15 +183,18 @@ impl Lexer {
         self.advance();
         self.advance();
         
-        while let Some(ch) = self.current_char {
-            if ch == '*' && self.peek() == Some('#') {
-                // Found *#, skip both and exit
-                self.advance();
-                self.advance();
-                break;
-            }
-            self.advance();
-        }
+while let Some(ch) = self.current_char {
+    if ch == '*' && self.peek() == Some('#') {
+        // Found *#, skip both and exit
+        self.advance();
+        self.advance();
+        return;
+    }
+    self.advance();
+}
+
+// If we reach here, the comment was never closed
+// Instead of panicking, we'll just continue (effectively treating as EOF)
     }
     
     fn read_number(&mut self) -> Token {
@@ -197,6 +240,46 @@ impl Lexer {
                     Some('\\') => current_text.push('\\'),
                     Some('"') => current_text.push('"'),
                     Some('$') => current_text.push('$'), // Allow escaping $
+                    Some('u') => {
+                        // Handle Unicode escape sequences like \u001b
+                        self.advance();
+                        let mut hex_digits = String::new();
+                        for _ in 0..4 {
+                            if let Some(hex_char) = self.current_char {
+                                if hex_char.is_ascii_hexdigit() {
+                                    hex_digits.push(hex_char);
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        if hex_digits.len() == 4 {
+                            if let Ok(code_point) = u32::from_str_radix(&hex_digits, 16) {
+                                if let Some(unicode_char) = std::char::from_u32(code_point) {
+                                    current_text.push(unicode_char);
+                                } else {
+                                    // Invalid Unicode code point, just add the literal characters
+                                    current_text.push('\\');
+                                    current_text.push('u');
+                                    current_text.push_str(&hex_digits);
+                                }
+                            } else {
+                                // Invalid hex, add literal characters
+                                current_text.push('\\');
+                                current_text.push('u');
+                                current_text.push_str(&hex_digits);
+                            }
+                        } else {
+                            // Not enough hex digits, add literal characters
+                            current_text.push('\\');
+                            current_text.push('u');
+                            current_text.push_str(&hex_digits);
+                        }
+                        continue; // Don't advance again since we already did in the loop
+                    }
                     Some(c) => current_text.push(c),
                     None => break,
                 }
@@ -330,17 +413,18 @@ impl Lexer {
         }
     }
     
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> LocatedToken {
         loop {
+            let start_pos = self.current_position();
             match self.current_char {
-                None => return Token::Eof,
+                None => return LocatedToken::new(Token::Eof, start_pos),
                 Some(' ') | Some('\t') | Some('\r') => {
                     self.skip_whitespace();
                     continue;
                 }
                 Some('\n') => {
                     self.advance();
-                    return Token::Newline;
+                    return LocatedToken::new(Token::Newline, start_pos);
                 }
                 Some('#') => {
                     if self.peek() == Some('*') {
@@ -352,112 +436,112 @@ impl Lexer {
                 }
                 Some('+') => {
                     self.advance();
-                    return Token::Plus;
+                    return LocatedToken::new(Token::Plus, start_pos);
                 }
                 Some('-') => {
                     if self.peek() == Some('>') {
                         self.advance();
                         self.advance();
-                        return Token::Arrow;
+                        return LocatedToken::new(Token::Arrow, start_pos);
                     }
                     self.advance();
-                    return Token::Minus;
+                    return LocatedToken::new(Token::Minus, start_pos);
                 }
                 Some('*') => {
                     self.advance();
-                    return Token::Star;
+                    return LocatedToken::new(Token::Star, start_pos);
                 }
                 Some('/') => {
                     self.advance();
-                    return Token::Slash;
+                    return LocatedToken::new(Token::Slash, start_pos);
                 }
                 Some('%') => {
                     self.advance();
-                    return Token::Percent;
+                    return LocatedToken::new(Token::Percent, start_pos);
                 }
                 Some('=') => {
                     if self.peek() == Some('=') {
                         self.advance();
                         self.advance();
-                        return Token::EqualEqual;
+                        return LocatedToken::new(Token::EqualEqual, start_pos);
                     }
                     self.advance();
-                    return Token::Equal;
+                    return LocatedToken::new(Token::Equal, start_pos);
                 }
                 Some('!') => {
                     if self.peek() == Some('=') {
                         self.advance();
                         self.advance();
-                        return Token::BangEqual;
+                        return LocatedToken::new(Token::BangEqual, start_pos);
                     }
                     self.advance();
-                    return Token::Bang;
+                    return LocatedToken::new(Token::Bang, start_pos);
                 }
                 Some('<') => {
                     self.advance();
                     if self.current_char == Some('=') {
                         self.advance();
-                        return Token::LessEqual;
+                        return LocatedToken::new(Token::LessEqual, start_pos);
                     }
-                    return Token::Less;
+                    return LocatedToken::new(Token::Less, start_pos);
                 }
                 Some('>') => {
                     self.advance();
                     if self.current_char == Some('=') {
                         self.advance();
-                        return Token::GreaterEqual;
+                        return LocatedToken::new(Token::GreaterEqual, start_pos);
                     }
-                    return Token::Greater;
+                    return LocatedToken::new(Token::Greater, start_pos);
                 }
                 Some('(') => {
                     self.advance();
-                    return Token::LeftParen;
+                    return LocatedToken::new(Token::LeftParen, start_pos);
                 }
                 Some(')') => {
                     self.advance();
-                    return Token::RightParen;
+                    return LocatedToken::new(Token::RightParen, start_pos);
                 }
                 Some('[') => {
                     self.advance();
-                    return Token::LeftBracket;
+                    return LocatedToken::new(Token::LeftBracket, start_pos);
                 }
                 Some(']') => {
                     self.advance();
-                    return Token::RightBracket;
+                    return LocatedToken::new(Token::RightBracket, start_pos);
                 }
                 Some('{') => {
                     self.advance();
-                    return Token::LeftBrace;
+                    return LocatedToken::new(Token::LeftBrace, start_pos);
                 }
                 Some('}') => {
                     self.advance();
-                    return Token::RightBrace;
+                    return LocatedToken::new(Token::RightBrace, start_pos);
                 }
                 Some(',') => {
                     self.advance();
-                    return Token::Comma;
+                    return LocatedToken::new(Token::Comma, start_pos);
                 }
                 Some('.') => {
                     if self.peek() == Some('.') {
                         self.advance();
                         self.advance();
-                        return Token::DotDot;
+                        return LocatedToken::new(Token::DotDot, start_pos);
                     }
                     self.advance();
-                    return Token::Dot;
+                    return LocatedToken::new(Token::Dot, start_pos);
                 }
                 Some(':') => {
                     self.advance();
-                    return Token::Colon;
+                    return LocatedToken::new(Token::Colon, start_pos);
                 }
                 Some('"') => {
-                    return self.read_string();
+                    return LocatedToken::new(self.read_string(), start_pos);
                 }
                 Some(ch) if ch.is_ascii_digit() => {
-                    return self.read_number();
+                    return LocatedToken::new(self.read_number(), start_pos);
                 }
                 Some(ch) if ch.is_alphabetic() || ch == '_' => {
-                    return self.read_identifier();
+                    return LocatedToken::new(self.read_identifier(), start_pos);
                 }
                 Some(ch) => {
                     println!("Unexpected character: {}", ch);
@@ -472,9 +556,24 @@ impl Lexer {
         let mut tokens = Vec::new();
         
         loop {
-            let token = self.next_token();
-            let is_eof = matches!(token, Token::Eof);
-            tokens.push(token);
+            let located_token = self.next_token();
+            let is_eof = matches!(located_token.token, Token::Eof);
+            tokens.push(located_token.token);
+            if is_eof {
+                break;
+            }
+        }
+        
+        tokens
+    }
+    
+    pub fn tokenize_with_positions(&mut self) -> Vec<LocatedToken> {
+        let mut tokens = Vec::new();
+        
+        loop {
+            let located_token = self.next_token();
+            let is_eof = matches!(located_token.token, Token::Eof);
+            tokens.push(located_token);
             if is_eof {
                 break;
             }

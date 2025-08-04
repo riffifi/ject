@@ -1,0 +1,5 @@
+fn test(
+    let x = 5
+end
+
+print "This won't be reached"

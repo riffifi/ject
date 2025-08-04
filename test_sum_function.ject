@@ -1,0 +1,6 @@
+fn sum(a, b)
+  return a + b
+end
+
+let total = sum(5, 7)
+print total

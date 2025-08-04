@@ -1,0 +1,7 @@
+# Simple test for colors module
+
+# Try importing just one function
+import {colorize} from "colors"
+
+print "Testing colorize function:"
+print colorize("hello", "red")

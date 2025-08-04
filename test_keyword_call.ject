@@ -1,0 +1,22 @@
+fn func(start, target, has_11=false, has_25=false)
+    if start == target then
+        if has_11 and has_25 then
+            return 1
+        else
+            return 0
+        end
+    end
+
+    if start > target then
+        return 0
+    end
+
+    let result1 = func(start + 1, target, has_11 or start == 11, has_25 or start == 25)
+    let result2 = func(start * 2, target, has_11 or start == 11, has_25 or start == 25)
+    return result1 + result2
+end
+
+print func(2, 50)
+print func(start=2, target=50)
+print func(target=50, start=2)
+print func(2, target=50, has_11=true)

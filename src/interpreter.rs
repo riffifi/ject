@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
+use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp, Argument};
 use crate::lexer::InterpolationPart;
 use crate::value::{Value, Environment};
 use std::fmt;
@@ -203,7 +203,8 @@ impl Interpreter {
                         InterpolationPart::Expression(expr_str) => {
                             // Parse and evaluate the expression
                             let mut lexer = crate::lexer::Lexer::new(expr_str);
-                            let tokens = lexer.tokenize();
+                            let located_tokens = lexer.tokenize_with_positions();
+                            let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
                             let mut parser = crate::parser::Parser::new(tokens);
                             
                             match parser.parse() {
@@ -248,13 +249,8 @@ impl Interpreter {
             }
             Expr::Call { callee, args } => {
                 let func = self.evaluate_expression(callee)?;
-                let mut arg_values = Vec::new();
                 
-                for arg in args {
-                    arg_values.push(self.evaluate_expression(arg)?);
-                }
-                
-                self.call_function(func, arg_values)
+                self.call_function(func, args)
             }
             Expr::Array(elements) => {
                 let mut values = Vec::new();
@@ -354,6 +350,48 @@ impl Interpreter {
                     })
                 }
             }
+            Expr::ConditionalExpr { condition, then_expr, elseif_branches, else_expr } => {
+                let cond_value = self.evaluate_expression(condition)?;
+                
+                if cond_value.is_truthy() {
+                    return self.evaluate_expression(then_expr);
+                } 
+                
+                for elseif in elseif_branches {
+                    let elseif_cond_value = self.evaluate_expression(&elseif.condition)?;
+                    if elseif_cond_value.is_truthy() {
+                        return self.evaluate_expression(&elseif.then_expr);
+                    }
+                }
+                
+                if let Some(else_expr) = else_expr {
+                    return self.evaluate_expression(else_expr);
+                }
+                
+                Ok(Value::Nil)
+            }
+            Expr::Match { expr, arms } => {
+                let match_value = self.evaluate_expression(expr)?;
+                
+                for arm in arms {
+                    if self.pattern_matches(&arm.pattern, &match_value)? {
+                        // If pattern is an identifier, bind it to the value
+                        if let crate::ast::Pattern::Identifier(name) = &arm.pattern {
+                            self.environment.push_scope();
+                            self.environment.define(name.clone(), match_value.clone());
+                            let result = self.evaluate_expression(&arm.body)?;
+                            self.environment.pop_scope();
+                            return Ok(result);
+                        } else {
+                            return Ok(self.evaluate_expression(&arm.body)?);
+                        }
+                    }
+                }
+                
+                Err(RuntimeError {
+                    message: "No matching pattern found in match expression".to_string(),
+                })
+            }
         }
     }
     
@@ -367,6 +405,11 @@ impl Interpreter {
             (Value::String(a), BinaryOp::Add, Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
             (Value::String(a), BinaryOp::Add, b) => Ok(Value::String(format!("{}{}", a, b))),
             (a, BinaryOp::Add, Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
+            (Value::Array(a), BinaryOp::Add, Value::Array(b)) => {
+                let mut result = a.clone();
+                result.extend(b.clone());
+                Ok(Value::Array(result))
+            },
             
             (Value::Integer(a), BinaryOp::Subtract, Value::Integer(b)) => Ok(Value::Integer(a - b)),
             (Value::Float(a), BinaryOp::Subtract, Value::Float(b)) => Ok(Value::Float(a - b)),
@@ -524,7 +567,8 @@ impl Interpreter {
             })?;
             
         let mut lexer = crate::lexer::Lexer::new(&module_content);
-        let tokens = lexer.tokenize();
+        let located_tokens = lexer.tokenize_with_positions();
+        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = crate::parser::Parser::new(tokens);
         let statements = parser.parse().map_err(|e| RuntimeError {
             message: format!("Parse error in module '{}': {}", module_path, e),
@@ -542,14 +586,36 @@ impl Interpreter {
         // Save current environment and switch to module environment
         let saved_env = std::mem::replace(&mut self.environment, module_env);
         
-        // Execute the module
+        // First, execute all non-export statements to build up the module environment
+        for statement in &statements {
+            match statement {
+                Stmt::Export { .. } | Stmt::ExportFunction { .. } => {
+                    // Skip export statements for now
+                }
+                _ => {
+                    self.execute_statement(statement)?;
+                }
+            }
+        }
+        
+        // First, process export functions and define them in the module environment
+        for statement in &statements {
+            if let Stmt::ExportFunction { name, params, body } = statement {
+                let func = Value::Function {
+                    params: params.clone(),
+                    body: body.clone(),
+                };
+                self.environment.define(name.clone(), func);
+            }
+        }
+        
+        // Now process export statements and create module functions with proper closure
         let mut exports = HashMap::new();
         for statement in &statements {
             match statement {
                 Stmt::Export { name, value } => {
                     let val = self.evaluate_expression(value)?;
                     exports.insert(name.clone(), val.clone());
-                    self.environment.define(name.clone(), val);
                 }
                 Stmt::ExportFunction { name, params, body } => {
                     let func = Value::ModuleFunction {
@@ -558,10 +624,9 @@ impl Interpreter {
                         closure_env: self.environment.clone(),
                     };
                     exports.insert(name.clone(), func.clone());
-                    self.environment.define(name.clone(), func);
                 }
                 _ => {
-                    self.execute_statement(statement)?;
+                    // Already processed
                 }
             }
         }
@@ -605,19 +670,15 @@ impl Interpreter {
         Ok(())
     }
     
-    fn call_function(&mut self, func: Value, args: Vec<Value>) -> RuntimeResult<Value> {
+    fn call_function(&mut self, func: Value, args: &[Argument]) -> RuntimeResult<Value> {
         match func {
             Value::Function { params, body } => {
-                if args.len() != params.len() {
-                    return Err(RuntimeError {
-                        message: format!("Expected {} arguments but got {}", params.len(), args.len()),
-                    });
-                }
+                let resolved_args = self.resolve_arguments(&params, args)?;
                 
                 self.environment.push_scope();
                 
-                for (param, arg) in params.iter().zip(args.iter()) {
-                    self.environment.define(param.clone(), arg.clone());
+                for (param, arg) in params.iter().zip(resolved_args.iter()) {
+                    self.environment.define(param.name.clone(), arg.clone());
                 }
                 
                 let result = match self.execute_block(&body)? {
@@ -629,19 +690,15 @@ impl Interpreter {
                 Ok(result)
             }
             Value::ModuleFunction { params, body, closure_env } => {
-                if args.len() != params.len() {
-                    return Err(RuntimeError {
-                        message: format!("Expected {} arguments but got {}", params.len(), args.len()),
-                    });
-                }
+                let resolved_args = self.resolve_arguments(&params, args)?;
                 
                 // Save current environment and use the closure environment
                 let saved_env = std::mem::replace(&mut self.environment, closure_env);
                 
                 self.environment.push_scope();
                 
-                for (param, arg) in params.iter().zip(args.iter()) {
-                    self.environment.define(param.clone(), arg.clone());
+                for (param, arg) in params.iter().zip(resolved_args.iter()) {
+                    self.environment.define(param.name.clone(), arg.clone());
                 }
                 
                 let result = match self.execute_block(&body)? {
@@ -656,15 +713,30 @@ impl Interpreter {
                 Ok(result)
             }
             Value::Lambda { params, body } => {
-                if args.len() != params.len() {
+                // Convert arguments to old format for lambdas (they don't support defaults yet)
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    match arg {
+                        Argument::Positional(expr) => {
+                            arg_values.push(self.evaluate_expression(expr)?);
+                        }
+                        Argument::Keyword { .. } => {
+                            return Err(RuntimeError {
+                                message: "Lambdas do not support keyword arguments".to_string(),
+                            });
+                        }
+                    }
+                }
+                
+                if arg_values.len() != params.len() {
                     return Err(RuntimeError {
-                        message: format!("Expected {} arguments but got {}", params.len(), args.len()),
+                        message: format!("Expected {} arguments but got {}", params.len(), arg_values.len()),
                     });
                 }
                 
                 self.environment.push_scope();
                 
-                for (param, arg) in params.iter().zip(args.iter()) {
+                for (param, arg) in params.iter().zip(arg_values.iter()) {
                     self.environment.define(param.clone(), arg.clone());
                 }
                 
@@ -684,11 +756,105 @@ impl Interpreter {
                 Ok(result)
             }
             Value::BuiltinFunction(name) => {
-                crate::stdlib::call_builtin_function(&name, args)
+                // Convert arguments to old format for builtin functions
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    match arg {
+                        Argument::Positional(expr) => {
+                            arg_values.push(self.evaluate_expression(expr)?);
+                        }
+                        Argument::Keyword { .. } => {
+                            return Err(RuntimeError {
+                                message: "Builtin functions do not support keyword arguments".to_string(),
+                            });
+                        }
+                    }
+                }
+                
+                crate::stdlib::call_builtin_function(&name, arg_values)
             }
             _ => Err(RuntimeError {
                 message: format!("Cannot call {}", func.type_name()),
             }),
+        }
+    }
+    
+    fn resolve_arguments(&mut self, params: &[crate::ast::Parameter], args: &[Argument]) -> RuntimeResult<Vec<Value>> {
+        let mut resolved_args = vec![None; params.len()];
+        let mut positional_count = 0;
+        
+        // First pass: handle positional arguments
+        for arg in args {
+            match arg {
+                Argument::Positional(expr) => {
+                    if positional_count >= params.len() {
+                        return Err(RuntimeError {
+                            message: "Too many positional arguments".to_string(),
+                        });
+                    }
+                    resolved_args[positional_count] = Some(self.evaluate_expression(expr)?);
+                    positional_count += 1;
+                }
+                Argument::Keyword { .. } => {
+                    // We'll handle keyword arguments in the second pass
+                }
+            }
+        }
+        
+        // Second pass: handle keyword arguments
+        for arg in args {
+            if let Argument::Keyword { name, value } = arg {
+                // Find the parameter with this name
+                let param_index = params.iter().position(|p| p.name == *name);
+                
+                match param_index {
+                    Some(index) => {
+                        if resolved_args[index].is_some() {
+                            return Err(RuntimeError {
+                                message: format!("Argument '{}' specified multiple times", name),
+                            });
+                        }
+                        resolved_args[index] = Some(self.evaluate_expression(value)?);
+                    }
+                    None => {
+                        return Err(RuntimeError {
+                            message: format!("Unknown parameter '{}'", name),
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Third pass: fill in default values and check for missing arguments
+        for (i, param) in params.iter().enumerate() {
+            if resolved_args[i].is_none() {
+                if let Some(default_expr) = &param.default_value {
+                    resolved_args[i] = Some(self.evaluate_expression(default_expr)?);
+                } else {
+                    return Err(RuntimeError {
+                        message: format!("Missing required argument '{}'"  , param.name),
+                    });
+                }
+            }
+        }
+        
+        // Convert Vec<Option<Value>> to Vec<Value>
+        Ok(resolved_args.into_iter().map(|arg| arg.unwrap()).collect())
+    }
+    
+    fn pattern_matches(&mut self, pattern: &crate::ast::Pattern, value: &Value) -> RuntimeResult<bool> {
+        match pattern {
+            crate::ast::Pattern::Wildcard => Ok(true),
+            crate::ast::Pattern::Identifier(_) => Ok(true), // Identifiers always match and bind
+            crate::ast::Pattern::Literal(expr) => {
+                let pattern_value = self.evaluate_expression(expr)?;
+                let equal = self.evaluate_binary_op(value, &BinaryOp::Equal, &pattern_value)?;
+                if let Value::Bool(is_equal) = equal {
+                    Ok(is_equal)
+                } else {
+                    Ok(false)
+                }
+            }
         }
     }
 }

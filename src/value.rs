@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
-use crate::ast::Stmt;
+use crate::ast::{Stmt, Parameter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -12,11 +12,11 @@ pub enum Value {
     Array(Vec<Value>),
     Dictionary(std::collections::HashMap<String, Value>),
     Function {
-        params: Vec<String>,
+        params: Vec<Parameter>,
         body: Vec<Stmt>,
     },
     ModuleFunction {
-        params: Vec<String>,
+        params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,
     },

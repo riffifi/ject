@@ -9,10 +9,10 @@ fn func(start, target, has_11=false, has_25=false)
 
     if start > target then
         return 0
-    end
-
+    # Missing 'end' here to cause parse error
+    
     return func(start + 1, target, has_11 or start == 11, has_25 or start == 25) + 
     func(start * 2, target, has_11 or start == 1, has_25 or start == 25)
 end
 
-print func(2, 50
+print func(2, 50)

@@ -1,4 +1,4 @@
-use crate::lexer::{Token, InterpolationPart};
+use crate::lexer::Token;
 use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
 
 pub struct Parser {
@@ -97,8 +97,18 @@ impl Parser {
         let mut params = Vec::new();
         if !self.check(&Token::RightParen) {
             loop {
-                if let Token::Identifier(param) = self.advance() {
-                    params.push(param);
+                if let Token::Identifier(param_name) = self.advance() {
+                    // Check for default value
+                    let default_value = if self.match_token(&Token::Equal) {
+                        Some(self.expression()?)
+                    } else {
+                        None
+                    };
+                    
+                    params.push(crate::ast::Parameter {
+                        name: param_name,
+                        default_value,
+                    });
                 } else {
                     return Err(ParseError {
                         message: "Expected parameter name".to_string(),
@@ -362,8 +372,18 @@ impl Parser {
             let mut params = Vec::new();
             if !self.check(&Token::RightParen) {
                 loop {
-                    if let Token::Identifier(param) = self.advance() {
-                        params.push(param);
+                    if let Token::Identifier(param_name) = self.advance() {
+                        // Check for default value
+                        let default_value = if self.match_token(&Token::Equal) {
+                            Some(self.expression()?)
+                        } else {
+                            None
+                        };
+                        
+                        params.push(crate::ast::Parameter {
+                            name: param_name,
+                            default_value,
+                        });
                     } else {
                         return Err(ParseError {
                             message: "Expected parameter name".to_string(),
@@ -528,6 +548,8 @@ impl Parser {
         let mut expr = self.factor()?;
         
         while let Some(op) = self.match_term_op() {
+            // Skip newlines after binary operators
+            while self.match_token(&Token::Newline) {}
             let right = self.factor()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -543,6 +565,8 @@ impl Parser {
         let mut expr = self.unary()?;
         
         while let Some(op) = self.match_factor_op() {
+            // Skip newlines after binary operators
+            while self.match_token(&Token::Newline) {}
             let right = self.unary()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -603,7 +627,32 @@ impl Parser {
         
         if !self.check(&Token::RightParen) {
             loop {
-                args.push(self.expression()?);
+                // Check for keyword argument (identifier followed by =)
+                if let Token::Identifier(name) = &self.peek() {
+                    if self.peek_ahead(1).map(|t| matches!(t, Token::Equal)).unwrap_or(false) {
+                        // This is a keyword argument
+                        let param_name = if let Token::Identifier(name) = self.advance() {
+                            name
+                        } else {
+                            unreachable!()
+                        };
+                        
+                        self.consume(Token::Equal, "Expected '=' after parameter name")?;
+                        let value = self.expression()?;
+                        
+                        args.push(crate::ast::Argument::Keyword {
+                            name: param_name,
+                            value,
+                        });
+                    } else {
+                        // This is a positional argument
+                        args.push(crate::ast::Argument::Positional(self.expression()?));
+                    }
+                } else {
+                    // This is a positional argument
+                    args.push(crate::ast::Argument::Positional(self.expression()?));
+                }
+                
                 if !self.match_token(&Token::Comma) {
                     break;
                 }
@@ -620,6 +669,7 @@ impl Parser {
     
     fn primary(&mut self) -> ParseResult<Expr> {
         match self.advance() {
+            Token::Match => self.match_expression(),
             Token::Lambda => self.lambda_expression(),
             Token::True => Ok(Expr::Bool(true)),
             Token::False => Ok(Expr::Bool(false)),
@@ -724,6 +774,61 @@ impl Parser {
         };
 
         Ok(Expr::Lambda { params, body })
+    }
+    
+    fn match_expression(&mut self) -> ParseResult<Expr> {
+        let expr = self.expression()?;
+        
+        // Skip optional newlines before match arms
+        while self.match_token(&Token::Newline) {}
+        
+        let mut arms = Vec::new();
+        
+        while !self.check(&Token::End) && !self.is_at_end() {
+            // Skip newlines between arms
+            if self.match_token(&Token::Newline) {
+                continue;
+            }
+            
+            // Parse pattern
+            let pattern = self.parse_pattern()?;
+            
+            // Expect arrow
+            self.consume(Token::Arrow, "Expected '->' after match pattern")?;
+            
+            // Parse body expression
+            let body = self.expression()?;
+            
+            arms.push(crate::ast::MatchArm { pattern, body });
+        }
+        
+        self.consume(Token::End, "Expected 'end' after match expression")?;
+        
+        Ok(Expr::Match {
+            expr: Box::new(expr),
+            arms,
+        })
+    }
+    
+    fn parse_pattern(&mut self) -> ParseResult<crate::ast::Pattern> {
+        match self.advance() {
+            Token::Integer(n) => Ok(crate::ast::Pattern::Literal(Expr::Integer(n))),
+            Token::Float(f) => Ok(crate::ast::Pattern::Literal(Expr::Float(f))),
+            Token::String(s) => Ok(crate::ast::Pattern::Literal(Expr::String(s))),
+            Token::True => Ok(crate::ast::Pattern::Literal(Expr::Bool(true))),
+            Token::False => Ok(crate::ast::Pattern::Literal(Expr::Bool(false))),
+            Token::Nil => Ok(crate::ast::Pattern::Literal(Expr::Nil)),
+            Token::Identifier(name) => {
+                if name == "_" {
+                    Ok(crate::ast::Pattern::Wildcard)
+                } else {
+                    Ok(crate::ast::Pattern::Identifier(name))
+                }
+            }
+            token => Err(ParseError {
+                message: format!("Unexpected token in pattern: {:?}", token),
+            }),
+        }
     }
     
     fn match_equality_op(&mut self) -> Option<BinaryOp> {

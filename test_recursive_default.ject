@@ -11,8 +11,9 @@ fn func(start, target, has_11=false, has_25=false)
         return 0
     end
 
-    return func(start + 1, target, has_11 or start == 11, has_25 or start == 25) + 
-    func(start * 2, target, has_11 or start == 1, has_25 or start == 25)
+    let result1 = func(start + 1, target, has_11 or start == 11, has_25 or start == 25)
+    let result2 = func(start * 2, target, has_11 or start == 11, has_25 or start == 25)
+    return result1 + result2
 end
 
-print func(2, 50
+print func(2, 50)

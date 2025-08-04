@@ -1,0 +1,9 @@
+fn broken_function()
+  let x = 5
+  return x
+# Missing 'end' keyword here
+
+print "About to call broken_function"
+let y = broken_function()
+print "Function returned:"
+print y

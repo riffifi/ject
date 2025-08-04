@@ -26,20 +26,20 @@ let BG_MAGENTA = "\u001b[45m"
 let BG_CYAN = "\u001b[46m"
 let BG_WHITE = "\u001b[47m"
 
-fn colorize(text, color)
+export fn colorize(text, color)
     return color + text + RESET
 end
 
-fn bold(text)
+export fn bold(text)
     return BOLD + text + RESET
 end
 
-fn rainbow(text)
+export fn rainbow(text)
     let colors = [RED, YELLOW, GREEN, CYAN, BLUE, MAGENTA]
     let result = ""
     let i = 0
     while i < len(text)
-        let char = text[i..i+1]
+        let char = char_at(text, i)
         let color_index = i % len(colors)
         result = result + colors[color_index] + char
         i = i + 1
@@ -54,6 +54,3 @@ export BLUE = BLUE
 export YELLOW = YELLOW
 export CYAN = CYAN
 export MAGENTA = MAGENTA
-export colorize = colorize
-export bold = bold
-export rainbow = rainbow

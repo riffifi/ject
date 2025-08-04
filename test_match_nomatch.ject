@@ -1,0 +1,5 @@
+# Test match with no matching pattern (should error)
+print (match 999
+    0 -> "zero"
+    1 -> "one"
+end)

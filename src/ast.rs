@@ -21,7 +21,7 @@ pub enum Expr {
     },
     Call {
         callee: Box<Expr>,
-        args: Vec<Expr>,
+        args: Vec<Argument>,
     },
     Array(Vec<Expr>),
     Dictionary(Vec<(String, Expr)>),
@@ -41,6 +41,16 @@ pub enum Expr {
     Lambda {
         params: Vec<String>,
         body: LambdaBody,
+    },
+    Match {
+        expr: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    ConditionalExpr {
+        condition: Box<Expr>,
+        then_expr: Box<Expr>,
+        elseif_branches: Vec<ConditionalElseIfBranch>,
+        else_expr: Option<Box<Expr>>,
     },
 }
 
@@ -81,6 +91,37 @@ pub struct ElseIfBranch {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ConditionalElseIfBranch {
+    pub condition: Expr,
+    pub then_expr: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    pub name: String,
+    pub default_value: Option<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Argument {
+    Positional(Expr),
+    Keyword { name: String, value: Expr },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Literal(Expr),
+    Identifier(String),
+    Wildcard, // _
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Expression(Expr),
     Let {
@@ -93,7 +134,7 @@ pub enum Stmt {
     },
     Function {
         name: String,
-        params: Vec<String>,
+        params: Vec<Parameter>,
         body: Vec<Stmt>,
     },
     If {
@@ -122,7 +163,7 @@ pub enum Stmt {
     },
     ExportFunction {
         name: String,
-        params: Vec<String>,
+        params: Vec<Parameter>,
         body: Vec<Stmt>,
     },
     Return(Option<Expr>),
@@ -202,6 +243,24 @@ impl fmt::Display for Expr {
                     LambdaBody::Block(_) => write!(f, " {{ ... }}"),
                 }
             }
+            Expr::Match { expr, arms } => {
+                write!(f, "match {} {{ ", expr)?;
+                for (i, arm) in arms.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{:?} => {:?}", arm.pattern, arm.body)?;
+                }
+                write!(f, " }}")
+            }
+            Expr::ConditionalExpr { condition, then_expr, elseif_branches, else_expr } => {
+                write!(f, "if {} then {}", condition, then_expr)?;
+                for branch in elseif_branches {
+                    write!(f, " elseif {} then {}", branch.condition, branch.then_expr)?;
+                }
+                if let Some(else_expr) = else_expr {
+                    write!(f, " else {}", else_expr)?;
+                }
+                write!(f, " end")
+            }
         }
     }
 }
@@ -235,6 +294,25 @@ impl fmt::Display for UnaryOp {
             UnaryOp::Not => "!",
         };
         write!(f, "{}", op)
+    }
+}
+
+impl fmt::Display for Parameter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(default) = &self.default_value {
+            write!(f, "{}={}", self.name, default)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
+}
+
+impl fmt::Display for Argument {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Argument::Positional(expr) => write!(f, "{}", expr),
+            Argument::Keyword { name, value } => write!(f, "{}={}", name, value),
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 # ASCII Art generator module
 
-fn draw_box(width, height, char)
+export fn draw_box(width, height, char)
     let result = ""
     let i = 0
     while i < height
@@ -15,7 +15,7 @@ fn draw_box(width, height, char)
     return result
 end
 
-fn draw_border(width, height)
+export fn draw_border(width, height)
     let result = ""
     let i = 0
     while i < height
@@ -34,7 +34,7 @@ fn draw_border(width, height)
     return result
 end
 
-fn draw_triangle(size)
+export fn draw_triangle(size)
     let result = ""
     let i = 0
     while i < size
@@ -58,7 +58,7 @@ fn draw_triangle(size)
     return result
 end
 
-fn draw_diamond(size)
+export fn draw_diamond(size)
     let result = ""
     
     # Top half
@@ -106,7 +106,7 @@ fn draw_diamond(size)
     return result
 end
 
-fn banner(text)
+export fn banner(text)
     let width = len(text) + 4
     let result = ""
     
@@ -132,8 +132,3 @@ fn banner(text)
     return result
 end
 
-export draw_box = draw_box
-export draw_border = draw_border
-export draw_triangle = draw_triangle
-export draw_diamond = draw_diamond
-export banner = banner

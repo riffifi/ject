@@ -1,0 +1,3 @@
+if true then
+    print "Hello"
+# Missing 'end' here

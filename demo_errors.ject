@@ -1,0 +1,10 @@
+fn test_func(x, y
+    return x + y
+end
+
+fn another_func()
+    return undefined_var + 5
+end
+
+print test_func(1, 2)
+print another_func()

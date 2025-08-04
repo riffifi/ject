@@ -39,6 +39,9 @@ pub fn create_stdlib() -> HashMap<String, Value> {
     stdlib.insert("type_of".to_string(), Value::BuiltinFunction("type_of".to_string()));
     stdlib.insert("range".to_string(), Value::BuiltinFunction("range".to_string()));
     
+    // Random function
+    stdlib.insert("random".to_string(), Value::BuiltinFunction("random".to_string()));
+    
     // Constants
     stdlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
     stdlib.insert("E".to_string(), Value::Float(std::f64::consts::E));
@@ -645,6 +648,23 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "range() takes 1, 2, or 3 arguments".to_string(),
                 }),
             }
+        }
+        "random" => {
+            if args.len() != 0 {
+                return Err(RuntimeError {
+                    message: "random() takes no arguments".to_string(),
+                });
+            }
+            // Generate a random float between 0.0 and 1.0
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            use std::time::{SystemTime, UNIX_EPOCH};
+            
+            let mut hasher = DefaultHasher::new();
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+            let hash = hasher.finish();
+            let random_val = (hash as f64) / (u64::MAX as f64);
+            Ok(Value::Float(random_val))
         }
         _ => Err(RuntimeError {
             message: format!("Unknown builtin function: {}", name),
