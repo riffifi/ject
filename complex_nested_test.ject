@@ -1,0 +1,26 @@
+let weather = "sunny"
+let temperature = 75
+
+if weather == "sunny"
+    print "It's sunny!"
+    if temperature > 80
+        print "Perfect beach day!"
+    elseif temperature > 70
+        print "Great for a walk!"
+    elseif temperature > 60
+        print "Nice but bring a jacket"
+    else
+        print "Chilly but sunny"
+    end
+elseif weather == "rainy"
+    print "It's raining"
+    if temperature > 70
+        print "Warm rain"
+    else
+        print "Cold rain"
+    end
+else
+    print "Unknown weather"
+end
+
+print "Weather check complete!"

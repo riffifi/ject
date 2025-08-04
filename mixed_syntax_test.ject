@@ -1,0 +1,27 @@
+let age = 25
+let has_license = true
+let has_car = false
+
+if age < 16
+    print "Too young to drive"
+elseif age < 18
+    print "Can get learner's permit"
+else if age >= 18
+    print "Old enough to drive"
+    if has_license
+        print "Has driver's license"
+        if has_car
+            print "Can drive own car!"
+        elseif has_license
+            print "Can borrow a car"
+        else
+            print "Needs transportation"
+        end
+    else
+        print "Needs to get license first"
+    end
+else
+    print "Invalid age"
+end
+
+print "Driving eligibility check done!"

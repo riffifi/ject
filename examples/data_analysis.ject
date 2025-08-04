@@ -48,14 +48,12 @@ print "----------------------------"
 for i in range(len(temperatures)) do
     let temp = temperatures[i]
     let category = ""
-    if temp < 20 then
+    if temp < 20
         category = "❄️  Cold"
+    elseif temp < 25
+        category = "🌤️  Mild"
     else
-        if temp < 25 then
-            category = "🌤️  Mild"
-        else
-            category = "🔥 Warm"
-        end
+        category = "🔥 Warm"
     end
     print days[i] + " (" + temp + "°C): " + category
 end
@@ -69,14 +67,12 @@ let mild_days = 0
 let cold_days = 0
 
 for temp in temperatures do
-    if temp >= 25 then
+    if temp >= 25
         hot_days = hot_days + 1
+    elseif temp >= 20
+        mild_days = mild_days + 1
     else
-        if temp >= 20 then
-            mild_days = mild_days + 1
-        else
-            cold_days = cold_days + 1
-        end
+        cold_days = cold_days + 1
     end
 end
 
@@ -94,14 +90,12 @@ for i in range(1, len(temperatures)) do
     let change = today - yesterday
     let trend = ""
     
-    if abs(change) < 0.5 then
+    if abs(change) < 0.5
         trend = "➡️  Stable"
+    elseif change > 0
+        trend = "📈 Warmer (+" + round(change * 10) / 10 + "°C)"
     else
-        if change > 0 then
-            trend = "📈 Warmer (+" + round(change * 10) / 10 + "°C)"
-        else
-            trend = "📉 Cooler (" + round(change * 10) / 10 + "°C)"
-        end
+        trend = "📉 Cooler (" + round(change * 10) / 10 + "°C)"
     end
     
     print days[i] + ": " + trend

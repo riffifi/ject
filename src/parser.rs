@@ -182,6 +182,8 @@ impl Parser {
             } else {
                 // Regular else block
                 let else_body = self.if_block()?;
+                // Consume the final 'end' token
+                self.consume(Token::End, "Expected 'end' after if statement")?;
                 return Ok(Stmt::If {
                     condition,
                     then_branch,
