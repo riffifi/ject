@@ -5,10 +5,12 @@
 ## ✨ Features
 
 - **End-based syntax** - Clean, readable blocks with `end` keywords
+- **Native elseif keyword** - Elegant conditional chains without nested mess
+- **Rich standard library** - Math, arrays, strings, and utility functions built-in
 - **Dynamic typing** - Write code fast without type annotations
 - **First-class functions** - Functions are values, pass them around freely
-- **Beautiful arrays** - `[1, 2, 3]` syntax that just works
-- **Intuitive control flow** - `if/else`, `while`, `for` loops that read like English
+- **Beautiful arrays** - `[1, 2, 3]` syntax with powerful built-in operations
+- **Intuitive control flow** - `if/elseif/else`, `while`, `for` loops that read like English
 - **Lightning fast** - Built in Rust for optimal performance
 - **Zero dependencies** - Single binary, install anywhere
 
@@ -96,18 +98,31 @@ print result  # 55
 
 ### Control Flow
 
-Ject provides intuitive control flow constructs:
+Ject provides intuitive control flow constructs with elegant elseif support:
 
 ```ject
-# If-else statements
+# Native elseif keyword - clean and readable!
 let score = 85
 
-if score >= 90 then
+if score >= 95
+    print "A+ Excellent!"
+elseif score >= 90
     print "A grade!"
-else if score >= 80 then
+elseif score >= 80
     print "B grade!"
+elseif score >= 70
+    print "C grade!"
 else
     print "Keep trying!"
+end
+
+# Traditional else if still works too
+if temperature < 0
+    print "Freezing!"
+else if temperature < 30
+    print "Nice weather"
+else
+    print "Getting warm!"
 end
 
 # While loops
@@ -117,7 +132,12 @@ while counter < 5 do
     counter = counter + 1
 end
 
-# For loops
+# For loops with range function
+for i in range(1, 6) do
+    print "Number: " + i
+end
+
+# For loops with arrays
 let fruits = ["apple", "banana", "cherry"]
 for fruit in fruits do
     print "I love " + fruit
@@ -168,6 +188,108 @@ let or_result = true or false    # true
 let not_result = !true           # false
 ```
 
+### Standard Library
+
+Ject comes with a rich standard library for common tasks:
+
+```ject
+# Mathematical functions
+let absolute = abs(-42)        # 42
+let square_root = sqrt(16)     # 4
+let power = pow(2, 8)          # 256
+let rounded = round(3.14159)   # 3
+
+# Trigonometric functions
+let sine = sin(PI / 2)         # 1
+let cosine = cos(0)            # 1
+let tangent = tan(PI / 4)      # 1
+
+# Array functions
+let data = [1, 5, 3, 9, 2]
+let length = len(data)         # 5
+let total = sum(data)          # 20
+let maximum = max(1, 5, 3, 9, 2)  # 9
+let minimum = min(1, 5, 3, 9, 2)  # 1
+let sequence = range(1, 6)     # [1, 2, 3, 4, 5]
+
+# String functions  
+let text = "  Hello World  "
+let upper_case = upper(text)   # "  HELLO WORLD  "
+let lower_case = lower(text)   # "  hello world  "
+let trimmed = trim(text)       # "Hello World"
+
+# Utility functions
+let data_type = type_of(42)    # "integer"
+print "Value: " + data_type
+
+# Mathematical constants
+print "PI = " + PI            # 3.141592653589793
+print "E = " + E              # 2.718281828459045
+```
+
+## 🥇 Why Choose Ject Over Python?
+
+Ject improves upon Python's design with several key advantages:
+
+### Cleaner Conditional Logic
+```ject
+# Ject - Native elseif keyword
+if score >= 95
+    print "A+"
+elseif score >= 90  
+    print "A"
+elseif score >= 80
+    print "B"
+else
+    print "Below B"
+end
+```
+
+```python
+# Python - Awkward elif keyword
+if score >= 95:
+    print("A+")
+elif score >= 90:  # elif feels inconsistent
+    print("A")
+elif score >= 80:
+    print("B")
+else:
+    print("Below B")
+```
+
+### Explicit Block Endings
+```ject
+# Ject - Clear block boundaries with 'end'
+if condition
+    do_something()
+    if nested_condition
+        do_nested_thing()
+    end
+end
+```
+
+```python
+# Python - Indentation-dependent (fragile)
+if condition:
+    do_something()
+    if nested_condition:
+        do_nested_thing()  # Easy to mess up indentation
+```
+
+### Built-in Mathematical Functions
+```ject
+# Ject - Rich math stdlib included
+let result = sqrt(pow(abs(-16), 2))
+let angle = sin(PI / 4)
+```
+
+```python
+# Python - Need to import math module
+import math
+result = math.sqrt(math.pow(abs(-16), 2))
+angle = math.sin(math.pi / 4)
+```
+
 ## 🎯 Design Philosophy
 
 Ject was designed with these principles in mind:
@@ -200,8 +322,12 @@ Ject is built with love and we welcome contributions! Here are some ways you can
 
 ## 📈 Roadmap
 
+- [x] **Native elseif keyword** - Clean conditional chains ✅
+- [x] **Rich standard library** - Math, arrays, strings, utilities ✅
+- [x] **Comprehensive examples** - Real-world data analysis demos ✅
 - [ ] **Module system** - Import/export functionality
-- [ ] **Standard library** - File I/O, HTTP, JSON, etc.
+- [ ] **Extended standard library** - File I/O, HTTP, JSON, etc.
+- [ ] **Lambda functions** - Anonymous function expressions
 - [ ] **Package manager** - Easy dependency management
 - [ ] **REPL improvements** - Better error messages, syntax highlighting
 - [ ] **Compiled mode** - Optional compilation for production use
