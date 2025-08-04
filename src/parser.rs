@@ -335,14 +335,37 @@ impl Parser {
     }
     
     fn and(&mut self) -> ParseResult<Expr> {
-        let mut expr = self.equality()?;
+        let mut expr = self.range()?;
         
         while self.match_token(&Token::And) {
-            let right = self.equality()?;
+            let right = self.range()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 operator: BinaryOp::And,
                 right: Box::new(right),
+            };
+        }
+        
+        Ok(expr)
+    }
+    
+    fn range(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.equality()?;
+        
+        if self.match_token(&Token::DotDot) {
+            let end = self.equality()?;
+            
+            // Check for optional step with colon syntax
+            let step = if self.match_token(&Token::Colon) {
+                Some(Box::new(self.equality()?))
+            } else {
+                None
+            };
+            
+            expr = Expr::Range {
+                start: Box::new(expr),
+                end: Box::new(end),
+                step,
             };
         }
         

@@ -10,6 +10,7 @@
 - **Dynamic typing** - Write code fast without type annotations
 - **First-class functions** - Functions are values, pass them around freely
 - **Beautiful arrays** - `[1, 2, 3]` syntax with powerful built-in operations
+- **Elegant range syntax** - Python-inspired `start..end:step` notation for clean iteration
 - **Intuitive control flow** - `if/elseif/else`, `while`, `for` loops that read like English
 - **Lightning fast** - Built in Rust for optimal performance
 - **Zero dependencies** - Single binary, install anywhere
@@ -132,9 +133,19 @@ while counter < 5 do
     counter = counter + 1
 end
 
-# For loops with range function
+# For loops with range function (traditional)
 for i in range(1, 6) do
     print "Number: " + i
+end
+
+# Beautiful range syntax (new!)
+for i in 1..6 do
+    print "Number: " + i
+end
+
+# Ranges with steps
+for i in 2..10:2 do
+    print "Even: " + i
 end
 
 # For loops with arrays
@@ -142,6 +153,38 @@ let fruits = ["apple", "banana", "cherry"]
 for fruit in fruits do
     print "I love " + fruit
 end
+```
+
+### Range Syntax
+
+Ject features beautiful Python-inspired range syntax with an elegant colon notation for steps:
+
+```ject
+# Basic ranges
+let numbers = 1..5        # [1, 2, 3, 4]
+let sequence = 0..10      # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+# Ranges with steps using colon syntax
+let odds = 1..10:2        # [1, 3, 5, 7, 9]
+let evens = 2..10:2       # [2, 4, 6, 8]
+let fives = 0..20:5       # [0, 5, 10, 15]
+
+# Reverse ranges
+let countdown = 10..0:-1  # [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+let down_by_twos = 10..0:-2  # [10, 8, 6, 4, 2]
+
+# Perfect for loops
+for i in 1..6 do
+    print "Count: " + i
+end
+
+for i in 5..0:-1 do
+    print "Countdown: " + i
+end
+
+# Compare with traditional range() function
+print range(1, 6)    # [1, 2, 3, 4, 5]
+print 1..6           # [1, 2, 3, 4, 5] - same result, cleaner syntax!
 ```
 
 ### Arrays
@@ -325,6 +368,7 @@ Ject is built with love and we welcome contributions! Here are some ways you can
 - [x] **Native elseif keyword** - Clean conditional chains ✅
 - [x] **Rich standard library** - Math, arrays, strings, utilities ✅
 - [x] **Comprehensive examples** - Real-world data analysis demos ✅
+- [x] **Beautiful range syntax** - Python-inspired `start..end:step` notation ✅
 - [ ] **Module system** - Import/export functionality
 - [ ] **Extended standard library** - File I/O, HTTP, JSON, etc.
 - [ ] **Lambda functions** - Anonymous function expressions

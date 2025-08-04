@@ -28,6 +28,11 @@ pub enum Expr {
         object: Box<Expr>,
         index: Box<Expr>,
     },
+    Range {
+        start: Box<Expr>,
+        end: Box<Expr>,
+        step: Option<Box<Expr>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,6 +142,12 @@ impl fmt::Display for Expr {
             }
             Expr::Index { object, index } => {
                 write!(f, "{}[{}]", object, index)
+            }
+            Expr::Range { start, end, step } => {
+                match step {
+                    Some(step) => write!(f, "{}..{}:{}", start, end, step),
+                    None => write!(f, "{}..{}", start, end),
+                }
             }
         }
     }

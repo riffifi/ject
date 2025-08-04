@@ -61,6 +61,8 @@ pub enum Token {
     RightBracket,
     Comma,
     Dot,
+    DotDot,
+    Colon,
     Arrow,
     DoubleArrow,
     
@@ -136,7 +138,8 @@ impl Lexer {
             if ch.is_ascii_digit() {
                 number.push(ch);
                 self.advance();
-            } else if ch == '.' && !is_float {
+            } else if ch == '.' && !is_float && self.peek() != Some('.') {
+                // Only treat as decimal point if not followed by another dot
                 is_float = true;
                 number.push(ch);
                 self.advance();
@@ -392,8 +395,17 @@ impl Lexer {
                     return Token::Comma;
                 }
                 Some('.') => {
+                    if self.peek() == Some('.') {
+                        self.advance();
+                        self.advance();
+                        return Token::DotDot;
+                    }
                     self.advance();
                     return Token::Dot;
+                }
+                Some(':') => {
+                    self.advance();
+                    return Token::Colon;
                 }
                 Some('"') => {
                     return self.read_string();

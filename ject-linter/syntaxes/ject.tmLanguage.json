@@ -1,0 +1,12 @@
+{
+  "scopeName": "source.ject",
+  "name": "Ject",
+  "patterns": [
+    { "match": "#.*$", "name": "comment.line.ject" },
+    { "match": "\blet\b", "name": "keyword.declaration.ject" },
+    { "match": "\bprint\b", "name": "keyword.print.ject" },
+    { "match": "\bfor\b|\bin\b|\bdo\b|\bend\b|\bif\b|\belse\b|\band\b|\bor\b|\bnot\b|\brange\b|\btrue\b|\bfalse\b|\bnull\b", "name": "keyword.control.ject" },
+    { "match": '"[^"]*"', "name": "string.quoted.double.ject" },
+    { "match": "[0-9]+", "name": "constant.numeric.ject" }
+  ]
+}

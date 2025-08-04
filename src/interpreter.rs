@@ -262,6 +262,46 @@ impl Interpreter {
                     }),
                 }
             }
+            Expr::Range { start, end, step } => {
+                let start_val = self.evaluate_expression(start)?;
+                let end_val = self.evaluate_expression(end)?;
+                
+                let step_val = if let Some(step_expr) = step {
+                    self.evaluate_expression(step_expr)?
+                } else {
+                    Value::Integer(1)  // Default step is 1
+                };
+                
+                match (start_val, end_val, step_val) {
+                    (Value::Integer(start_i), Value::Integer(end_i), Value::Integer(step_i)) => {
+                        if step_i == 0 {
+                            return Err(RuntimeError {
+                                message: "Range step cannot be zero".to_string(),
+                            });
+                        }
+                        
+                        let mut result = Vec::new();
+                        let mut current = start_i;
+                        
+                        if step_i > 0 {
+                            while current < end_i {
+                                result.push(Value::Integer(current));
+                                current += step_i;
+                            }
+                        } else {
+                            while current > end_i {
+                                result.push(Value::Integer(current));
+                                current += step_i;
+                            }
+                        }
+                        
+                        Ok(Value::Array(result))
+                    }
+                    _ => Err(RuntimeError {
+                        message: "Range start, end, and step must all be integers".to_string(),
+                    })
+                }
+            }
         }
     }
     
