@@ -1,11 +1,18 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum InterpolationPart {
+    Text(String),
+    Expression(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Literals
     Integer(i64),
     Float(f64),
     String(String),
+    InterpolatedString(Vec<InterpolationPart>),
     Bool(bool),
     
     // Identifiers
@@ -14,6 +21,7 @@ pub enum Token {
     // Keywords
     Let,
     Fn,
+    Lambda,
     If,
     Else,
     While,
@@ -53,6 +61,7 @@ pub enum Token {
     Comma,
     Dot,
     Arrow,
+    DoubleArrow,
     
     // Special
     Newline,

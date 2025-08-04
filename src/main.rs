@@ -3,6 +3,7 @@ mod parser;
 mod ast;
 mod value;
 mod interpreter;
+mod stdlib;
 
 use lexer::Lexer;
 use parser::Parser;

@@ -14,6 +14,7 @@ pub enum Value {
         params: Vec<String>,
         body: Vec<Stmt>,
     },
+    BuiltinFunction(String),
 }
 
 impl fmt::Display for Value {
@@ -39,6 +40,9 @@ impl fmt::Display for Value {
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")
+            }
+            Value::BuiltinFunction(name) => {
+                write!(f, "<builtin: {}>", name)
             }
         }
     }
@@ -66,6 +70,7 @@ impl Value {
             Value::Nil => "nil",
             Value::Array(_) => "array",
             Value::Function { .. } => "function",
+            Value::BuiltinFunction(_) => "builtin",
         }
     }
 }

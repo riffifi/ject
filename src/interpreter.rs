@@ -29,8 +29,16 @@ pub enum ControlFlow {
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut environment = Environment::new();
+        
+        // Load standard library
+        let stdlib = crate::stdlib::create_stdlib();
+        for (name, value) in stdlib {
+            environment.define(name, value);
+        }
+        
         Interpreter {
-            environment: Environment::new(),
+            environment,
         }
     }
     
@@ -358,6 +366,9 @@ impl Interpreter {
                 
                 self.environment.pop_scope();
                 Ok(result)
+            }
+            Value::BuiltinFunction(name) => {
+                crate::stdlib::call_builtin_function(&name, args)
             }
             _ => Err(RuntimeError {
                 message: format!("Cannot call {}", func.type_name()),
