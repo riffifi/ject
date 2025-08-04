@@ -207,7 +207,23 @@ impl Parser {
         
         // Consume the final 'end' token if needed
         if needs_end_token {
-            self.consume(Token::End, "Expected 'end' after if statement")?;
+            // Check if we're at the end of file or encountered a token that shouldn't be here
+            if self.is_at_end() {
+                return Err(ParseError {
+                    message: "Expected 'end' to close if statement but reached end of file".to_string(),
+                });
+            }
+            
+            // Provide a better error message based on what we found instead of 'end'
+            if let Err(parse_error) = self.consume(Token::End, "Expected 'end' after if statement") {
+                let current_token = self.peek();
+                let better_message = match current_token {
+                    Token::Return => "Expected 'end' to close if statement, but found another 'return'. Did you forget an 'end'?".to_string(),
+                    Token::Identifier(_) => "Expected 'end' to close if statement, but found another statement. Did you forget an 'end'?".to_string(),
+                    _ => parse_error.message,
+                };
+                return Err(ParseError { message: better_message });
+            }
         }
         
         Ok(Stmt::If {
@@ -451,7 +467,32 @@ impl Parser {
                 continue;
             }
             
-            statements.push(self.statement()?);
+            let stmt = self.statement()?;
+            statements.push(stmt);
+            
+            // If we just parsed a return statement and the next token suggests we're outside
+            // the if block (like another return statement or function call), this suggests
+            // a missing 'end' token
+            if let Some(last_stmt) = statements.last() {
+                if matches!(last_stmt, crate::ast::Stmt::Return(_)) {
+                    // Skip newlines to peek at the next meaningful token
+                    let mut peek_pos = self.current;
+                    while peek_pos < self.tokens.len() && matches!(self.tokens[peek_pos], Token::Newline) {
+                        peek_pos += 1;
+                    }
+                    
+                    if peek_pos < self.tokens.len() {
+                        match &self.tokens[peek_pos] {
+                            Token::Return | Token::Identifier(_) => {
+                                // This suggests we might have gone past the if block
+                                // Let's exit the loop and let if_statement handle the error
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
         
         Ok(statements)

@@ -89,6 +89,24 @@ impl DiagnosticRenderer {
             diag.filename = Some(fname.to_string());
         }
         
+        // If we have source code but no location, try to find a reasonable line to highlight
+        if let Some(source) = source_code {
+            if diag.line.is_none() && diag.source_line.is_none() {
+                // For now, highlight the first non-empty line as a fallback
+                let lines: Vec<&str> = source.lines().collect();
+                if !lines.is_empty() {
+                    let first_non_empty = lines.iter().enumerate()
+                        .find(|(_, line)| !line.trim().is_empty())
+                        .map(|(i, line)| (i + 1, *line))
+                        .unwrap_or((1, lines[0]));
+                    
+                    diag.line = Some(first_non_empty.0);
+                    diag.column = Some(1);
+                    diag.source_line = Some(first_non_empty.1.to_string());
+                }
+            }
+        }
+        
         Self::render_diagnostic(&diag);
     }
     
