@@ -1,10 +1,12 @@
 use std::fmt;
+use crate::lexer::InterpolationPart;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Integer(i64),
     Float(f64),
     String(String),
+    InterpolatedString(Vec<InterpolationPart>),
     Bool(bool),
     Nil,
     Identifier(String),
@@ -98,6 +100,16 @@ impl fmt::Display for Expr {
             Expr::Integer(n) => write!(f, "{}", n),
             Expr::Float(n) => write!(f, "{}", n),
             Expr::String(s) => write!(f, "\"{}\"", s),
+            Expr::InterpolatedString(parts) => {
+                write!(f, "\"")?;
+                for part in parts {
+                    match part {
+                        InterpolationPart::Text(text) => write!(f, "{}", text)?,
+                        InterpolationPart::Expression(expr) => write!(f, "${{{}}}", expr)?,
+                    }
+                }
+                write!(f, "\"")
+            }
             Expr::Bool(b) => write!(f, "{}", b),
             Expr::Nil => write!(f, "nil"),
             Expr::Identifier(name) => write!(f, "{}", name),

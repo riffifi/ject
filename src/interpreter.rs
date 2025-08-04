@@ -1,4 +1,5 @@
 use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
+use crate::lexer::InterpolationPart;
 use crate::value::{Value, Environment};
 use std::fmt;
 
@@ -171,6 +172,43 @@ impl Interpreter {
             Expr::Integer(n) => Ok(Value::Integer(*n)),
             Expr::Float(f) => Ok(Value::Float(*f)),
             Expr::String(s) => Ok(Value::String(s.clone())),
+            Expr::InterpolatedString(parts) => {
+                let mut result = String::new();
+                for part in parts {
+                    match part {
+                        InterpolationPart::Text(text) => {
+                            result.push_str(text);
+                        }
+                        InterpolationPart::Expression(expr_str) => {
+                            // Parse and evaluate the expression
+                            let mut lexer = crate::lexer::Lexer::new(expr_str);
+                            let tokens = lexer.tokenize();
+                            let mut parser = crate::parser::Parser::new(tokens);
+                            
+                            match parser.parse() {
+                                Ok(statements) => {
+                                    if let Some(stmt) = statements.first() {
+                                        if let crate::ast::Stmt::Expression(expr) = stmt {
+                                            let value = self.evaluate_expression(expr)?;
+                                            result.push_str(&value.to_string());
+                                        } else {
+                                            return Err(RuntimeError {
+                                                message: "Invalid expression in string interpolation".to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    return Err(RuntimeError {
+                                        message: format!("Parse error in string interpolation: {}", e),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(Value::String(result))
+            }
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Nil => Ok(Value::Nil),
             Expr::Identifier(name) => {

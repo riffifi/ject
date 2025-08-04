@@ -153,7 +153,8 @@ impl Lexer {
     }
     
     fn read_string(&mut self) -> Token {
-        let mut string = String::new();
+        let mut parts = Vec::new();
+        let mut current_text = String::new();
         self.advance(); // Skip opening quote
         
         while let Some(ch) = self.current_char {
@@ -163,22 +164,101 @@ impl Lexer {
             } else if ch == '\\' {
                 self.advance();
                 match self.current_char {
-                    Some('n') => string.push('\n'),
-                    Some('t') => string.push('\t'),
-                    Some('r') => string.push('\r'),
-                    Some('\\') => string.push('\\'),
-                    Some('"') => string.push('"'),
-                    Some(c) => string.push(c),
+                    Some('n') => current_text.push('\n'),
+                    Some('t') => current_text.push('\t'),
+                    Some('r') => current_text.push('\r'),
+                    Some('\\') => current_text.push('\\'),
+                    Some('"') => current_text.push('"'),
+                    Some('$') => current_text.push('$'), // Allow escaping $
+                    Some(c) => current_text.push(c),
                     None => break,
                 }
                 self.advance();
+            } else if ch == '$' {
+                // Start of interpolation
+                if !current_text.is_empty() {
+                    parts.push(InterpolationPart::Text(current_text.clone()));
+                    current_text.clear();
+                }
+                
+                self.advance(); // Skip '$'
+                
+                if let Some('{') = self.current_char {
+                    // ${expression} syntax
+                    self.advance(); // Skip '{'
+                    let expr = self.read_interpolation_expression();
+                    parts.push(InterpolationPart::Expression(expr));
+                } else {
+                    // $identifier syntax
+                    let identifier = self.read_interpolation_identifier();
+                    parts.push(InterpolationPart::Expression(identifier));
+                }
             } else {
-                string.push(ch);
+                current_text.push(ch);
                 self.advance();
             }
         }
         
-        Token::String(string)
+        // Add remaining text
+        if !current_text.is_empty() {
+            parts.push(InterpolationPart::Text(current_text));
+        }
+        
+        // If no interpolation parts, return regular string
+        if parts.len() == 1 {
+            if let InterpolationPart::Text(text) = &parts[0] {
+                return Token::String(text.clone());
+            }
+        }
+        
+        // Return interpolated string if we have parts
+        if parts.is_empty() {
+            Token::String(String::new())
+        } else {
+            Token::InterpolatedString(parts)
+        }
+    }
+    
+    fn read_interpolation_expression(&mut self) -> String {
+        let mut expr = String::new();
+        let mut brace_count = 1;
+        
+        while let Some(ch) = self.current_char {
+            if ch == '{' {
+                brace_count += 1;
+                expr.push(ch);
+                self.advance();
+            } else if ch == '}' {
+                brace_count -= 1;
+                if brace_count == 0 {
+                    self.advance(); // Skip closing '}'
+                    break;
+                } else {
+                    expr.push(ch);
+                    self.advance();
+                }
+            } else {
+                expr.push(ch);
+                self.advance();
+            }
+        }
+        
+        expr
+    }
+    
+    fn read_interpolation_identifier(&mut self) -> String {
+        let mut identifier = String::new();
+        
+        while let Some(ch) = self.current_char {
+            if ch.is_alphanumeric() || ch == '_' {
+                identifier.push(ch);
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        
+        identifier
     }
     
     fn read_identifier(&mut self) -> Token {

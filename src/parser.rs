@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::lexer::{Token, InterpolationPart};
 use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
 
 pub struct Parser {
@@ -470,6 +470,7 @@ impl Parser {
             Token::Integer(n) => Ok(Expr::Integer(n)),
             Token::Float(n) => Ok(Expr::Float(n)),
             Token::String(s) => Ok(Expr::String(s)),
+            Token::InterpolatedString(parts) => Ok(Expr::InterpolatedString(parts)),
             Token::Identifier(name) => Ok(Expr::Identifier(name)),
             Token::LeftParen => {
                 let expr = self.expression()?;
