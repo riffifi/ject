@@ -1,0 +1,89 @@
+# 📖 README Examples Showcase
+# Demonstrating all the examples from our updated README
+
+print "🎨 Ject README Examples Showcase"
+print "================================"
+
+# Variables
+print "\n📊 Variables Demo:"
+let name = "Alice"
+let age = 30
+let height = 5.8
+let is_student = false
+let empty = nil
+print "Name: " + name + ", Age: " + age + ", Height: " + height
+
+# Control Flow with elseif
+print "\n🔄 Control Flow Demo:"
+let score = 85
+
+if score >= 95
+    print "A+ Excellent!"
+elseif score >= 90
+    print "A grade!"
+elseif score >= 80
+    print "B grade!"
+elseif score >= 70
+    print "C grade!"
+else
+    print "Keep trying!"
+end
+
+# Standard Library Functions
+print "\n🧮 Standard Library Demo:"
+let absolute = abs(-42)
+let square_root = sqrt(16)
+let power = pow(2, 8)
+let rounded = round(3.14159)
+
+print "abs(-42) = " + absolute
+print "sqrt(16) = " + square_root
+print "pow(2, 8) = " + power
+print "round(3.14159) = " + rounded
+
+# Array functions
+let data = [1, 5, 3, 9, 2]
+let length = len(data)
+let total = sum(data)
+let maximum = max(1, 5, 3, 9, 2)
+let minimum = min(1, 5, 3, 9, 2)
+let sequence = range(1, 6)
+
+print "\nArray: " + data
+print "Length: " + length
+print "Sum: " + total
+print "Max: " + maximum
+print "Min: " + minimum
+print "Range(1,6): " + sequence
+
+# String functions
+print "\n📝 String Functions Demo:"
+let text = "  Hello World  "
+let upper_case = upper(text)
+let lower_case = lower(text)
+let trimmed = trim(text)
+
+print "Original: '" + text + "'"
+print "Upper: '" + upper_case + "'"
+print "Lower: '" + lower_case + "'"
+print "Trimmed: '" + trimmed + "'"
+
+# Mathematical constants
+print "\n🔢 Mathematical Constants:"
+print "PI = " + PI
+print "E = " + E
+
+# Functions demo
+print "\n⚡ Functions Demo:"
+fn fibonacci(n)
+    if n <= 1
+        return n
+    else
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    end
+end
+
+let fib_result = fibonacci(10)
+print "fibonacci(10) = " + fib_result
+
+print "\n✨ All README examples working perfectly! ✨"
