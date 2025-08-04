@@ -55,6 +55,16 @@ impl Interpreter {
                 self.environment.define(name.clone(), val);
                 Ok(ControlFlow::None)
             }
+            Stmt::Assign { name, value } => {
+                let val = self.evaluate_expression(value)?;
+                if self.environment.set(name, val) {
+                    Ok(ControlFlow::None)
+                } else {
+                    Err(RuntimeError {
+                        message: format!("Undefined variable '{}'", name),
+                    })
+                }
+            }
             Stmt::Function { name, params, body } => {
                 let func = Value::Function {
                     params: params.clone(),

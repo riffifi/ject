@@ -1,4 +1,4 @@
-use crate::lexer::{Token, Lexer};
+use crate::lexer::Token;
 use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
 
 pub struct Parser {
