@@ -1,0 +1,121 @@
+# 🎨 Statistics Showcase with Ject
+# Beautiful data analysis using our amazing standard library!
+
+print "🎨 Statistics Showcase with Ject!"
+print "=================================="
+print ""
+
+# Sample data: monthly sales figures
+let sales = [120, 135, 89, 156, 143, 98, 178, 134, 167, 145, 123, 189]
+let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+print "💰 Monthly Sales Data:"
+print "---------------------"
+for i in range(len(months)) do
+    print months[i] + ": $" + sales[i] + "k"
+end
+print ""
+
+print "📊 Statistical Analysis:"
+print "-----------------------"
+print "Number of months: " + len(sales)
+print "Total sales: $" + sum(sales) + "k"
+print "Average monthly sales: $" + round(sum(sales) / len(sales) * 100) / 100 + "k"
+print "Best month: $" + max(120, 135, 89, 156, 143, 98, 178, 134, 167, 145, 123, 189) + "k"
+print "Worst month: $" + min(120, 135, 89, 156, 143, 98, 178, 134, 167, 145, 123, 189) + "k"
+print ""
+
+# Performance categories (using separate loops to avoid nested conditions)
+print "🏆 Performance Analysis:"
+print "-----------------------"
+let excellent_months = 0
+let good_months = 0
+let average_months = 0
+
+for value in sales do
+    if value >= 160 then
+        excellent_months = excellent_months + 1
+    end
+end
+
+for value in sales do
+    if value >= 130 and value < 160 then
+        good_months = good_months + 1
+    end
+end
+
+for value in sales do
+    if value < 130 then
+        average_months = average_months + 1
+    end
+end
+
+print "Excellent months (≥$160k): " + excellent_months
+print "Good months ($130k-$159k): " + good_months
+print "Average months (<$130k): " + average_months
+print ""
+
+# Mathematical magic with our stdlib
+print "🧮 Mathematical Magic:"
+print "----------------------"
+print "Square root of total sales: $" + round(sqrt(sum(sales)) * 100) / 100 + "k"
+print "Sales powered by 1.5: $" + round(pow(sum(sales), 1.5) / 1000) + "M"
+print "Absolute difference from target (150): $" + abs(sum(sales) / len(sales) - 150) + "k"
+print ""
+
+# Working with ranges for projections
+print "📈 Future Projections:"
+print "---------------------"
+let quarters = range(1, 5)
+print "Quarters for next year: " + quarters
+
+let projected_growth = []
+for q in quarters do
+    let growth = round(sum(sales) / len(sales) * (1 + q * 0.1))
+    print "Q" + q + " projection: $" + growth + "k"
+end
+print ""
+
+# String analysis for reporting
+print "📝 Report Generation:"
+print "--------------------"
+let company_name = "  awesome tech corp  "
+print "Company: '" + trim(upper(company_name)) + "'"
+print "Name length: " + len(trim(company_name)) + " characters"
+print "Report title: '" + upper(trim(company_name)) + " SALES ANALYSIS'"
+print ""
+
+# Fun with constants and trigonometry
+print "🌟 Advanced Mathematics:"
+print "-----------------------"
+print "Using mathematical constants:"
+print "PI = " + round(PI * 1000) / 1000
+print "E = " + round(E * 1000) / 1000
+print "Circle area (r=10): " + round(PI * pow(10, 2) * 100) / 100
+print "Natural log base: " + round(E * 100) / 100
+print ""
+
+# Type system exploration
+print "🔍 Type System:"
+print "--------------"
+print "type_of(sales): " + type_of(sales)
+print "type_of(PI): " + type_of(PI)
+print "type_of(company_name): " + type_of(company_name)
+print "type_of(sum): " + type_of(sum)
+print "type_of(true): " + type_of(true)
+print ""
+
+# Create some beautiful patterns
+print "✨ Pattern Creation:"
+print "-------------------"
+for stars in range(1, 6) do
+    let line = ""
+    for i in range(stars) do
+        line = line + "⭐"
+    end
+    print line + " (" + stars + " stars)"
+end
+print ""
+
+print "🎉 This demonstrates the power and beauty of Ject! 🎉"
+print "With our rich standard library, data analysis becomes art!"

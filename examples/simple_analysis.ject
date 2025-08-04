@@ -1,0 +1,85 @@
+# 📊 Simple Data Analysis with Ject
+# Showcasing the power of our beautiful standard library
+
+print "📊 Simple Data Analysis with Ject!"
+print "=================================="
+print ""
+
+# Sample data: test scores
+let scores = [85, 92, 78, 96, 88, 74, 91, 83, 89, 95]
+let students = ["Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack"]
+
+print "🎓 Student Test Scores:"
+print "---------------------"
+for i in range(len(students)) do
+    print students[i] + ": " + scores[i] + " points"
+end
+print ""
+
+print "📈 Statistical Summary:"
+print "----------------------"
+print "Number of students: " + len(scores)
+print "Total points: " + sum(scores)
+print "Average score: " + round(sum(scores) / len(scores) * 100) / 100
+print "Highest score: " + max(85, 92, 78, 96, 88, 74, 91, 83, 89, 95)
+print "Lowest score: " + min(85, 92, 78, 96, 88, 74, 91, 83, 89, 95)
+print ""
+
+# Grade analysis
+print "📊 Grade Distribution:"
+print "---------------------"
+let a_grades = 0
+let b_grades = 0
+let c_grades = 0
+
+for score in scores do
+    if score >= 90 then
+        a_grades = a_grades + 1
+    else
+        if score >= 80 then
+            b_grades = b_grades + 1
+        else
+            c_grades = c_grades + 1
+        end
+    end
+end
+
+print "A grades (90+): " + a_grades + " students"
+print "B grades (80-89): " + b_grades + " students" 
+print "C grades (70-79): " + c_grades + " students"
+print ""
+
+# Fun with ranges and mathematical functions
+print "🎯 Mathematical Fun:"
+print "-------------------"
+let fibonacci_start = [1, 1, 2, 3, 5, 8, 13, 21]
+print "Fibonacci sequence: " + fibonacci_start
+print "Sum of fibonacci: " + sum(fibonacci_start)
+print "Square roots: " + [sqrt(4), sqrt(9), sqrt(16), sqrt(25)]
+print ""
+
+# String processing
+print "📝 Name Analysis:"
+print "----------------"
+let sample_name = "  PROGRAMMING LANGUAGES  "
+print "Original: '" + sample_name + "'"
+print "Lowercase: '" + lower(sample_name) + "'"
+print "Trimmed: '" + trim(sample_name) + "'"
+print "Length: " + len(sample_name) + " characters"
+print ""
+
+# Advanced math with constants
+print "🧮 Advanced Mathematics:"
+print "------------------------"
+print "Using PI = " + PI
+print "Area of circle (r=5): " + round(PI * pow(5, 2) * 100) / 100
+print "Circumference (r=5): " + round(2 * PI * 5 * 100) / 100
+print ""
+
+print "Type exploration:"
+print "type_of(scores): " + type_of(scores)
+print "type_of(PI): " + type_of(PI)
+print "type_of(len): " + type_of(len)
+print ""
+
+print "✨ Ject makes data analysis beautiful and fun! ✨"

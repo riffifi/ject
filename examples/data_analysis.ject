@@ -1,0 +1,111 @@
+# 📊 Data Analysis with Ject
+# A practical example showing Ject's power for data processing
+
+print "📊 Welcome to Data Analysis with Ject!"
+print "=====================================\n"
+
+# Sample temperature data for a week (in Celsius)
+let temperatures = [22.5, 25.1, 23.8, 27.2, 26.5, 24.3, 21.9]
+let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+print "🌡️  Weekly Temperature Data:"
+print "-----------------------------"
+for i in range(len(days)) do
+    print days[i] + ": " + temperatures[i] + "°C"
+end
+print ""
+
+# Statistical analysis
+print "📈 Statistical Analysis:"
+print "------------------------"
+print "Number of readings: " + len(temperatures)
+print "Total temperature: " + round(sum(temperatures)) + "°C"
+print "Average temperature: " + round(sum(temperatures) / len(temperatures) * 100) / 100 + "°C"
+print "Minimum temperature: " + min(22.5, 25.1, 23.8, 27.2, 26.5, 24.3, 21.9) + "°C"
+print "Maximum temperature: " + max(22.5, 25.1, 23.8, 27.2, 26.5, 24.3, 21.9) + "°C"
+print ""
+
+# Temperature conversion function
+fn celsius_to_fahrenheit(celsius)
+    return celsius * 9 / 5 + 32
+end
+
+fn celsius_to_kelvin(celsius)
+    return celsius + 273.15
+end
+
+print "🌡️  Temperature Conversions:"
+print "-----------------------------"
+let avg_celsius = sum(temperatures) / len(temperatures)
+print "Average in Celsius: " + round(avg_celsius * 100) / 100 + "°C"
+print "Average in Fahrenheit: " + round(celsius_to_fahrenheit(avg_celsius) * 100) / 100 + "°F"
+print "Average in Kelvin: " + round(celsius_to_kelvin(avg_celsius) * 100) / 100 + "K"
+print ""
+
+# Create temperature categories
+print "🏷️  Temperature Categories:"
+print "----------------------------"
+for i in range(len(temperatures)) do
+    let temp = temperatures[i]
+    let category = ""
+    if temp < 20 then
+        category = "❄️  Cold"
+    else
+        if temp < 25 then
+            category = "🌤️  Mild"
+        else
+            category = "🔥 Warm"
+        end
+    end
+    print days[i] + " (" + temp + "°C): " + category
+end
+print ""
+
+# Find interesting patterns
+print "🔍 Pattern Analysis:"
+print "--------------------"
+let hot_days = 0
+let mild_days = 0
+let cold_days = 0
+
+for temp in temperatures do
+    if temp >= 25 then
+        hot_days = hot_days + 1
+    else
+        if temp >= 20 then
+            mild_days = mild_days + 1
+        else
+            cold_days = cold_days + 1
+        end
+    end
+end
+
+print "Hot days (≥25°C): " + hot_days
+print "Mild days (20-24°C): " + mild_days
+print "Cold days (<20°C): " + cold_days
+print ""
+
+# Temperature trend
+print "📈 Weekly Trend:"
+print "----------------"
+for i in range(1, len(temperatures)) do
+    let yesterday = temperatures[i - 1]
+    let today = temperatures[i]
+    let change = today - yesterday
+    let trend = ""
+    
+    if abs(change) < 0.5 then
+        trend = "➡️  Stable"
+    else
+        if change > 0 then
+            trend = "📈 Warmer (+" + round(change * 10) / 10 + "°C)"
+        else
+            trend = "📉 Cooler (" + round(change * 10) / 10 + "°C)"
+        end
+    end
+    
+    print days[i] + ": " + trend
+end
+print ""
+
+print "✨ Analysis complete! Ject makes data processing beautiful! ✨"
