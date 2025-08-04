@@ -1,0 +1,6 @@
+let sum = 0
+let numbers = [1, 2, 3]
+
+for num in numbers do
+    print num
+end

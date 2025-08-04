@@ -1,0 +1,15 @@
+# Simple math test
+let a = 10
+let b = 5
+
+print "Addition: "
+print a + b
+
+print "Subtraction: "
+print a - b
+
+print "Multiplication: "
+print a * b
+
+print "Division: "
+print a / b

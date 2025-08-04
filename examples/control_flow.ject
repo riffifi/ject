@@ -1,0 +1,40 @@
+# Control Flow Examples
+
+# If-else statements
+let age = 25
+
+if age >= 21 then
+    print "You can drink alcohol! 🍺"
+else if age >= 18 then
+    print "You're an adult but can't drink yet"
+else
+    print "You're still a minor"
+end
+
+# While loops
+print "Counting down:"
+let countdown = 5
+while countdown > 0 do
+    print countdown
+    countdown = countdown - 1
+end
+print "Blast off! 🚀"
+
+# For loops with arrays
+let languages = ["Ject", "Rust", "Python", "Crystal"]
+print "Programming languages I love:"
+for lang in languages do
+    print "- " + lang
+end
+
+# Nested loops and conditions
+print "Multiplication table (3x3):"
+let i = 1
+while i <= 3 do
+    let j = 1
+    while j <= 3 do
+        print i + " × " + j + " = " + (i * j)
+        j = j + 1
+    end
+    i = i + 1
+end

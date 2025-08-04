@@ -1,0 +1,36 @@
+# Math and Functions Demo
+
+# Basic arithmetic
+let a = 10
+let b = 5
+
+print "Addition: " + (a + b)
+print "Subtraction: " + (a - b)  
+print "Multiplication: " + (a * b)
+print "Division: " + (a / b)
+print "Modulo: " + (a % 3)
+
+# Functions
+fn square(x)
+    return x * x
+end
+
+fn factorial(n)
+    if n <= 1 then
+        return 1
+    end
+    return n * factorial(n - 1)
+end
+
+print "Square of 7: " + square(7)
+print "Factorial of 5: " + factorial(5)
+
+# Working with arrays
+let numbers = [1, 2, 3, 4, 5]
+let sum = 0
+
+for num in numbers do
+    sum = sum + num
+end
+
+print "Sum of array: " + sum
