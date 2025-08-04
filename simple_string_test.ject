@@ -1,0 +1,27 @@
+# Test basic string functions
+
+print "Testing built-in string functions:"
+print char_at("hello", 0)
+print char_at("hello", 4)
+print substring("hello", 1)
+print substring("hello", 1, 4)
+
+# Test fixed string utilities manually
+print "Testing repeat function:"
+let result = ""
+for i in range(5) do
+    result = result + "*"
+end
+print result
+
+print "Testing reverse function:"
+let str = "hello"
+let reversed = ""
+let i = len(str) - 1
+while i >= 0 do
+    reversed = reversed + char_at(str, i)
+    i = i - 1
+end
+print reversed
+
+print "Done!"

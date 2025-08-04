@@ -1,0 +1,33 @@
+# Test new string functions
+
+# Test split function
+let text = "apple,banana,cherry"
+let fruits = split(text, ",")
+print "Split result:"
+print fruits
+
+# Test join function  
+let words = ["Hello", "world", "from", "Ject"]
+let sentence = join(words, " ")
+print "Join result:"
+print sentence
+
+# Test replace function
+let original = "Hello Python, I love Python!"
+let replaced = replace(original, "Python", "Ject")
+print "Replace result:"
+print replaced
+
+# Test file I/O with string functions
+let csv_data = "name,age,city\nAlice,25,London\nBob,30,Paris\nCharlie,35,Tokyo"
+write_file("data.csv", csv_data)
+
+# Read and process CSV
+let file_content = read_file("data.csv")
+let lines = split(file_content, "\n")
+print "CSV data lines:"
+for line in lines do
+    let fields = split(line, ",")
+    let formatted = join(fields, " | ")
+    print formatted
+end

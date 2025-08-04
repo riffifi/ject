@@ -31,6 +31,9 @@ pub fn create_stdlib() -> HashMap<String, Value> {
     stdlib.insert("upper".to_string(), Value::BuiltinFunction("upper".to_string()));
     stdlib.insert("lower".to_string(), Value::BuiltinFunction("lower".to_string()));
     stdlib.insert("trim".to_string(), Value::BuiltinFunction("trim".to_string()));
+    stdlib.insert("split".to_string(), Value::BuiltinFunction("split".to_string()));
+    stdlib.insert("join".to_string(), Value::BuiltinFunction("join".to_string()));
+    stdlib.insert("replace".to_string(), Value::BuiltinFunction("replace".to_string()));
     
     // Utility functions
     stdlib.insert("type_of".to_string(), Value::BuiltinFunction("type_of".to_string()));
@@ -40,10 +43,23 @@ pub fn create_stdlib() -> HashMap<String, Value> {
     stdlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
     stdlib.insert("E".to_string(), Value::Float(std::f64::consts::E));
     
+    // File I/O functions
+    stdlib.insert("read_file".to_string(), Value::BuiltinFunction("read_file".to_string()));
+    stdlib.insert("write_file".to_string(), Value::BuiltinFunction("write_file".to_string()));
+    
+    // JSON functions
+    stdlib.insert("parse_json".to_string(), Value::BuiltinFunction("parse_json".to_string()));
+    stdlib.insert("to_json".to_string(), Value::BuiltinFunction("to_json".to_string()));
+    
+    // String indexing/slicing functions
+    stdlib.insert("char_at".to_string(), Value::BuiltinFunction("char_at".to_string()));
+    stdlib.insert("substring".to_string(), Value::BuiltinFunction("substring".to_string()));
+    
     stdlib
 }
 
 pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
+    std::env::set_var("RUST_BACKTRACE", "full");
     match name {
         "abs" => {
             if args.len() != 1 {
@@ -209,6 +225,44 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             Ok(min_val.clone())
         }
+        "read_file" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "read_file() takes exactly 1 argument, the file path".to_string(),
+                });
+            }
+            if let Value::String(path) = &args[0] {
+                match std::fs::read_to_string(path) {
+                    Ok(contents) => Ok(Value::String(contents)),
+                    Err(_) => Err(RuntimeError {
+                        message: format!("Failed to read file: {}", path),
+                    }),
+                }
+            } else {
+                Err(RuntimeError {
+                    message: "read_file() requires a string file path".to_string(),
+                })
+            }
+        }
+        "write_file" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "write_file() takes exactly 2 arguments, the file path and content".to_string(),
+                });
+            }
+            if let (Value::String(path), Value::String(content)) = (&args[0], &args[1]) {
+                match std::fs::write(path, content) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(_) => Err(RuntimeError {
+                        message: format!("Failed to write to file: {}", path),
+                    }),
+                }
+            } else {
+                Err(RuntimeError {
+                    message: "write_file() requires a string file path and content".to_string(),
+                })
+            }
+        }
         "max" => {
             if args.is_empty() {
                 return Err(RuntimeError {
@@ -323,6 +377,60 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 }),
             }
         }
+        "split" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "split() takes exactly 2 arguments (string to split and delimiter)".to_string(),
+                });
+            }
+
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::String(delim)) => {
+                    let parts: Vec<_> = s.split(delim.as_str()).map(|part| Value::String(part.to_string())).collect();
+                    Ok(Value::Array(parts))
+                }
+                _ => Err(RuntimeError {
+                    message: "split() requires a string and a string delimiter".to_string(),
+                }),
+            }
+        }
+
+        "join" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "join() takes exactly 2 arguments (array to join and delimiter)".to_string(),
+                });
+            }
+
+            match (&args[0], &args[1]) {
+                (Value::Array(strings), Value::String(delim)) => {
+                    let joined = strings.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(delim);
+                    Ok(Value::String(joined))
+                }
+                _ => Err(RuntimeError {
+                    message: "join() requires an array of strings and a string delimiter".to_string(),
+                }),
+            }
+        }
+
+        "replace" => {
+            if args.len() != 3 {
+                return Err(RuntimeError {
+                    message: "replace() takes exactly 3 arguments (original string, pattern, replacement)".to_string(),
+                });
+            }
+
+            match (&args[0], &args[1], &args[2]) {
+                (Value::String(original), Value::String(pattern), Value::String(replacement)) => {
+                    let replaced = original.replace(pattern, replacement);
+                    Ok(Value::String(replaced))
+                }
+                _ => Err(RuntimeError {
+                    message: "replace() requires three string arguments".to_string(),
+                }),
+            }
+        }
+
         "type_of" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -330,6 +438,147 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 });
             }
             Ok(Value::String(args[0].type_name().to_string()))
+        }
+        "push" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "push() takes exactly 2 arguments (array and value)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    let mut new_arr = arr.clone();
+                    new_arr.push(args[1].clone());
+                    Ok(Value::Array(new_arr))
+                }
+                _ => Err(RuntimeError {
+                    message: "push() requires an array as first argument".to_string(),
+                }),
+            }
+        }
+        "pop" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "pop() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    if arr.is_empty() {
+                        return Err(RuntimeError {
+                            message: "pop() cannot pop from empty array".to_string(),
+                        });
+                    }
+                    let mut new_arr = arr.clone();
+                    let popped = new_arr.pop().unwrap();
+                    Ok(popped)
+                }
+                _ => Err(RuntimeError {
+                    message: "pop() requires an array".to_string(),
+                }),
+            }
+        }
+        "parse_json" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "parse_json() takes exactly 1 argument (JSON string)".to_string(),
+                });
+            }
+            if let Value::String(json_str) = &args[0] {
+                match serde_json::from_str::<serde_json::Value>(json_str) {
+                    Ok(json_value) => Ok(json_to_ject_value(json_value)),
+                    Err(e) => Err(RuntimeError {
+                        message: format!("Failed to parse JSON: {}", e),
+                    }),
+                }
+            } else {
+                Err(RuntimeError {
+                    message: "parse_json() requires a string argument".to_string(),
+                })
+            }
+        }
+        "to_json" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_json() takes exactly 1 argument".to_string(),
+                });
+            }
+            match ject_value_to_json(&args[0]) {
+                Ok(json_value) => match serde_json::to_string(&json_value) {
+                    Ok(json_str) => Ok(Value::String(json_str)),
+                    Err(e) => Err(RuntimeError {
+                        message: format!("Failed to serialize to JSON: {}", e),
+                    }),
+                },
+                Err(e) => Err(e),
+            }
+        }
+        "char_at" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "char_at() takes exactly 2 arguments (string and index)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::Integer(idx)) => {
+                    let chars: Vec<char> = s.chars().collect();
+                    let index = *idx as usize;
+                    if index < chars.len() {
+                        Ok(Value::String(chars[index].to_string()))
+                    } else {
+                        Err(RuntimeError {
+                            message: "String index out of bounds".to_string(),
+                        })
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "char_at() requires a string and an integer index".to_string(),
+                }),
+            }
+        }
+        "substring" => {
+            match args.len() {
+                2 => {
+                    // substring(string, start) - from start to end
+                    match (&args[0], &args[1]) {
+                        (Value::String(s), Value::Integer(start)) => {
+                            let chars: Vec<char> = s.chars().collect();
+                            let start_idx = *start as usize;
+                            if start_idx <= chars.len() {
+                                let result: String = chars[start_idx..].iter().collect();
+                                Ok(Value::String(result))
+                            } else {
+                                Ok(Value::String(String::new()))
+                            }
+                        }
+                        _ => Err(RuntimeError {
+                            message: "substring() requires a string and integer indices".to_string(),
+                        }),
+                    }
+                }
+                3 => {
+                    // substring(string, start, end)
+                    match (&args[0], &args[1], &args[2]) {
+                        (Value::String(s), Value::Integer(start), Value::Integer(end)) => {
+                            let chars: Vec<char> = s.chars().collect();
+                            let start_idx = (*start as usize).min(chars.len());
+                            let end_idx = (*end as usize).min(chars.len());
+                            if start_idx <= end_idx {
+                                let result: String = chars[start_idx..end_idx].iter().collect();
+                                Ok(Value::String(result))
+                            } else {
+                                Ok(Value::String(String::new()))
+                            }
+                        }
+                        _ => Err(RuntimeError {
+                            message: "substring() requires a string and integer indices".to_string(),
+                        }),
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "substring() takes 2 or 3 arguments".to_string(),
+                }),
+            }
         }
         "range" => {
             match args.len() {
@@ -400,5 +649,66 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
         _ => Err(RuntimeError {
             message: format!("Unknown builtin function: {}", name),
         }),
+    }
+}
+
+// Helper function to convert serde_json::Value to Ject Value
+fn json_to_ject_value(json_value: serde_json::Value) -> Value {
+    match json_value {
+        serde_json::Value::Null => Value::Nil,
+        serde_json::Value::Bool(b) => Value::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                Value::Float(f)
+            } else {
+                Value::Nil // Fallback for weird numbers
+            }
+        }
+        serde_json::Value::String(s) => Value::String(s),
+        serde_json::Value::Array(arr) => {
+            let ject_array: Vec<Value> = arr.into_iter().map(json_to_ject_value).collect();
+            Value::Array(ject_array)
+        }
+        serde_json::Value::Object(obj) => {
+            // Convert JSON object to Ject array of [key, value] pairs
+            let pairs: Vec<Value> = obj.into_iter()
+                .map(|(k, v)| Value::Array(vec![Value::String(k), json_to_ject_value(v)]))
+                .collect();
+            Value::Array(pairs)
+        }
+    }
+}
+
+// Helper function to convert Ject Value to serde_json::Value
+fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeError> {
+    match ject_value {
+        Value::Nil => Ok(serde_json::Value::Null),
+        Value::Bool(b) => Ok(serde_json::Value::Bool(*b)),
+        Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
+        Value::Float(f) => {
+            if let Some(n) = serde_json::Number::from_f64(*f) {
+                Ok(serde_json::Value::Number(n))
+            } else {
+                Err(RuntimeError {
+                    message: "Invalid float value for JSON conversion".to_string(),
+                })
+            }
+        }
+        Value::String(s) => Ok(serde_json::Value::String(s.clone())),
+        Value::Array(arr) => {
+            let json_array: Result<Vec<serde_json::Value>, RuntimeError> = 
+                arr.iter().map(ject_value_to_json).collect();
+            match json_array {
+                Ok(json_arr) => Ok(serde_json::Value::Array(json_arr)),
+                Err(e) => Err(e),
+            }
+        }
+        Value::Function { .. } | Value::ModuleFunction { .. } | Value::Lambda { .. } | Value::BuiltinFunction(_) | Value::Dictionary(_) | Value::ModuleObject(_) => {
+            Err(RuntimeError {
+                message: "Cannot convert function to JSON".to_string(),
+            })
+        }
     }
 }

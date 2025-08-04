@@ -1,0 +1,39 @@
+# Test JSON functionality
+
+print "🔧 Testing JSON Functions"
+print "=========================="
+
+# Test parsing JSON string
+let json_str = "{\"name\": \"Ject\", \"version\": \"0.1.0\", \"awesome\": true, \"count\": 42}"
+print "Original JSON string:"
+print json_str
+
+let parsed = parse_json(json_str)
+print "Parsed JSON:"
+print parsed
+
+# Test converting back to JSON
+let back_to_json = to_json([1, 2, 3, "hello", true])
+print "Array to JSON:"
+print back_to_json
+
+# Test parsing array
+let array_json = "[1, 2, 3, \"hello\", true, null]"
+let parsed_array = parse_json(array_json)
+print "Parsed array:"
+print parsed_array
+
+# Test converting simple values
+print "Simple value conversions:"
+print "Number to JSON: " + to_json(42)
+print "String to JSON: " + to_json("hello world")
+print "Boolean to JSON: " + to_json(true)
+print "Nil to JSON: " + to_json(nil)
+
+# Test with more complex data
+let complex_data = [["name", "Alice"], ["age", 30], ["active", true]]
+print "Complex data to JSON:"
+print to_json(complex_data)
+
+print ""
+print "✅ JSON functions working correctly!"

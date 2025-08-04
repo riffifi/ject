@@ -10,9 +10,15 @@ pub enum Value {
     Bool(bool),
     Nil,
     Array(Vec<Value>),
+    Dictionary(std::collections::HashMap<String, Value>),
     Function {
         params: Vec<String>,
         body: Vec<Stmt>,
+    },
+    ModuleFunction {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        closure_env: Environment,
     },
     Lambda {
         params: Vec<String>,
@@ -38,7 +44,23 @@ impl fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Dictionary(map) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in map.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
             Value::Function { params, .. } => {
+                write!(f, "fn(")?;
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, ")")
+            }
+            Value::ModuleFunction { params, .. } => {
                 write!(f, "fn(")?;
                 for (i, param) in params.iter().enumerate() {
                     if i > 0 { write!(f, ", ")?; }
@@ -76,6 +98,7 @@ impl Value {
             Value::Float(f) => *f != 0.0,
             Value::String(s) => !s.is_empty(),
             Value::Array(arr) => !arr.is_empty(),
+            Value::Dictionary(dict) => !dict.is_empty(),
             _ => true,
         }
     }
@@ -88,7 +111,9 @@ impl Value {
             Value::Bool(_) => "bool",
             Value::Nil => "nil",
             Value::Array(_) => "array",
+            Value::Dictionary(_) => "dictionary",
             Value::Function { .. } => "function",
+            Value::ModuleFunction { .. } => "function",
             Value::Lambda { .. } => "lambda",
             Value::ModuleObject(_) => "module",
             Value::BuiltinFunction(_) => "builtin",
@@ -96,7 +121,7 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
     scopes: Vec<HashMap<String, Value>>,
 }

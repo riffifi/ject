@@ -24,6 +24,7 @@ pub enum Expr {
         args: Vec<Expr>,
     },
     Array(Vec<Expr>),
+    Dictionary(Vec<(String, Expr)>),
     Index {
         object: Box<Expr>,
         index: Box<Expr>,
@@ -58,6 +59,7 @@ pub enum BinaryOp {
     GreaterEqual,
     And,
     Or,
+    In,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -168,6 +170,14 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "]")
             }
+            Expr::Dictionary(pairs) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in pairs.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
             Expr::Index { object, index } => {
                 write!(f, "{}[{}]", object, index)
             }
@@ -212,6 +222,7 @@ impl fmt::Display for BinaryOp {
             BinaryOp::GreaterEqual => ">=",
             BinaryOp::And => "and",
             BinaryOp::Or => "or",
+            BinaryOp::In => "in",
         };
         write!(f, "{}", op)
     }

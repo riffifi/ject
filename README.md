@@ -318,6 +318,12 @@ let upper_case = upper(text)   # "  HELLO WORLD  "
 let lower_case = lower(text)   # "  hello world  "
 let trimmed = trim(text)       # "Hello World"
 
+# Advanced string operations
+let csv = "apple,banana,cherry"
+let fruits = split(csv, ",")   # ["apple", "banana", "cherry"]
+let joined = join(fruits, " | ")  # "apple | banana | cherry"
+let fixed = replace("Hello Python", "Python", "Ject")  # "Hello Ject"
+
 # Utility functions
 let data_type = type_of(42)    # "integer"
 print "Value: " + data_type

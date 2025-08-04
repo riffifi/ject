@@ -649,6 +649,35 @@ impl Parser {
                 self.consume(Token::RightBracket, "Expected ']' after array elements")?;
                 Ok(Expr::Array(elements))
             }
+            Token::LeftBrace => {
+                let mut pairs = Vec::new();
+                
+                if !self.check(&Token::RightBrace) {
+                    loop {
+                        // Parse key: value pairs
+                        let key = match self.advance() {
+                            Token::Identifier(name) => name,
+                            Token::String(s) => s,
+                            _ => {
+                                return Err(ParseError {
+                                    message: "Expected string or identifier as dictionary key".to_string(),
+                                });
+                            }
+                        };
+                        
+                        self.consume(Token::Colon, "Expected ':' after dictionary key")?;
+                        let value = self.expression()?;
+                        pairs.push((key, value));
+                        
+                        if !self.match_token(&Token::Comma) {
+                            break;
+                        }
+                    }
+                }
+                
+                self.consume(Token::RightBrace, "Expected '}' after dictionary elements")?;
+                Ok(Expr::Dictionary(pairs))
+            }
             token => Err(ParseError {
                 message: format!("Unexpected token: {:?}", token),
             }),
@@ -716,6 +745,8 @@ impl Parser {
             Some(BinaryOp::Less)
         } else if self.match_token(&Token::LessEqual) {
             Some(BinaryOp::LessEqual)
+        } else if self.match_token(&Token::In) {
+            Some(BinaryOp::In)
         } else {
             None
         }

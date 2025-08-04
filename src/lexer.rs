@@ -40,6 +40,8 @@ pub enum Token {
     Export,
     From,
     As,
+    Match,
+    When,
     
     // Operators
     Plus,
@@ -130,6 +132,22 @@ impl Lexer {
     fn skip_comment(&mut self) {
         while let Some(ch) = self.current_char {
             if ch == '\n' {
+                break;
+            }
+            self.advance();
+        }
+    }
+    
+    fn skip_multiline_comment(&mut self) {
+        // Skip #*
+        self.advance();
+        self.advance();
+        
+        while let Some(ch) = self.current_char {
+            if ch == '*' && self.peek() == Some('#') {
+                // Found *#, skip both and exit
+                self.advance();
+                self.advance();
                 break;
             }
             self.advance();
@@ -306,6 +324,8 @@ impl Lexer {
             "as" => Token::As,
             "and" => Token::And,
             "or" => Token::Or,
+            "match" => Token::Match,
+            "when" => Token::When,
             _ => Token::Identifier(identifier),
         }
     }
@@ -323,7 +343,11 @@ impl Lexer {
                     return Token::Newline;
                 }
                 Some('#') => {
-                    self.skip_comment();
+                    if self.peek() == Some('*') {
+                        self.skip_multiline_comment();
+                    } else {
+                        self.skip_comment();
+                    }
                     continue;
                 }
                 Some('+') => {

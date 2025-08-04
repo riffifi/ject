@@ -2,7 +2,7 @@
 
 export fn repeat(str, times)
     let result = ""
-    for i in 0..times do
+    for i in range(times) do
         result = result + str
     end
     return result
@@ -12,7 +12,7 @@ export fn reverse(str)
     let result = ""
     let i = len(str) - 1
     while i >= 0 do
-        result = result + str[i..i+1]
+        result = result + char_at(str, i)
         i = i - 1
     end
     return result
@@ -26,9 +26,13 @@ export fn capitalize_words(str)
     let words = split(str, " ")
     let result = []
     for word in words do
-        let first_char = upper(word[0..1])
-        let rest = lower(word[1..len(word)])
-        result = result + [first_char + rest]
+        if len(word) > 0
+            let first_char = upper(char_at(word, 0))
+            let rest = lower(substring(word, 1))
+            result = result + [first_char + rest]
+        else
+            result = result + [word]
+        end
     end
     return join(result, " ")
 end
@@ -54,7 +58,7 @@ export fn center(str, length, char)
     if padding_needed <= 0
         return str
     end
-    let left_padding = padding_needed / 2
+    let left_padding = floor(padding_needed / 2)
     let right_padding = padding_needed - left_padding
     return repeat(char, left_padding) + str + repeat(char, right_padding)
 end

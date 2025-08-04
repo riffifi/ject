@@ -263,6 +263,14 @@ impl Interpreter {
                 }
                 Ok(Value::Array(values))
             }
+            Expr::Dictionary(pairs) => {
+                let mut map = std::collections::HashMap::new();
+                for (key, value_expr) in pairs {
+                    let value = self.evaluate_expression(value_expr)?;
+                    map.insert(key.clone(), value);
+                }
+                Ok(Value::Dictionary(map))
+            }
             Expr::Index { object, index } => {
                 let obj = self.evaluate_expression(object)?;
                 let idx = self.evaluate_expression(index)?;
@@ -277,6 +285,9 @@ impl Interpreter {
                                 message: "Array index out of bounds".to_string(),
                             })
                         }
+                    }
+                    (Value::Dictionary(dict), Value::String(key)) => {
+                        Ok(dict.get(&key).cloned().unwrap_or(Value::Nil))
                     }
                     (obj, idx) => Err(RuntimeError {
                         message: format!("Cannot index {} with {}", obj.type_name(), idx.type_name()),
@@ -441,6 +452,28 @@ impl Interpreter {
             (Value::Integer(a), BinaryOp::GreaterEqual, Value::Float(b)) => Ok(Value::Bool((*a as f64) >= *b)),
             (Value::Float(a), BinaryOp::GreaterEqual, Value::Integer(b)) => Ok(Value::Bool(*a >= (*b as f64))),
             
+            // In operator - check if left value is contained in right value
+            (left_val, BinaryOp::In, Value::Array(arr)) => {
+                for item in arr {
+                    let equal = self.evaluate_binary_op(left_val, &BinaryOp::Equal, item)?;
+                    if let Value::Bool(true) = equal {
+                        return Ok(Value::Bool(true));
+                    }
+                }
+                Ok(Value::Bool(false))
+            }
+            (Value::String(substr), BinaryOp::In, Value::String(s)) => {
+                Ok(Value::Bool(s.contains(substr)))
+            }
+            (left_val, BinaryOp::In, Value::String(s)) => {
+                // Convert left value to string and check if it's in the string
+                let left_str = left_val.to_string();
+                Ok(Value::Bool(s.contains(&left_str)))
+            }
+            (Value::String(key), BinaryOp::In, Value::Dictionary(dict)) => {
+                Ok(Value::Bool(dict.contains_key(key)))
+            }
+            
             // Logical
             (a, BinaryOp::And, b) => {
                 if a.is_truthy() {
@@ -519,9 +552,10 @@ impl Interpreter {
                     self.environment.define(name.clone(), val);
                 }
                 Stmt::ExportFunction { name, params, body } => {
-                    let func = Value::Function {
+                    let func = Value::ModuleFunction {
                         params: params.clone(),
                         body: body.clone(),
+                        closure_env: self.environment.clone(),
                     };
                     exports.insert(name.clone(), func.clone());
                     self.environment.define(name.clone(), func);
@@ -592,6 +626,33 @@ impl Interpreter {
                 };
                 
                 self.environment.pop_scope();
+                Ok(result)
+            }
+            Value::ModuleFunction { params, body, closure_env } => {
+                if args.len() != params.len() {
+                    return Err(RuntimeError {
+                        message: format!("Expected {} arguments but got {}", params.len(), args.len()),
+                    });
+                }
+                
+                // Save current environment and use the closure environment
+                let saved_env = std::mem::replace(&mut self.environment, closure_env);
+                
+                self.environment.push_scope();
+                
+                for (param, arg) in params.iter().zip(args.iter()) {
+                    self.environment.define(param.clone(), arg.clone());
+                }
+                
+                let result = match self.execute_block(&body)? {
+                    ControlFlow::Return(value) => value,
+                    ControlFlow::None => Value::Nil,
+                };
+                
+                self.environment.pop_scope();
+                
+                // Restore original environment
+                self.environment = saved_env;
                 Ok(result)
             }
             Value::Lambda { params, body } => {
