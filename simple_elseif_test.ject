@@ -1,0 +1,11 @@
+let x = 5
+
+if x > 10
+    print "big"
+elseif x > 0
+    print "positive"
+else
+    print "zero or negative"
+end
+
+print "done"

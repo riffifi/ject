@@ -52,6 +52,12 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ElseIfBranch {
+    pub condition: Expr,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Expression(Expr),
     Let {
@@ -70,6 +76,7 @@ pub enum Stmt {
     If {
         condition: Expr,
         then_branch: Vec<Stmt>,
+        elseif_branches: Vec<ElseIfBranch>,
         else_branch: Option<Vec<Stmt>>,
     },
     While {

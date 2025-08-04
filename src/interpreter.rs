@@ -81,15 +81,26 @@ impl Interpreter {
                 self.environment.define(name.clone(), func);
                 Ok(ControlFlow::None)
             }
-            Stmt::If { condition, then_branch, else_branch } => {
+            Stmt::If { condition, then_branch, elseif_branches, else_branch } => {
                 let cond_value = self.evaluate_expression(condition)?;
                 
                 if cond_value.is_truthy() {
                     self.execute_block(then_branch)
-                } else if let Some(else_stmts) = else_branch {
-                    self.execute_block(else_stmts)
                 } else {
-                    Ok(ControlFlow::None)
+                    // Check elseif conditions
+                    for elseif_branch in elseif_branches {
+                        let elseif_cond_value = self.evaluate_expression(&elseif_branch.condition)?;
+                        if elseif_cond_value.is_truthy() {
+                            return self.execute_block(&elseif_branch.body);
+                        }
+                    }
+                    
+                    // If no elseif matched, execute else branch if present
+                    if let Some(else_stmts) = else_branch {
+                        self.execute_block(else_stmts)
+                    } else {
+                        Ok(ControlFlow::None)
+                    }
                 }
             }
             Stmt::While { condition, body } => {

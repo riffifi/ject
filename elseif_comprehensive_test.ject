@@ -1,0 +1,71 @@
+# Test comprehensive elseif functionality
+
+print "=== Testing elseif keyword ==="
+
+let grade = 87
+if grade >= 95
+    print "A+"
+elseif grade >= 90
+    print "A"
+elseif grade >= 87
+    print "B+"
+elseif grade >= 83
+    print "B"
+elseif grade >= 80
+    print "B-"
+elseif grade >= 77
+    print "C+"
+else
+    print "Below C+"
+end
+
+print "=== Testing traditional else if ==="
+
+let score = 92
+if score < 60
+    print "F"
+else if score < 70
+    print "D"
+else if score < 80
+    print "C"
+else if score < 90
+    print "B"
+else
+    print "A"
+end
+
+print "=== Testing mixed conditions ==="
+
+let weather = "sunny"
+let temperature = 75
+
+if weather == "rainy"
+    print "Stay inside"
+elseif weather == "snowy"
+    print "Bundle up!"
+elseif weather == "sunny"
+    if temperature > 80
+        print "Perfect beach weather!"
+    elseif temperature > 70
+        print "Great day for a walk!"
+    else if temperature > 60
+        print "Nice, but bring a jacket"
+    else
+        print "A bit chilly but sunny"
+    end
+else
+    print "Weather is unclear"
+end
+
+print "=== Testing without else clause ==="
+
+let number = 42
+if number < 0
+    print "Negative"
+elseif number == 0
+    print "Zero"
+elseif number > 100
+    print "Large positive"
+end
+
+print "That's it!"

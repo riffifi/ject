@@ -129,32 +129,78 @@ impl Parser {
         // Skip optional newlines before body
         while self.match_token(&Token::Newline) {}
         
-        let then_branch = self.block()?;
+        let then_branch = self.if_block()?;
         
-        let else_branch = if self.match_token(&Token::Else) {
+        // Parse elseif branches
+        let mut elseif_branches = Vec::new();
+        while self.match_token(&Token::ElseIf) {
+            let elseif_condition = self.expression()?;
+            
+            // Optional 'then' keyword
+            self.match_token(&Token::Then);
+            
+            // Skip optional newlines before body
+            while self.match_token(&Token::Newline) {}
+            
+            let elseif_body = self.if_block()?;
+            
+            elseif_branches.push(crate::ast::ElseIfBranch {
+                condition: elseif_condition,
+                body: elseif_body,
+            });
+        }
+        
+        // Handle traditional "else if" pattern for backward compatibility
+        let mut needs_end_token = true;
+        if self.match_token(&Token::Else) {
             // Skip optional newlines before else body
             while self.match_token(&Token::Newline) {}
             
             // Check for "else if" pattern
             if self.check(&Token::If) {
-                // This is an "else if" - parse it as a nested if statement
-                vec![self.if_statement()?]
+                // This is an "else if" - recursively parse remaining elseifs and else
+                let remaining_if = self.if_statement()?;
+                if let Stmt::If { condition: nested_condition, then_branch: nested_then, elseif_branches: mut nested_elseifs, else_branch: nested_else } = remaining_if {
+                    // Convert the nested if into an elseif branch
+                    elseif_branches.push(crate::ast::ElseIfBranch {
+                        condition: nested_condition,
+                        body: nested_then,
+                    });
+                    
+                    // Add all nested elseif branches
+                    elseif_branches.append(&mut nested_elseifs);
+                    
+                    // Set the final else branch
+                    return Ok(Stmt::If {
+                        condition,
+                        then_branch,
+                        elseif_branches,
+                        else_branch: nested_else,
+                    });
+                }
+                needs_end_token = false; // The recursive call already consumed the end token
             } else {
                 // Regular else block
-                self.block()?
+                let else_body = self.if_block()?;
+                return Ok(Stmt::If {
+                    condition,
+                    then_branch,
+                    elseif_branches,
+                    else_branch: Some(else_body),
+                });
             }
-        } else {
-            return Ok(Stmt::If {
-                condition,
-                then_branch,
-                else_branch: None,
-            });
-        };
+        }
+        
+        // Consume the final 'end' token if needed
+        if needs_end_token {
+            self.consume(Token::End, "Expected 'end' after if statement")?;
+        }
         
         Ok(Stmt::If {
             condition,
             then_branch,
-            else_branch: Some(else_branch),
+            elseif_branches,
+            else_branch: None,
         })
     }
     
@@ -234,7 +280,7 @@ impl Parser {
     fn block(&mut self) -> ParseResult<Vec<Stmt>> {
         let mut statements = Vec::new();
         
-        while !self.check(&Token::End) && !self.is_at_end() {
+        while !self.check(&Token::End) && !self.check(&Token::ElseIf) && !self.check(&Token::Else) && !self.is_at_end() {
             // Skip newlines within blocks
             if self.match_token(&Token::Newline) {
                 continue;
@@ -243,7 +289,27 @@ impl Parser {
             statements.push(self.statement()?);
         }
         
-        self.consume(Token::End, "Expected 'end'")?;
+        // Only consume 'end' if we stopped because of 'end'
+        if self.check(&Token::End) {
+            self.consume(Token::End, "Expected 'end'")?;
+        }
+        
+        Ok(statements)
+    }
+    
+    // Special block method for if statements - doesn't consume 'end'
+    fn if_block(&mut self) -> ParseResult<Vec<Stmt>> {
+        let mut statements = Vec::new();
+        
+        while !self.check(&Token::End) && !self.check(&Token::ElseIf) && !self.check(&Token::Else) && !self.is_at_end() {
+            // Skip newlines within blocks
+            if self.match_token(&Token::Newline) {
+                continue;
+            }
+            
+            statements.push(self.statement()?);
+        }
+        
         Ok(statements)
     }
     
