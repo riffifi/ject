@@ -1,0 +1,26 @@
+fn say_times(name, times, type)
+    for i in 0..times do
+        if type == "upper" then
+            print "hello, ${upper(name)}"
+        elseif type == "lower" then
+            print "hello, ${lower(name)}"
+        elseif type == nil
+            print "hello, $name"
+        else
+            print "Not an option"
+        end
+    end
+end
+
+say_times("Walter White", 3, "lower")
+say_times("Walter White", 3, "upper")
+say_times("Walter White", 3, nil)
+say_times("Walter White", 3, "hehehe")
+
+let test = lambda(x) -> {
+    for i in 0..x do print "test" end
+}
+test(5)
+
+test = lambda(x) -> x * x
+print test(10)

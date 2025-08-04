@@ -1,0 +1,64 @@
+# Module System Demo (Planned Syntax)
+# This shows what Ject's module system will look like
+
+# ===== math_utils.ject (module file) =====
+# export pi = 3.14159
+# export e = 2.71828
+# 
+# export fn circle_area(radius)
+#     return pi * radius * radius
+# end
+#
+# export fn factorial(n)
+#     if n <= 1 then
+#         return 1
+#     else
+#         return n * factorial(n - 1)
+#     end
+# end
+
+# ===== string_utils.ject (module file) =====
+# export fn reverse(str)
+#     # Implementation would reverse the string
+#     return str + " (reversed)"
+# end
+#
+# export fn capitalize(str)
+#     return upper(str)
+# end
+
+# ===== main.ject (using modules) =====
+
+# Import entire module
+# import "math_utils"
+# print math_utils.pi
+
+# Import specific functions
+# import {circle_area, factorial} from "math_utils"
+# print circle_area(5)
+# print factorial(5)
+
+# Import with alias
+# import "string_utils" as str_util
+# print str_util.reverse("hello")
+
+# Mixed imports
+# import {pi} from "math_utils"
+# import "string_utils" as str
+# 
+# let radius = 10
+# let area = pi * radius * radius
+# print "Area: " + area
+# print str.capitalize("ject modules are awesome!")
+
+print "Lambda functions are working! ✅"
+print "Module system planned and ready for implementation! 🚀"
+
+# For now, let's test our lambda functions
+let add = lambda(a, b) -> a + b
+let multiply = lambda(x, y) -> x * y
+let greet = lambda(name) -> "Hello, " + name + "!"
+
+print add(10, 20)
+print multiply(6, 7)
+print greet("Module System")

@@ -487,6 +487,7 @@ impl Parser {
     
     fn primary(&mut self) -> ParseResult<Expr> {
         match self.advance() {
+            Token::Lambda => self.lambda_expression(),
             Token::True => Ok(Expr::Bool(true)),
             Token::False => Ok(Expr::Bool(false)),
             Token::Nil => Ok(Expr::Nil),
@@ -522,6 +523,47 @@ impl Parser {
     }
     
     // Helper methods
+    fn lambda_expression(&mut self) -> ParseResult<Expr> {
+        self.consume(Token::LeftParen, "Expected '(' after 'fn'")?;
+        let mut params = Vec::new();
+        if !self.check(&Token::RightParen) {
+            loop {
+                if let Token::Identifier(name) = self.advance() {
+                    params.push(name);
+                } else {
+                    return Err(ParseError {
+                        message: "Expected parameter name".to_string(),
+                    });
+                }
+                if !self.match_token(&Token::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(Token::RightParen, "Expected ')' after parameters")?;
+        self.consume(Token::Arrow, "Expected '->' before lambda body")?;
+
+        let body = if self.match_token(&Token::LeftBrace) {
+            let mut statements = Vec::new();
+            
+            while !self.check(&Token::RightBrace) && !self.is_at_end() {
+                // Skip newlines within blocks
+                if self.match_token(&Token::Newline) {
+                    continue;
+                }
+                statements.push(self.statement()?);
+            }
+            
+            self.consume(Token::RightBrace, "Expected '}' after lambda block")?;
+            crate::ast::LambdaBody::Block(statements)
+        } else {
+            let expr = self.expression()?;
+            crate::ast::LambdaBody::Expression(Box::new(expr))
+        };
+
+        Ok(Expr::Lambda { params, body })
+    }
+    
     fn match_equality_op(&mut self) -> Option<BinaryOp> {
         if self.match_token(&Token::EqualEqual) {
             Some(BinaryOp::Equal)

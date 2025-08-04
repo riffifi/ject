@@ -9,7 +9,8 @@ use lexer::Lexer;
 use parser::Parser;
 use interpreter::Interpreter;
 use std::{env, fs};
-use std::io::{self, Write};
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -40,27 +41,45 @@ fn run_file(filename: &str) {
 fn run_repl() {
     println!("🎨 Welcome to Ject - The Elegant Scripting Language");
     println!("Type 'exit' to quit, or start writing beautiful code!");
-    println!("💡 Tip: You can also run files with 'ject filename.ject'\n");
+    println!("💡 Tip: You can also run files with 'ject filename.ject'");
+    println!("🏹 Use arrow keys to navigate and access command history!\n");
     
     let mut interpreter = Interpreter::new();
-    
+    let mut rl = DefaultEditor::new().expect("Failed to create readline editor");
+
+    // Try to load history from file
+    let _ = rl.load_history(".ject_history");
+
     loop {
-        print!("ject› ");
-        io::stdout().flush().unwrap();
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-
-        if input.trim() == "exit" {
-            println!("✨ Thanks for using Ject! Have a beautiful day!");
-            break;
+        match rl.readline("ject› ") {
+            Ok(line) => {
+                let input = line.trim();
+                if input == "exit" {
+                    println!("✨ Thanks for using Ject! Have a beautiful day!");
+                    break;
+                }
+                if !input.is_empty() {
+                    let _ = rl.add_history_entry(input);
+                    execute_source(input, &mut interpreter);
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                println!("\n^C");
+                continue; // Continue instead of break to allow Ctrl+C to cancel current line
+            }
+            Err(ReadlineError::Eof) => {
+                println!("\n^D");
+                break;
+            }
+            Err(err) => {
+                println!("❌ Error: {:?}", err);
+                break;
+            }
         }
-        
-        if input.trim().is_empty() {
-            continue;
-        }
-
-        execute_source(&input, &mut interpreter);
     }
+    
+    // Save history to file
+    let _ = rl.save_history(".ject_history");
 }
 
 fn execute_source(source: &str, interpreter: &mut Interpreter) {

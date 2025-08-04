@@ -1,0 +1,35 @@
+# Lambda Function Tests
+
+# Basic lambda with two parameters
+let add = lambda(a, b) -> a + b
+print "5 + 3 = " + add(5, 3)
+
+# Lambda with no parameters  
+let greeting = lambda() -> "Hello from lambda!"
+print greeting()
+
+# Lambda with one parameter
+let square = lambda(n) -> n * n
+print "7 squared = " + square(7)
+
+# Lambda for string operations
+let uppercase = lambda(str) -> str + " (UPPERCASED)"
+print uppercase("hello world")
+
+# More complex lambda with calculations
+let distance = lambda(x1, y1, x2, y2) -> ((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
+print "Distance squared between (0,0) and (3,4): " + distance(0, 0, 3, 4)
+
+# Using lambdas with arrays
+let numbers = [1, 2, 3, 4, 5]
+let multiply_by_10 = lambda(x) -> x * 10
+
+print "Original numbers:"
+for num in numbers
+    print num
+end
+
+print "Multiplied by 10:"
+for num in numbers  
+    print multiply_by_10(num)
+end

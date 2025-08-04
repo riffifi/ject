@@ -7,3 +7,4 @@ edition = "2021"
 clap = { version = "4.0", features = ["derive"] }
 rustc-hash = "1.1"
 smallvec = "1.10"
+rustyline = "12.0"

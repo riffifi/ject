@@ -149,6 +149,18 @@ impl Interpreter {
                 };
                 Ok(ControlFlow::Return(value))
             }
+            Stmt::Import { module_path, items, alias } => {
+                // For now, just return Ok - we'll implement actual module loading later
+                println!("Import statement: module_path={}, items={:?}, alias={:?}", module_path, items, alias);
+                Ok(ControlFlow::None)
+            }
+            Stmt::Export { name, value } => {
+                // For now, just evaluate and store the value like a let statement
+                let val = self.evaluate_expression(value)?;
+                self.environment.define(name.clone(), val);
+                println!("Export statement: name={}", name);
+                Ok(ControlFlow::None)
+            }
             Stmt::Print(expr) => {
                 let value = self.evaluate_expression(expr)?;
                 println!("{}", value);
@@ -261,6 +273,12 @@ impl Interpreter {
                         message: format!("Cannot index {} with {}", obj.type_name(), idx.type_name()),
                     }),
                 }
+            }
+            Expr::Lambda { params, body } => {
+                Ok(Value::Lambda {
+                    params: params.clone(),
+                    body: body.clone(),
+                })
             }
             Expr::Range { start, end, step } => {
                 let start_val = self.evaluate_expression(start)?;
@@ -451,6 +469,34 @@ impl Interpreter {
                 let result = match self.execute_block(&body)? {
                     ControlFlow::Return(value) => value,
                     ControlFlow::None => Value::Nil,
+                };
+                
+                self.environment.pop_scope();
+                Ok(result)
+            }
+            Value::Lambda { params, body } => {
+                if args.len() != params.len() {
+                    return Err(RuntimeError {
+                        message: format!("Expected {} arguments but got {}", params.len(), args.len()),
+                    });
+                }
+                
+                self.environment.push_scope();
+                
+                for (param, arg) in params.iter().zip(args.iter()) {
+                    self.environment.define(param.clone(), arg.clone());
+                }
+                
+                let result = match body {
+                    crate::ast::LambdaBody::Expression(expr) => {
+                        self.evaluate_expression(&expr)?
+                    }
+                    crate::ast::LambdaBody::Block(statements) => {
+                        match self.execute_block(&statements)? {
+                            ControlFlow::Return(value) => value,
+                            ControlFlow::None => Value::Nil,
+                        }
+                    }
                 };
                 
                 self.environment.pop_scope();

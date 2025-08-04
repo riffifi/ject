@@ -36,6 +36,10 @@ pub enum Token {
     Do,
     Then,
     Print,
+    Import,
+    Export,
+    From,
+    As,
     
     // Operators
     Plus,
@@ -59,6 +63,8 @@ pub enum Token {
     RightParen,
     LeftBracket,
     RightBracket,
+    LeftBrace,
+    RightBrace,
     Comma,
     Dot,
     DotDot,
@@ -279,6 +285,7 @@ impl Lexer {
         match identifier.as_str() {
             "let" => Token::Let,
             "fn" => Token::Fn,
+            "lambda" => Token::Lambda,
             "if" => Token::If,
             "else" => Token::Else,
             "elseif" => Token::ElseIf,
@@ -293,6 +300,10 @@ impl Lexer {
             "do" => Token::Do,
             "then" => Token::Then,
             "print" => Token::Print,
+            "import" => Token::Import,
+            "export" => Token::Export,
+            "from" => Token::From,
+            "as" => Token::As,
             "and" => Token::And,
             "or" => Token::Or,
             _ => Token::Identifier(identifier),
@@ -389,6 +400,14 @@ impl Lexer {
                 Some(']') => {
                     self.advance();
                     return Token::RightBracket;
+                }
+                Some('{') => {
+                    self.advance();
+                    return Token::LeftBrace;
+                }
+                Some('}') => {
+                    self.advance();
+                    return Token::RightBrace;
                 }
                 Some(',') => {
                     self.advance();

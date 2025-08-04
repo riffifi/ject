@@ -33,6 +33,10 @@ pub enum Expr {
         end: Box<Expr>,
         step: Option<Box<Expr>>,
     },
+    Lambda {
+        params: Vec<String>,
+        body: LambdaBody,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +60,12 @@ pub enum BinaryOp {
 pub enum UnaryOp {
     Negate,
     Not,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LambdaBody {
+    Expression(Box<Expr>),
+    Block(Vec<Stmt>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +104,15 @@ pub enum Stmt {
         var: String,
         iterable: Expr,
         body: Vec<Stmt>,
+    },
+    Import {
+        module_path: String,
+        items: Option<Vec<String>>, // None for import all, Some(vec) for specific items
+        alias: Option<String>,      // For "as" aliases
+    },
+    Export {
+        name: String,
+        value: Expr,
     },
     Return(Option<Expr>),
     Print(Expr),
@@ -149,6 +168,18 @@ impl fmt::Display for Expr {
                     None => write!(f, "{}..{}", start, end),
                 }
             }
+            Expr::Lambda { params, body } => {
+                write!(f, "fn(")?;
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, ")")?;
+                match body {
+                    LambdaBody::Expression(expr) => write!(f, " -> {}", expr),
+                    LambdaBody::Block(_) => write!(f, " {{ ... }}"),
+                }
+            }
         }
     }
 }
@@ -201,6 +232,23 @@ impl fmt::Display for Stmt {
             Stmt::If { condition, .. } => write!(f, "if {}", condition),
             Stmt::While { condition, .. } => write!(f, "while {}", condition),
             Stmt::For { var, iterable, .. } => write!(f, "for {} in {}", var, iterable),
+            Stmt::Import { module_path, items, alias } => {
+                write!(f, "import")?;
+                if let Some(items) = items {
+                    write!(f, " {{")?;
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 { write!(f, ", ")?; }
+                        write!(f, "{}", item)?;
+                    }
+                    write!(f, "}} from")?;
+                }
+                write!(f, " \"{}\"", module_path)?;
+                if let Some(alias) = alias {
+                    write!(f, " as {}", alias)?;
+                }
+                Ok(())
+            }
+            Stmt::Export { name, value } => write!(f, "export {} = {}", name, value),
             Stmt::Return(Some(expr)) => write!(f, "return {}", expr),
             Stmt::Return(None) => write!(f, "return"),
             Stmt::Print(expr) => write!(f, "print {}", expr),

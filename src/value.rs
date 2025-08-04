@@ -14,6 +14,10 @@ pub enum Value {
         params: Vec<String>,
         body: Vec<Stmt>,
     },
+    Lambda {
+        params: Vec<String>,
+        body: crate::ast::LambdaBody,
+    },
     BuiltinFunction(String),
 }
 
@@ -41,9 +45,15 @@ impl fmt::Display for Value {
                 }
                 write!(f, ")")
             }
-            Value::BuiltinFunction(name) => {
-                write!(f, "<builtin: {}>", name)
+            Value::Lambda { params, .. } => {
+                write!(f, "lambda(")?;
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, ")")
             }
+            Value::BuiltinFunction(name) => write!(f, "<builtin: {}>", name)
         }
     }
 }
@@ -70,6 +80,7 @@ impl Value {
             Value::Nil => "nil",
             Value::Array(_) => "array",
             Value::Function { .. } => "function",
+            Value::Lambda { .. } => "lambda",
             Value::BuiltinFunction(_) => "builtin",
         }
     }

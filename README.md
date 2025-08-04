@@ -9,10 +9,12 @@
 - **Rich standard library** - Math, arrays, strings, and utility functions built-in
 - **Dynamic typing** - Write code fast without type annotations
 - **First-class functions** - Functions are values, pass them around freely
+- **Lambda expressions** - Anonymous functions with beautiful `lambda(x) -> x * 2` syntax
 - **Beautiful arrays** - `[1, 2, 3]` syntax with powerful built-in operations
 - **Elegant range syntax** - Python-inspired `start..end:step` notation for clean iteration
 - **Intuitive control flow** - `if/elseif/else`, `while`, `for` loops that read like English
 - **Lightning fast** - Built in Rust for optimal performance
+- **Enhanced REPL** - Arrow key navigation, command history, and line editing
 - **Zero dependencies** - Single binary, install anywhere
 
 ## 🚀 Quick Start
@@ -95,6 +97,44 @@ end
 
 let result = fibonacci(10)
 print result  # 55
+```
+
+### Lambda Functions
+
+Ject supports beautiful lambda expressions for anonymous functions:
+
+```ject
+# Basic lambda with single expression
+let square = lambda(x) -> x * x
+print square(5)  # 25
+
+# Lambda with multiple parameters
+let add = lambda(a, b) -> a + b
+print add(10, 5)  # 15
+
+# Lambda with no parameters
+let get_pi = lambda() -> 3.14159
+print get_pi()  # 3.14159
+
+# Using lambdas with arrays
+let numbers = [1, 2, 3, 4, 5]
+let double = lambda(n) -> n * 2
+
+for num in numbers do
+    print double(num)
+end
+# Output: 2, 4, 6, 8, 10
+
+# Lambdas for quick calculations
+let distance = lambda(x1, y1, x2, y2) -> ((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
+print distance(0, 0, 3, 4)  # 25 (distance squared)
+
+# Assignment and reassignment
+let operation = lambda(x) -> x + 1
+print operation(5)  # 6
+
+operation = lambda(x) -> x * x
+print operation(5)  # 25
 ```
 
 ### Control Flow
@@ -369,11 +409,12 @@ Ject is built with love and we welcome contributions! Here are some ways you can
 - [x] **Rich standard library** - Math, arrays, strings, utilities ✅
 - [x] **Comprehensive examples** - Real-world data analysis demos ✅
 - [x] **Beautiful range syntax** - Python-inspired `start..end:step` notation ✅
+- [x] **Enhanced REPL** - Arrow key navigation, command history, and line editing ✅
+- [x] **Lambda functions** - Anonymous function expressions ✅
 - [ ] **Module system** - Import/export functionality
 - [ ] **Extended standard library** - File I/O, HTTP, JSON, etc.
-- [ ] **Lambda functions** - Anonymous function expressions
 - [ ] **Package manager** - Easy dependency management
-- [ ] **REPL improvements** - Better error messages, syntax highlighting
+- [ ] **Advanced REPL features** - Syntax highlighting, autocomplete, better error messages
 - [ ] **Compiled mode** - Optional compilation for production use
 - [ ] **VSCode extension** - Syntax highlighting and language support
 
