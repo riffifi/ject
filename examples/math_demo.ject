@@ -1,11 +1,8 @@
-# 🎨 Enhanced Math and Functions Demo
-# Now with beautiful standard library functions!
-
 # Basic arithmetic
 let a = 10
 let b = 5
 
-print "🔢 Basic Arithmetic:"
+print "Basic Arithmetic:"
 print "Addition: " + (a + b)
 print "Subtraction: " + (a - b)  
 print "Multiplication: " + (a * b)
@@ -13,8 +10,7 @@ print "Division: " + (a / b)
 print "Modulo: " + (a % 3)
 print ""
 
-# Enhanced with stdlib!
-print "📐 Enhanced Math with Standard Library:"
+print "Math with Standard Library:"
 print "abs(-7): " + abs(-7)
 print "sqrt(49): " + sqrt(49)
 print "pow(2, 8): " + pow(2, 8)
@@ -34,18 +30,16 @@ fn factorial(n)
     return n * factorial(n - 1)
 end
 
-print "🎯 Custom Functions:"
+print "Custom Functions:"
 print "Square of 7: " + square(7)
 print "Factorial of 5: " + factorial(5)
 print ""
 
 # Working with arrays - now enhanced!
 let numbers = range(1, 6)  # Using stdlib range!
-print "🎢 Array Magic:"
+print "Array Magic:"
 print "Numbers (using range): " + numbers
 print "Length: " + len(numbers)
 print "Sum (using stdlib): " + sum(numbers)
 print "Max value: " + max(1, 2, 3, 4, 5)
 print ""
-
-print "🌟 Ject is getting more powerful every day! 🌟"

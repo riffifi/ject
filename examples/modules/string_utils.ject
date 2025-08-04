@@ -1,0 +1,79 @@
+# String utilities module
+
+export fn repeat(str, times)
+    let result = ""
+    for i in 0..times do
+        result = result + str
+    end
+    return result
+end
+
+export fn reverse(str)
+    let result = ""
+    let i = len(str) - 1
+    while i >= 0 do
+        result = result + str[i..i+1]
+        i = i - 1
+    end
+    return result
+end
+
+export fn capitalize_all(str)
+    return upper(str)
+end
+
+export fn capitalize_words(str)
+    let words = split(str, " ")
+    let result = []
+    for word in words do
+        let first_char = upper(word[0..1])
+        let rest = lower(word[1..len(word)])
+        result = result + [first_char + rest]
+    end
+    return join(result, " ")
+end
+
+export fn pad_left(str, length, char)
+    let padding_needed = length - len(str)
+    if padding_needed <= 0
+        return str
+    end
+    return repeat(char, padding_needed) + str
+end
+
+export fn pad_right(str, length, char)
+    let padding_needed = length - len(str)
+    if padding_needed <= 0
+        return str
+    end
+    return str + repeat(char, padding_needed)
+end
+
+export fn center(str, length, char)
+    let padding_needed = length - len(str)
+    if padding_needed <= 0
+        return str
+    end
+    let left_padding = padding_needed / 2
+    let right_padding = padding_needed - left_padding
+    return repeat(char, left_padding) + str + repeat(char, right_padding)
+end
+
+export fn is_palindrome(str)
+    let cleaned = lower(trim(str))
+    return cleaned == reverse(cleaned)
+end
+
+export fn count_words(str)
+    let trimmed = trim(str)
+    if len(trimmed) == 0
+        return 0
+    end
+    return len(split(trimmed, " "))
+end
+
+export fn make_greeting(name)
+    return "Hello, " + name + "!"
+end
+
+export greeting = "Hello from string_utils!"

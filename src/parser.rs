@@ -50,6 +50,8 @@ impl Parser {
             Token::For => self.for_statement(),
             Token::Return => self.return_statement(),
             Token::Print => self.print_statement(),
+            Token::Import => self.import_statement(),
+            Token::Export => self.export_statement(),
             Token::Identifier(_) => {
                 // Check if this is an assignment
                 if self.peek_ahead(1).map(|t| matches!(t, Token::Equal)).unwrap_or(false) {
@@ -279,6 +281,126 @@ impl Parser {
         Ok(Stmt::Assign { name, value })
     }
     
+    fn import_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Import, "Expected 'import'")?;
+        
+        let (module_path, items, alias) = if self.match_token(&Token::LeftBrace) {
+            // import {item1, item2} from "module"
+            let mut items = Vec::new();
+            
+            if !self.check(&Token::RightBrace) {
+                loop {
+                    if let Token::Identifier(item) = self.advance() {
+                        items.push(item);
+                    } else {
+                        return Err(ParseError {
+                            message: "Expected identifier in import list".to_string(),
+                        });
+                    }
+                    
+                    if !self.match_token(&Token::Comma) {
+                        break;
+                    }
+                }
+            }
+            
+            self.consume(Token::RightBrace, "Expected '}' after import list")?;
+            self.consume(Token::From, "Expected 'from' after import list")?;
+            
+            let module_path = if let Token::String(path) = self.advance() {
+                path
+            } else {
+                return Err(ParseError {
+                    message: "Expected string after 'from'".to_string(),
+                });
+            };
+            
+            (module_path, Some(items), None)
+        } else {
+            // import "module" or import "module" as alias
+            let module_path = if let Token::String(path) = self.advance() {
+                path
+            } else {
+                return Err(ParseError {
+                    message: "Expected module path string after 'import'".to_string(),
+                });
+            };
+            
+            let alias = if self.match_token(&Token::As) {
+                if let Token::Identifier(alias_name) = self.advance() {
+                    Some(alias_name)
+                } else {
+                    return Err(ParseError {
+                        message: "Expected identifier after 'as'".to_string(),
+                    });
+                }
+            } else {
+                None
+            };
+            
+            (module_path, None, alias)
+        };
+        
+        Ok(Stmt::Import { module_path, items, alias })
+    }
+    
+    fn export_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Export, "Expected 'export'")?;
+        
+        // Check if this is "export fn"
+        if self.match_token(&Token::Fn) {
+            let name = if let Token::Identifier(name) = self.advance() {
+                name
+            } else {
+                return Err(ParseError {
+                    message: "Expected function name after 'export fn'".to_string(),
+                });
+            };
+            
+            self.consume(Token::LeftParen, "Expected '(' after function name")?;
+            
+            let mut params = Vec::new();
+            if !self.check(&Token::RightParen) {
+                loop {
+                    if let Token::Identifier(param) = self.advance() {
+                        params.push(param);
+                    } else {
+                        return Err(ParseError {
+                            message: "Expected parameter name".to_string(),
+                        });
+                    }
+                    
+                    if !self.match_token(&Token::Comma) {
+                        break;
+                    }
+                }
+            }
+            
+            self.consume(Token::RightParen, "Expected ')' after parameters")?;
+            
+            // Skip optional newlines before body
+            while self.match_token(&Token::Newline) {}
+            
+            let body = self.block()?;
+            
+            return Ok(Stmt::ExportFunction { name, params, body });
+        }
+        
+        // Regular "export name = value" syntax
+        let name = if let Token::Identifier(name) = self.advance() {
+            name
+        } else {
+            return Err(ParseError {
+                message: "Expected identifier after 'export'".to_string(),
+            });
+        };
+        
+        self.consume(Token::Equal, "Expected '=' after export name")?;
+        let value = self.expression()?;
+        
+        Ok(Stmt::Export { name, value })
+    }
+    
     fn block(&mut self) -> ParseResult<Vec<Stmt>> {
         let mut statements = Vec::new();
         
@@ -457,6 +579,17 @@ impl Parser {
                     object: Box::new(expr),
                     index: Box::new(index),
                 };
+            } else if self.match_token(&Token::Dot) {
+                if let Token::Identifier(property) = self.advance() {
+                    expr = Expr::Member {
+                        object: Box::new(expr),
+                        property,
+                    };
+                } else {
+                    return Err(ParseError {
+                        message: "Expected property name after '.'".to_string(),
+                    });
+                }
             } else {
                 break;
             }

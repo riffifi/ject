@@ -1,0 +1,11 @@
+# Example of selective imports - importing specific functions/values
+
+import {RED, GREEN, colorize, rainbow} from "colors"
+import {roll_dice, coin_flip} from "game_utils"
+
+print colorize("Hello World!", RED)
+print colorize("Success!", GREEN)
+print rainbow("Rainbow text!")
+
+print "Rolling a 6-sided die: " + roll_dice(6)
+print "Coin flip result: " + coin_flip()

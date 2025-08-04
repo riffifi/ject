@@ -18,6 +18,7 @@ pub enum Value {
         params: Vec<String>,
         body: crate::ast::LambdaBody,
     },
+    ModuleObject(std::collections::HashMap<String, Value>),
     BuiltinFunction(String),
 }
 
@@ -53,6 +54,14 @@ impl fmt::Display for Value {
                 }
                 write!(f, ")")
             }
+            Value::ModuleObject(exports) => {
+                write!(f, "module {{ ")?;
+                for (i, (name, _)) in exports.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", name)?;
+                }
+                write!(f, " }}")
+            }
             Value::BuiltinFunction(name) => write!(f, "<builtin: {}>", name)
         }
     }
@@ -81,6 +90,7 @@ impl Value {
             Value::Array(_) => "array",
             Value::Function { .. } => "function",
             Value::Lambda { .. } => "lambda",
+            Value::ModuleObject(_) => "module",
             Value::BuiltinFunction(_) => "builtin",
         }
     }

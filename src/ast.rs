@@ -28,6 +28,10 @@ pub enum Expr {
         object: Box<Expr>,
         index: Box<Expr>,
     },
+    Member {
+        object: Box<Expr>,
+        property: String,
+    },
     Range {
         start: Box<Expr>,
         end: Box<Expr>,
@@ -114,6 +118,11 @@ pub enum Stmt {
         name: String,
         value: Expr,
     },
+    ExportFunction {
+        name: String,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
     Return(Option<Expr>),
     Print(Expr),
 }
@@ -161,6 +170,9 @@ impl fmt::Display for Expr {
             }
             Expr::Index { object, index } => {
                 write!(f, "{}[{}]", object, index)
+            }
+            Expr::Member { object, property } => {
+                write!(f, "{}.{}", object, property)
             }
             Expr::Range { start, end, step } => {
                 match step {
@@ -249,6 +261,14 @@ impl fmt::Display for Stmt {
                 Ok(())
             }
             Stmt::Export { name, value } => write!(f, "export {} = {}", name, value),
+            Stmt::ExportFunction { name, params, .. } => {
+                write!(f, "export fn {}(", name)?;
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", param)?;
+                }
+                write!(f, ")")
+            }
             Stmt::Return(Some(expr)) => write!(f, "return {}", expr),
             Stmt::Return(None) => write!(f, "return"),
             Stmt::Print(expr) => write!(f, "print {}", expr),

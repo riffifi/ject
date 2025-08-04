@@ -1,0 +1,139 @@
+# ASCII Art generator module
+
+fn draw_box(width, height, char)
+    let result = ""
+    let i = 0
+    while i < height
+        let j = 0
+        while j < width
+            result = result + char
+            j = j + 1
+        end
+        result = result + "\n"
+        i = i + 1
+    end
+    return result
+end
+
+fn draw_border(width, height)
+    let result = ""
+    let i = 0
+    while i < height
+        let j = 0
+        while j < width
+            if i == 0 or i == height - 1 or j == 0 or j == width - 1
+                result = result + "*"
+            else
+                result = result + " "
+            end
+            j = j + 1
+        end
+        result = result + "\n"
+        i = i + 1
+    end
+    return result
+end
+
+fn draw_triangle(size)
+    let result = ""
+    let i = 0
+    while i < size
+        let spaces = size - i - 1
+        let j = 0
+        while j < spaces
+            result = result + " "
+            j = j + 1
+        end
+        
+        let stars = 2 * i + 1
+        j = 0
+        while j < stars
+            result = result + "*"
+            j = j + 1
+        end
+        
+        result = result + "\n"
+        i = i + 1
+    end
+    return result
+end
+
+fn draw_diamond(size)
+    let result = ""
+    
+    # Top half
+    let i = 0
+    while i < size
+        let spaces = size - i - 1
+        let j = 0
+        while j < spaces
+            result = result + " "
+            j = j + 1
+        end
+        
+        let stars = 2 * i + 1
+        j = 0
+        while j < stars
+            result = result + "*"
+            j = j + 1
+        end
+        
+        result = result + "\n"
+        i = i + 1
+    end
+    
+    # Bottom half
+    i = size - 2
+    while i >= 0
+        let spaces = size - i - 1
+        let j = 0
+        while j < spaces
+            result = result + " "
+            j = j + 1
+        end
+        
+        let stars = 2 * i + 1
+        j = 0
+        while j < stars
+            result = result + "*"
+            j = j + 1
+        end
+        
+        result = result + "\n"
+        i = i - 1
+    end
+    
+    return result
+end
+
+fn banner(text)
+    let width = len(text) + 4
+    let result = ""
+    
+    # Top border
+    let i = 0
+    while i < width
+        result = result + "="
+        i = i + 1
+    end
+    result = result + "\n"
+    
+    # Text line
+    result = result + "| " + text + " |\n"
+    
+    # Bottom border
+    i = 0
+    while i < width
+        result = result + "="
+        i = i + 1
+    end
+    result = result + "\n"
+    
+    return result
+end
+
+export draw_box = draw_box
+export draw_border = draw_border
+export draw_triangle = draw_triangle
+export draw_diamond = draw_diamond
+export banner = banner

@@ -1,23 +1,8 @@
-# 🎨 Ject - The Elegant Scripting Language
+# Ject
 
-**Ject** is a beautifully simple, Crystal-inspired scripting language designed for rapid development and elegant code. Built in Rust for maximum performance, Ject combines the simplicity you love about Python with the speed and elegance of modern language design.
+**Ject** is a scripting/programming language. Currently my 'pet' project so to speak. I'm trying my best
 
-## ✨ Features
-
-- **End-based syntax** - Clean, readable blocks with `end` keywords
-- **Native elseif keyword** - Elegant conditional chains without nested mess
-- **Rich standard library** - Math, arrays, strings, and utility functions built-in
-- **Dynamic typing** - Write code fast without type annotations
-- **First-class functions** - Functions are values, pass them around freely
-- **Lambda expressions** - Anonymous functions with beautiful `lambda(x) -> x * 2` syntax
-- **Beautiful arrays** - `[1, 2, 3]` syntax with powerful built-in operations
-- **Elegant range syntax** - Python-inspired `start..end:step` notation for clean iteration
-- **Intuitive control flow** - `if/elseif/else`, `while`, `for` loops that read like English
-- **Lightning fast** - Built in Rust for optimal performance
-- **Enhanced REPL** - Arrow key navigation, command history, and line editing
-- **Zero dependencies** - Single binary, install anywhere
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -56,24 +41,34 @@ end
 
 print "Sum: " + sum  # Sum: 15
 ```
+NOTICE that unlike Python or C-Based languages, Ject has Ruby or Crystal-like syntax that relies on end-based blocks instead of indentation or brackets!
 
-## 📖 Language Guide
+## Language Guide
 
 ### Variables
 
 Variables in Ject are declared with `let` and are dynamically typed:
 
 ```ject
+# You declare them with 'let'
+
 let name = "Alice"
 let age = 30
 let height = 5.8
 let is_student = false
 let empty = nil
+
+# But after that you can rewrite them without using the 'let' keyword
+name = "Walter White"
+age = 50
+height = 5.11
+is_student = false
+empty = "not so empty anymore!"
 ```
 
 ### Functions
 
-Functions are first-class citizens in Ject:
+Functions are first-class citizens in Ject (that means they can be treated like any other value):
 
 ```ject
 # Simple function
@@ -137,14 +132,20 @@ operation = lambda(x) -> x * x
 print operation(5)  # 25
 ```
 
+However, for more complex lambdas you would have to use a slightly different syntax
+```ject
+let test = lambda(x) -> {
+    for i in 0..x do print "test" end
+}
+test(5)
+```
+
 ### Control Flow
 
-Ject provides intuitive control flow constructs with elegant elseif support:
-
 ```ject
-# Native elseif keyword - clean and readable!
 let score = 85
 
+# You can use either elseif
 if score >= 95
     print "A+ Excellent!"
 elseif score >= 90
@@ -157,7 +158,7 @@ else
     print "Keep trying!"
 end
 
-# Traditional else if still works too
+# OR, if you prefer spaces more, else if, no judgement!
 if temperature < 0
     print "Freezing!"
 else if temperature < 30
@@ -173,12 +174,12 @@ while counter < 5 do
     counter = counter + 1
 end
 
-# For loops with range function (traditional)
+# For loops with range function (python-like)
 for i in range(1, 6) do
     print "Number: " + i
 end
 
-# Beautiful range syntax (new!)
+# Or more Rust-like start..stop with addition of step -- start..stop:step
 for i in 1..6 do
     print "Number: " + i
 end
@@ -197,8 +198,6 @@ end
 
 ### Range Syntax
 
-Ject features beautiful Python-inspired range syntax with an elegant colon notation for steps:
-
 ```ject
 # Basic ranges
 let numbers = 1..5        # [1, 2, 3, 4]
@@ -213,7 +212,7 @@ let fives = 0..20:5       # [0, 5, 10, 15]
 let countdown = 10..0:-1  # [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
 let down_by_twos = 10..0:-2  # [10, 8, 6, 4, 2]
 
-# Perfect for loops
+# Perfect for loops, btw, you have my word for it
 for i in 1..6 do
     print "Count: " + i
 end
@@ -224,7 +223,7 @@ end
 
 # Compare with traditional range() function
 print range(1, 6)    # [1, 2, 3, 4, 5]
-print 1..6           # [1, 2, 3, 4, 5] - same result, cleaner syntax!
+print 1..6           # [1, 2, 3, 4, 5] - same result, but looks doper and faster to write!!!
 ```
 
 ### Arrays
@@ -271,9 +270,27 @@ let or_result = true or false    # true
 let not_result = !true           # false
 ```
 
+### Module System
+
+Ject supports a clean module system with import/export functionality:
+
+```ject
+# Selective imports - import specific functions/values
+import {RED, GREEN, colorize} from "colors"
+print colorize("Hello!", RED)
+
+# Module aliases - import whole modules with custom names
+import "ascii_art" as art
+print art.banner("Welcome!")
+
+# Full imports - import all exports directly
+import "game_utils"
+let dice_roll = roll_dice(6)
+```
+
 ### Standard Library
 
-Ject comes with a rich standard library for common tasks:
+Ject comes with a standart library (does not require import, UNLIKE SOME LANGUAGES. I'M LOOKING AT YOU C++):
 
 ```ject
 # Mathematical functions
@@ -310,7 +327,7 @@ print "PI = " + PI            # 3.141592653589793
 print "E = " + E              # 2.718281828459045
 ```
 
-## 🥇 Why Choose Ject Over Python?
+## Why Choose Ject Over Python?
 
 Ject improves upon Python's design with several key advantages:
 
@@ -373,19 +390,17 @@ result = math.sqrt(math.pow(abs(-16), 2))
 angle = math.sin(math.pi / 4)
 ```
 
-## 🎯 Design Philosophy
+## Design Philosophy
 
 Ject was designed with these principles in mind:
 
-1. **Simplicity First** - If it's not simple, it doesn't belong
-2. **Readable Code** - Code should read like natural language
-3. **Fast Development** - Get things done quickly without ceremony
-4. **Performance Matters** - Built in Rust for speed where it counts
-5. **Beautiful Syntax** - Code should be a joy to write and read
+1. **Simplicity First** - If it ain't simple -- fuck right off, it does not belong here
+2. **Readable Code** - Code should read easily, maybe not like natural English, but at least to some extent
+3. **Fast Development** - Get things done, no bullshit, in-out
+4. **Performance Matters** - Built in Rust, so yeah, no sluggishness there
+5. **Enjoyable Syntax** - Code you will enjoy writing and reading
 
-## 🏗️ Architecture
-
-Ject is built with a clean, modular architecture:
+## Architecture
 
 - **Lexer** - Tokenizes source code with Unicode support
 - **Parser** - Recursive descent parser building a clean AST
@@ -393,17 +408,7 @@ Ject is built with a clean, modular architecture:
 - **Value System** - Dynamic typing with efficient representations
 - **Environment** - Lexical scoping with nested environments
 
-## 🤝 Contributing
-
-Ject is built with love and we welcome contributions! Here are some ways you can help:
-
-- 🐛 Report bugs and issues
-- 💡 Suggest new features
-- 📝 Improve documentation
-- 🔧 Submit pull requests
-- ⭐ Star the repository
-
-## 📈 Roadmap
+## Roadmap
 
 - [x] **Native elseif keyword** - Clean conditional chains ✅
 - [x] **Rich standard library** - Math, arrays, strings, utilities ✅
@@ -411,27 +416,23 @@ Ject is built with love and we welcome contributions! Here are some ways you can
 - [x] **Beautiful range syntax** - Python-inspired `start..end:step` notation ✅
 - [x] **Enhanced REPL** - Arrow key navigation, command history, and line editing ✅
 - [x] **Lambda functions** - Anonymous function expressions ✅
-- [ ] **Module system** - Import/export functionality
+- [x] **Module system** - Import/export functionality ✅
 - [ ] **Extended standard library** - File I/O, HTTP, JSON, etc.
 - [ ] **Package manager** - Easy dependency management
 - [ ] **Advanced REPL features** - Syntax highlighting, autocomplete, better error messages
 - [ ] **Compiled mode** - Optional compilation for production use
 - [ ] **VSCode extension** - Syntax highlighting and language support
 
-## 📄 License
-
-Ject is released under the MIT License. See [LICENSE](LICENSE) for details.
-
-## 🙏 Inspiration
+## Inspiration
 
 Ject draws inspiration from:
-- **Crystal** - For its beautiful syntax and performance focus
-- **Ruby** - For its expressiveness and developer happiness
-- **Python** - For its simplicity and readability
-- **Rust** - For its safety and performance guarantees
+- **Crystal** - Beautiful, just fricking awesome syntax and their performance focus
+- **Ruby** - For its expressiveness (almost as Crystal)
+- **Python** - Readable and user(mostly)-friendly
+- **Rust** - For its safety and performance
 
 ---
 
-**Made with ❤️ for developers who believe code should be beautiful**
+**Made with sweat, bad sleeping schedule, and <3**
 
-*Start your Ject journey today - where elegance meets performance!*
+*Hope you enjoy it!!!*

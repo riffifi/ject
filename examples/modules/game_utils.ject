@@ -1,0 +1,77 @@
+# Game utilities module
+
+# Card suits and ranks
+let SUITS = ["Hearts", "Diamonds", "Clubs", "Spades"]
+let RANKS = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"]
+
+fn roll_dice(sides)
+    return 1 + (random() * sides)
+end
+
+fn roll_multiple_dice(count, sides)
+    let results = []
+    let i = 0
+    while i < count
+        results = results + [roll_dice(sides)]
+        i = i + 1
+    end
+    return results
+end
+
+fn create_deck()
+    let deck = []
+    for suit in SUITS
+        for rank in RANKS
+            deck = deck + [rank + " of " + suit]
+        end
+    end
+    return deck
+end
+
+fn shuffle_deck(deck)
+    let shuffled = []
+    let remaining = deck
+    while len(remaining) > 0
+        let index = random() * len(remaining)
+        let card = remaining[index]
+        shuffled = shuffled + [card]
+        # Remove the selected card (simple approach)
+        let new_remaining = []
+        let i = 0
+        while i < len(remaining)
+            if i != index
+                new_remaining = new_remaining + [remaining[i]]
+            end
+            i = i + 1
+        end
+        remaining = new_remaining
+    end
+    return shuffled
+end
+
+fn coin_flip()
+    if random() < 0.5
+        return "Heads"
+    else
+        return "Tails"
+    end
+end
+
+fn generate_name()
+    let first_names = ["Alex", "Blake", "Casey", "Drew", "Echo", "Finn", "Gray", "Harper"]
+    let last_names = ["Stone", "River", "Moon", "Star", "Wind", "Fire", "Storm", "Dawn"]
+    
+    let first_index = random() * len(first_names)
+    let last_index = random() * len(last_names)
+    
+    return first_names[first_index] + " " + last_names[last_index]
+end
+
+export roll_dice = roll_dice
+export roll_multiple_dice = roll_multiple_dice
+export create_deck = create_deck
+export shuffle_deck = shuffle_deck
+export coin_flip = coin_flip
+export generate_name = generate_name
+export SUITS = SUITS
+export RANKS = RANKS

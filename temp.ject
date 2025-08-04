@@ -24,3 +24,17 @@ test(5)
 
 test = lambda(x) -> x * x
 print test(10)
+
+fn some(name, type)
+    if type == "upper" then
+        return "hello, ${upper(name)}"
+    elseif type == "lower" then
+        return "hello, ${lower(name)}"
+    elseif type == nil
+        return "hello, $name"
+    else
+        return "Not an option"
+    end
+end
+
+print some("yes", "upper")

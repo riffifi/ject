@@ -1,0 +1,15 @@
+export fn say_my_name()
+    let ep = "Евгений Повязанный"
+    let ls = "Лев Соколов"
+    return "Say my name.\nYou're " + ep + ".\nYou're goddamn right.\nNow say his name.\nYou're " + ls + ".\nYou're goddamn right."
+end
+
+export fn the_one_who_knocks()
+    return "I am not in danger. I AM the danger!\nA guy opens his door and gets shot, and you think that of me?\nNo... I am the one who knocks!"
+end
+
+export fn business_partners()
+    let ep = "Евгений Повязанный"
+    let ls = "Лев Соколов"
+    return ep + ": We're partners.\n" + ls + ": Partners? You mean like... business partners?\n" + ep + ": That's right. We're in the empire business."
+end

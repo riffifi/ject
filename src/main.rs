@@ -32,17 +32,16 @@ fn run_file(filename: &str) {
             execute_source(&source, &mut interpreter);
         }
         Err(error) => {
-            eprintln!("❌ Error reading file '{}': {}", filename, error);
+            eprintln!("Error reading file '{}': {}", filename, error);
             std::process::exit(1);
         }
     }
 }
 
 fn run_repl() {
-    println!("🎨 Welcome to Ject - The Elegant Scripting Language");
-    println!("Type 'exit' to quit, or start writing beautiful code!");
-    println!("💡 Tip: You can also run files with 'ject filename.ject'");
-    println!("🏹 Use arrow keys to navigate and access command history!\n");
+    println!("Ject REPL - v0.1.0");
+    println!("Use arrow keys to access history");
+    println!("'exit' to, well, exit\n");
     
     let mut interpreter = Interpreter::new();
     let mut rl = DefaultEditor::new().expect("Failed to create readline editor");
@@ -55,7 +54,7 @@ fn run_repl() {
             Ok(line) => {
                 let input = line.trim();
                 if input == "exit" {
-                    println!("✨ Thanks for using Ject! Have a beautiful day!");
+                    println!("Goodbye!");
                     break;
                 }
                 if !input.is_empty() {
@@ -72,7 +71,7 @@ fn run_repl() {
                 break;
             }
             Err(err) => {
-                println!("❌ Error: {:?}", err);
+                println!("Error: {:?}", err);
                 break;
             }
         }
@@ -90,9 +89,9 @@ fn execute_source(source: &str, interpreter: &mut Interpreter) {
         Ok(statements) => {
             match interpreter.interpret(&statements) {
                 Ok(_) => {}
-                Err(error) => println!("❌ Runtime Error: {}", error),
+                Err(error) => println!("Runtime Error: {}", error),
             }
         }
-        Err(error) => println!("❌ Parse Error: {}", error),
+        Err(error) => println!("Parse Error: {}", error),
     }
 }

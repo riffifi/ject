@@ -2,6 +2,9 @@ use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
 use crate::lexer::InterpolationPart;
 use crate::value::{Value, Environment};
 use std::fmt;
+use std::fs;
+use std::path::Path;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct RuntimeError {
@@ -150,15 +153,21 @@ impl Interpreter {
                 Ok(ControlFlow::Return(value))
             }
             Stmt::Import { module_path, items, alias } => {
-                // For now, just return Ok - we'll implement actual module loading later
-                println!("Import statement: module_path={}, items={:?}, alias={:?}", module_path, items, alias);
+                self.load_module(module_path, items, alias)?;
                 Ok(ControlFlow::None)
             }
             Stmt::Export { name, value } => {
                 // For now, just evaluate and store the value like a let statement
                 let val = self.evaluate_expression(value)?;
                 self.environment.define(name.clone(), val);
-                println!("Export statement: name={}", name);
+                Ok(ControlFlow::None)
+            }
+            Stmt::ExportFunction { name, params, body } => {
+                let func = Value::Function {
+                    params: params.clone(),
+                    body: body.clone(),
+                };
+                self.environment.define(name.clone(), func);
                 Ok(ControlFlow::None)
             }
             Stmt::Print(expr) => {
@@ -279,6 +288,20 @@ impl Interpreter {
                     params: params.clone(),
                     body: body.clone(),
                 })
+            }
+            Expr::Member { object, property } => {
+                let obj = self.evaluate_expression(object)?;
+                
+                match obj {
+                    Value::ModuleObject(exports) => {
+                        exports.get(property).cloned().ok_or_else(|| RuntimeError {
+                            message: format!("Property '{}' not found in module", property),
+                        })
+                    }
+                    _ => Err(RuntimeError {
+                        message: format!("Cannot access property '{}' on {}", property, obj.type_name()),
+                    })
+                }
             }
             Expr::Range { start, end, step } => {
                 let start_val = self.evaluate_expression(start)?;
@@ -449,6 +472,103 @@ impl Interpreter {
                 message: format!("Unsupported unary operation: {} {}", op, operand.type_name()),
             }),
         }
+    }
+    
+    fn load_module(&mut self, module_path: &str, items: &Option<Vec<String>>, alias: &Option<String>) -> RuntimeResult<()> {
+        // Look for module in examples/modules/ directory for now
+        let module_file_path = format!("examples/modules/{}.ject", module_path);
+        
+        if !Path::new(&module_file_path).exists() {
+            return Err(RuntimeError {
+                message: format!("Module '{}' not found at {}", module_path, module_file_path),
+            });
+        }
+        
+        // Read and parse the module file
+        let module_content = fs::read_to_string(&module_file_path)
+            .map_err(|e| RuntimeError {
+                message: format!("Failed to read module '{}': {}", module_path, e),
+            })?;
+            
+        let mut lexer = crate::lexer::Lexer::new(&module_content);
+        let tokens = lexer.tokenize();
+        let mut parser = crate::parser::Parser::new(tokens);
+        let statements = parser.parse().map_err(|e| RuntimeError {
+            message: format!("Parse error in module '{}': {}", module_path, e),
+        })?;
+        
+        // Create a new environment for the module
+        let mut module_env = Environment::new();
+        
+        // Load standard library into module environment 
+        let stdlib = crate::stdlib::create_stdlib();
+        for (name, value) in stdlib {
+            module_env.define(name, value);
+        }
+        
+        // Save current environment and switch to module environment
+        let saved_env = std::mem::replace(&mut self.environment, module_env);
+        
+        // Execute the module
+        let mut exports = HashMap::new();
+        for statement in &statements {
+            match statement {
+                Stmt::Export { name, value } => {
+                    let val = self.evaluate_expression(value)?;
+                    exports.insert(name.clone(), val.clone());
+                    self.environment.define(name.clone(), val);
+                }
+                Stmt::ExportFunction { name, params, body } => {
+                    let func = Value::Function {
+                        params: params.clone(),
+                        body: body.clone(),
+                    };
+                    exports.insert(name.clone(), func.clone());
+                    self.environment.define(name.clone(), func);
+                }
+                _ => {
+                    self.execute_statement(statement)?;
+                }
+            }
+        }
+        
+        // Restore original environment
+        self.environment = saved_env;
+        
+        // Import the exported values based on import type
+        match (items, alias) {
+            (Some(item_list), None) => {
+                // import {item1, item2} from "module"
+                for item_name in item_list {
+                    if let Some(value) = exports.get(item_name) {
+                        self.environment.define(item_name.clone(), value.clone());
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!("Module '{}' does not export '{}'", module_path, item_name),
+                        });
+                    }
+                }
+            }
+            (None, Some(alias_name)) => {
+                // import "module" as alias
+                // Create a module object with all exports
+                let module_obj = Value::ModuleObject(exports);
+                self.environment.define(alias_name.clone(), module_obj);
+            }
+            (None, None) => {
+                // import "module" - import all exports directly
+                for (name, value) in exports {
+                    self.environment.define(name, value);
+                }
+            }
+            (Some(_), Some(_)) => {
+                return Err(RuntimeError {
+                    message: "Cannot use both specific imports and alias in the same import statement".to_string(),
+                });
+            }
+        }
+        
+        Ok(())
     }
     
     fn call_function(&mut self, func: Value, args: Vec<Value>) -> RuntimeResult<Value> {

@@ -1,0 +1,9 @@
+let a = 2
+
+if a < 1 then
+    print "we're done"
+else if a > 1 then
+    print "we're good"
+else if a == 0 then
+    print "fuck"
+end

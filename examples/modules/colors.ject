@@ -1,0 +1,59 @@
+# ANSI Colors module for terminal output
+
+# ANSI color codes
+let RESET = "\u001b[0m"
+let BOLD = "\u001b[1m"
+let DIM = "\u001b[2m"
+let UNDERLINE = "\u001b[4m"
+
+# Foreground colors
+let BLACK = "\u001b[30m"
+let RED = "\u001b[31m"
+let GREEN = "\u001b[32m"
+let YELLOW = "\u001b[33m"
+let BLUE = "\u001b[34m"
+let MAGENTA = "\u001b[35m"
+let CYAN = "\u001b[36m"
+let WHITE = "\u001b[37m"
+
+# Background colors
+let BG_BLACK = "\u001b[40m"
+let BG_RED = "\u001b[41m"
+let BG_GREEN = "\u001b[42m"
+let BG_YELLOW = "\u001b[43m"
+let BG_BLUE = "\u001b[44m"
+let BG_MAGENTA = "\u001b[45m"
+let BG_CYAN = "\u001b[46m"
+let BG_WHITE = "\u001b[47m"
+
+fn colorize(text, color)
+    return color + text + RESET
+end
+
+fn bold(text)
+    return BOLD + text + RESET
+end
+
+fn rainbow(text)
+    let colors = [RED, YELLOW, GREEN, CYAN, BLUE, MAGENTA]
+    let result = ""
+    let i = 0
+    while i < len(text)
+        let char = text[i..i+1]
+        let color_index = i % len(colors)
+        result = result + colors[color_index] + char
+        i = i + 1
+    end
+    return result + RESET
+end
+
+export RESET = RESET
+export RED = RED
+export GREEN = GREEN
+export BLUE = BLUE
+export YELLOW = YELLOW
+export CYAN = CYAN
+export MAGENTA = MAGENTA
+export colorize = colorize
+export bold = bold
+export rainbow = rainbow

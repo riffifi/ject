@@ -1,0 +1,11 @@
+# Example of full imports - importing all exports directly
+
+import "ascii_art"
+
+print banner("ASCII Art Demo")
+print draw_diamond(4)
+print draw_border(10, 5)
+
+# Create a simple game board
+print "Game Board:"
+print draw_box(8, 8, ".")

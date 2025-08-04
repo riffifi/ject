@@ -1,10 +1,10 @@
-# Welcome to Ject - Simple and Elegant!
+# Welcome to Ject, mate!
 
 let name = "World"
 let age = 25
 let score = 95.5
 
-# Beautiful function definition
+# Functions
 fn greet(name, age)
     print "Hello, " + name + "!"
     print "You are " + age + " years old."
@@ -23,7 +23,7 @@ greet(name, age)
 let numbers = [1, 2, 3, 4, 5]
 let sum = 0
 
-# Elegant loops
+# Loops
 for num in numbers do
     sum = sum + num
 end

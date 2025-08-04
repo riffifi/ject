@@ -1,0 +1,18 @@
+# Example of module aliases - importing whole modules with custom names
+
+import "colors" as c
+import "ascii_art" as art
+import "game_utils" as game
+
+print c.colorize("Colored text using alias!", c.BLUE)
+print c.bold("Bold text!")
+
+print art.banner("Welcome to Ject!")
+print art.draw_triangle(5)
+
+let deck = game.create_deck()
+print "Created deck with " + len(deck) + " cards"
+print "First card: " + deck[0]
+
+let dice_roll = game.roll_multiple_dice(3, 6)
+print "Rolled 3 dice: " + dice_roll

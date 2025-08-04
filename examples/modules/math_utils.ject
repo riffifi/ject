@@ -1,0 +1,27 @@
+# Math utilities module
+export pi = 3.14159
+export e = 2.71828
+
+export fn circle_area(radius)
+    return pi * radius * radius
+end
+
+export fn factorial(n)
+    if n <= 1 then
+        return 1
+    else
+        return n * factorial(n - 1)
+    end
+end
+
+export fn fibonacci(n)
+    if n <= 1 then
+        return n
+    else
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    end
+end
+
+export fn square(x)
+    return x * x
+end

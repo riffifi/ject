@@ -1,0 +1,12 @@
+# Simple test module
+
+let message = "Hello from module!"
+let number = 42
+
+fn greet(name)
+    return "Hello, " + name + "!"
+end
+
+export message = message
+export number = number 
+export greet = greet
