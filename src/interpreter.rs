@@ -205,7 +205,7 @@ impl Interpreter {
                             let mut lexer = crate::lexer::Lexer::new(expr_str);
                             let located_tokens = lexer.tokenize_with_positions();
                             let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
-                            let mut parser = crate::parser::Parser::new(tokens);
+let mut parser = crate::parser::Parser::new_simple(tokens);
                             
                             match parser.parse() {
                                 Ok(statements) => {
@@ -569,7 +569,7 @@ impl Interpreter {
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
         let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
-        let mut parser = crate::parser::Parser::new(tokens);
+let mut parser = crate::parser::Parser::new_simple(tokens);
         let statements = parser.parse().map_err(|e| RuntimeError {
             message: format!("Parse error in module '{}': {}", module_path, e),
         })?;

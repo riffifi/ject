@@ -15,14 +15,29 @@ struct FunctionSignature {
     parameters: Vec<Parameter>,
 }
 
+#[derive(Debug, Clone)]
+struct LintError {
+    message: String,
+    position: Option<crate::lexer::SourcePosition>,
+}
+
+#[derive(Debug, Clone)]
+struct LintWarning {
+    message: String,
+    position: Option<crate::lexer::SourcePosition>,
+}
+
 pub struct Linter {
     scopes: Vec<HashMap<String, Variable>>, // Stack of scopes with variable info
-    warnings: Vec<String>,
-    errors: Vec<String>,
+    warnings: Vec<LintWarning>,
+    errors: Vec<LintError>,
     current_scope_id: usize,
     functions: HashSet<String>,
     function_signatures: HashMap<String, FunctionSignature>, // Track function signatures
     in_function: bool,
+    // Store positioned tokens to find locations of identifiers
+    positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
+    source: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +50,7 @@ enum ScopeKind {
 
 impl Linter {
     pub fn new() -> Self {
-        Linter {
+        let mut linter = Linter {
             scopes: vec![HashMap::new()], // Global scope
             warnings: Vec::new(),
             errors: Vec::new(),
@@ -43,7 +58,68 @@ impl Linter {
             functions: HashSet::new(),
             function_signatures: HashMap::new(),
             in_function: false,
-        }
+            positioned_tokens: Vec::new(),
+            source: String::new(),
+        };
+        
+        // Add built-in functions to the functions set
+        linter.add_builtin_functions();
+        linter
+    }
+    
+    fn add_builtin_functions(&mut self) {
+        // Mathematical functions
+        self.functions.insert("abs".to_string());
+        self.functions.insert("sqrt".to_string());
+        self.functions.insert("pow".to_string());
+        self.functions.insert("sin".to_string());
+        self.functions.insert("cos".to_string());
+        self.functions.insert("tan".to_string());
+        self.functions.insert("floor".to_string());
+        self.functions.insert("ceil".to_string());
+        self.functions.insert("round".to_string());
+        self.functions.insert("min".to_string());
+        self.functions.insert("max".to_string());
+        
+        // Array functions
+        self.functions.insert("len".to_string());
+        self.functions.insert("push".to_string());
+        self.functions.insert("pop".to_string());
+        self.functions.insert("map".to_string());
+        self.functions.insert("filter".to_string());
+        self.functions.insert("reduce".to_string());
+        self.functions.insert("sum".to_string());
+        
+        // String functions
+        self.functions.insert("upper".to_string());
+        self.functions.insert("lower".to_string());
+        self.functions.insert("trim".to_string());
+        self.functions.insert("split".to_string());
+        self.functions.insert("join".to_string());
+        self.functions.insert("replace".to_string());
+        
+        // Utility functions
+        self.functions.insert("type_of".to_string());
+        self.functions.insert("range".to_string());
+        self.functions.insert("random".to_string());
+        
+        // File I/O functions
+        self.functions.insert("read_file".to_string());
+        self.functions.insert("write_file".to_string());
+        
+        // JSON functions
+        self.functions.insert("parse_json".to_string());
+        self.functions.insert("to_json".to_string());
+        
+        // String indexing/slicing functions
+        self.functions.insert("char_at".to_string());
+        self.functions.insert("substring".to_string());
+    }
+    
+    pub fn with_tokens_and_source(mut self, positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>, source: String) -> Self {
+        self.positioned_tokens = positioned_tokens;
+        self.source = source;
+        self
     }
 
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
@@ -52,7 +128,11 @@ impl Linter {
         self.warnings.clear();
         self.errors.clear();
         self.current_scope_id = 0;
+        
+        // Re-add built-in functions (don't clear them)
         self.functions.clear();
+        self.add_builtin_functions();
+        
         self.function_signatures.clear();
         self.in_function = false;
 
@@ -65,7 +145,10 @@ impl Linter {
         for scope in &self.scopes {
             for var in scope.values() {
                 if !var.used && !var.name.starts_with('_') {
-                    self.warnings.push(format!("unused variable `{}`", var.name));
+                    self.warnings.push(LintWarning {
+                        message: format!("unused variable `{}`", var.name),
+                        position: None, // TODO: We could track declaration positions
+                    });
                 }
             }
         }
@@ -76,11 +159,19 @@ impl Linter {
         
         for error in &self.errors {
             has_errors = true;
-            diagnostics.push(Diagnostic::error(error.clone()).with_code("E0001".to_string()));
+            let mut diagnostic = Diagnostic::error(error.message.clone()).with_code("E0001".to_string());
+            if let Some(pos) = &error.position {
+                diagnostic = diagnostic.with_location(pos.line, pos.column);
+            }
+            diagnostics.push(diagnostic);
         }
         
         for warning in &self.warnings {
-            diagnostics.push(Diagnostic::warning(warning.clone()).with_code("W0001".to_string()));
+            let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W0001".to_string());
+            if let Some(pos) = &warning.position {
+                diagnostic = diagnostic.with_location(pos.line, pos.column);
+            }
+            diagnostics.push(diagnostic);
         }
         
         (diagnostics, has_errors)
@@ -93,6 +184,17 @@ impl Linter {
 
     fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
+            // Before popping, check for unused variables in this scope
+            if let Some(scope) = self.scopes.last() {
+                for var in scope.values() {
+                    if !var.used && !var.name.starts_with('_') {
+                        self.warnings.push(LintWarning {
+                            message: format!("unused variable `{}`", var.name),
+                            position: None, // TODO: We could track declaration positions
+                        });
+                    }
+                }
+            }
             self.scopes.pop();
         }
     }
@@ -100,7 +202,11 @@ impl Linter {
     fn declare_variable(&mut self, name: String) {
         if let Some(current_scope) = self.scopes.last_mut() {
             if current_scope.contains_key(&name) {
-                self.warnings.push(format!("warning: variable `{}` is already declared in this scope", name));
+                let position = self.find_identifier_position(&name);
+                self.warnings.push(LintWarning {
+                    message: format!("warning: variable `{}` is already declared in this scope", name),
+                    position,
+                });
             } else {
                 current_scope.insert(name.clone(), Variable {
                     name,
@@ -144,13 +250,21 @@ impl Linter {
                 self.analyze_expr(value);
                 // Check if variable exists
                 if !self.use_variable(name) {
-                    self.errors.push(format!("cannot assign to undeclared variable `{}`", name));
+                    let position = self.find_identifier_position(name);
+                    self.errors.push(LintError {
+                        message: format!("cannot assign to undeclared variable `{}`", name),
+                        position,
+                    });
                 }
             }
             Stmt::Function { name, params, body } => {
                 // Check for function redeclaration
                 if self.functions.contains(name) {
-                    self.warnings.push(format!("warning: function `{}` is already defined", name));
+                    let position = self.find_identifier_position(name);
+                    self.warnings.push(LintWarning {
+                        message: format!("warning: function `{}` is already defined", name),
+                        position,
+                    });
                 }
                 self.functions.insert(name.clone());
                 
@@ -160,8 +274,7 @@ impl Linter {
                     parameters: params.clone(),
                 });
                 
-                // Declare function in current scope
-                self.declare_variable(name.clone());
+                // Declare the function as a function, not as a variable
                 
                 // Create new scope for function
                 self.push_scope();
@@ -233,12 +346,18 @@ impl Linter {
             Stmt::Return(Some(expr)) => {
                 self.analyze_expr(expr);
                 if !self.in_function {
-                    self.errors.push("`return` outside of function".to_string());
+                    self.errors.push(LintError {
+                        message: "`return` outside of function".to_string(),
+                        position: None, // TODO: Could find 'return' keyword position
+                    });
                 }
             }
             Stmt::Return(None) => {
                 if !self.in_function {
-                    self.errors.push("`return` outside of function".to_string());
+                    self.errors.push(LintError {
+                        message: "`return` outside of function".to_string(),
+                        position: None, // TODO: Could find 'return' keyword position
+                    });
                 }
             }
             Stmt::Print(expr) => {
@@ -256,8 +375,13 @@ impl Linter {
     fn analyze_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Identifier(name) => {
-                if !self.use_variable(name) {
-                    self.errors.push(format!("use of undeclared variable `{}`", name));
+                // Check if it's a function first, then check if it's a variable
+                if !self.functions.contains(name) && !self.use_variable(name) {
+                    let position = self.find_identifier_position(name);
+                    self.errors.push(LintError {
+                        message: format!("use of undeclared variable `{}`", name),
+                        position,
+                    });
                 }
             }
             Expr::Binary { left, right, .. } => {
@@ -358,6 +482,18 @@ impl Linter {
         }
     }
     
+    // Helper method to find the position of an identifier in the positioned tokens
+    fn find_identifier_position(&self, identifier: &str) -> Option<crate::lexer::SourcePosition> {
+        for (token, position) in &self.positioned_tokens {
+            if let crate::lexer::Token::Identifier(name) = token {
+                if name == identifier {
+                    return Some(position.clone());
+                }
+            }
+        }
+        None
+    }
+    
     fn validate_function_call(&mut self, func_name: &str, args: &[Argument]) {
         if let Some(signature) = self.function_signatures.get(func_name).cloned() {
             // Simulate the argument resolution logic from the interpreter
@@ -369,7 +505,11 @@ impl Linter {
                 match arg {
                     Argument::Positional(_) => {
                         if positional_count >= signature.parameters.len() {
-                            self.errors.push(format!("too many arguments for function `{}`", func_name));
+                            let position = self.find_identifier_position(func_name);
+                            self.errors.push(LintError {
+                                message: format!("too many arguments for function `{}`", func_name),
+                                position,
+                            });
                             return;
                         }
                         resolved_args[positional_count] = true;
@@ -390,13 +530,21 @@ impl Linter {
                     match param_index {
                         Some(index) => {
                             if resolved_args[index] {
-                                self.errors.push(format!("argument `{}` specified multiple times in call to `{}`", name, func_name));
+                                let position = self.find_identifier_position(func_name);
+                                self.errors.push(LintError {
+                                    message: format!("argument `{}` specified multiple times in call to `{}`", name, func_name),
+                                    position,
+                                });
                                 return;
                             }
                             resolved_args[index] = true;
                         }
                         None => {
-                            self.errors.push(format!("unknown parameter `{}` for function `{}`", name, func_name));
+                            let position = self.find_identifier_position(func_name);
+                            self.errors.push(LintError {
+                                message: format!("unknown parameter `{}` for function `{}`", name, func_name),
+                                position,
+                            });
                             return;
                         }
                     }
@@ -406,7 +554,11 @@ impl Linter {
             // Third pass: check for missing required arguments
             for (i, param) in signature.parameters.iter().enumerate() {
                 if !resolved_args[i] && param.default_value.is_none() {
-                    self.errors.push(format!("missing required argument `{}` for function `{}`", param.name, func_name));
+                    let position = self.find_identifier_position(func_name);
+                    self.errors.push(LintError {
+                        message: format!("missing required argument `{}` for function `{}`", param.name, func_name),
+                        position,
+                    });
                 }
             }
         }

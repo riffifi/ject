@@ -88,13 +88,17 @@ fn run_repl() {
 fn execute_source(source: &str, interpreter: &mut Interpreter, filename: Option<String>) {
     let mut lexer = Lexer::new(source);
     let located_tokens = lexer.tokenize_with_positions();
-    let tokens: Vec<lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
-    let mut parser = Parser::new(tokens);
+    let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> = located_tokens.into_iter().map(|lt| (lt.token, lt.position)).collect();
+    
+    // Clone positioned tokens for linter before parser consumes them
+    let positioned_tokens_for_linter = positioned_tokens.clone();
+    let mut parser = Parser::new(positioned_tokens);
 
     match parser.parse() {
         Ok(statements) => {
             // Run linter to detect errors and warnings
-            let mut linter = linter::Linter::new();
+            let mut linter = linter::Linter::new()
+                .with_tokens_and_source(positioned_tokens_for_linter, source.to_string());
             let (diagnostics, has_errors) = linter.lint(&statements);
             
             // Create diagnostic renderer for beautiful output
@@ -123,8 +127,14 @@ fn execute_source(source: &str, interpreter: &mut Interpreter, filename: Option<
         Err(error) => {
             // Create diagnostic renderer for parse errors
             let renderer = DiagnosticRenderer::new();
-            let parse_diagnostic = crate::diagnostic::Diagnostic::error(error.message.clone())
+            let mut parse_diagnostic = crate::diagnostic::Diagnostic::error(error.message.clone())
                 .with_code("E0002".to_string());
+            
+            // Use position information if available
+            if let (Some(line), Some(column)) = (error.line, error.column) {
+                parse_diagnostic = parse_diagnostic.with_location(line, column);
+            }
+            
             renderer.render(&parse_diagnostic, filename.as_deref(), Some(source));
             
             if filename.is_some() {

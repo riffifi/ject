@@ -2,13 +2,15 @@ use crate::lexer::Token;
 use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
 
 pub struct Parser {
-    tokens: Vec<Token>,
+    tokens: Vec<(Token, crate::lexer::SourcePosition)>,
     current: usize,
 }
 
 #[derive(Debug)]
 pub struct ParseError {
     pub message: String,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
 }
 
 impl std::fmt::Display for ParseError {
@@ -22,8 +24,16 @@ impl std::error::Error for ParseError {}
 type ParseResult<T> = Result<T, ParseError>;
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<(Token, crate::lexer::SourcePosition)>) -> Self {
         Parser { tokens, current: 0 }
+    }
+    
+    pub fn new_simple(tokens: Vec<Token>) -> Self {
+        // Convert simple tokens to positioned tokens with default position
+        let positioned_tokens = tokens.into_iter().map(|token| {
+            (token, crate::lexer::SourcePosition::new(1, 1, 0))
+        }).collect();
+        Parser { tokens: positioned_tokens, current: 0 }
     }
     
     pub fn parse(&mut self) -> ParseResult<Vec<Stmt>> {
@@ -70,9 +80,7 @@ impl Parser {
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
-            return Err(ParseError {
-                message: "Expected identifier after 'let'".to_string(),
-            });
+            return Err(self.error("Expected identifier after 'let'".to_string()));
         };
         
         self.consume(Token::Equal, "Expected '=' after variable name")?;
@@ -87,9 +95,7 @@ impl Parser {
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
-            return Err(ParseError {
-                message: "Expected function name".to_string(),
-            });
+            return Err(self.error("Expected function name".to_string()));
         };
         
         self.consume(Token::LeftParen, "Expected '(' after function name")?;
@@ -110,9 +116,7 @@ impl Parser {
                         default_value,
                     });
                 } else {
-                    return Err(ParseError {
-                        message: "Expected parameter name".to_string(),
-                    });
+                    return Err(self.error("Expected parameter name".to_string()));
                 }
                 
                 if !self.match_token(&Token::Comma) {
@@ -209,9 +213,7 @@ impl Parser {
         if needs_end_token {
             // Check if we're at the end of file or encountered a token that shouldn't be here
             if self.is_at_end() {
-                return Err(ParseError {
-                    message: "Expected 'end' to close if statement but reached end of file".to_string(),
-                });
+                return Err(self.error("Expected 'end' to close if statement but reached end of file".to_string()));
             }
             
             // Provide a better error message based on what we found instead of 'end'
@@ -222,7 +224,7 @@ impl Parser {
                     Token::Identifier(_) => "Expected 'end' to close if statement, but found another statement. Did you forget an 'end'?".to_string(),
                     _ => parse_error.message,
                 };
-                return Err(ParseError { message: better_message });
+                return Err(self.error(better_message));
             }
         }
         
@@ -255,9 +257,7 @@ impl Parser {
         let var = if let Token::Identifier(name) = self.advance() {
             name
         } else {
-            return Err(ParseError {
-                message: "Expected variable name in for loop".to_string(),
-            });
+            return Err(self.error("Expected variable name in for loop".to_string()));
         };
         
         self.consume(Token::In, "Expected 'in' after for variable")?;
@@ -296,9 +296,7 @@ impl Parser {
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
-            return Err(ParseError {
-                message: "Expected identifier in assignment".to_string(),
-            });
+            return Err(self.error("Expected identifier in assignment".to_string()));
         };
         
         self.consume(Token::Equal, "Expected '=' in assignment")?;
@@ -319,9 +317,7 @@ impl Parser {
                     if let Token::Identifier(item) = self.advance() {
                         items.push(item);
                     } else {
-                        return Err(ParseError {
-                            message: "Expected identifier in import list".to_string(),
-                        });
+                return Err(self.error("Expected identifier in import list".to_string()));
                     }
                     
                     if !self.match_token(&Token::Comma) {
@@ -336,9 +332,7 @@ impl Parser {
             let module_path = if let Token::String(path) = self.advance() {
                 path
             } else {
-                return Err(ParseError {
-                    message: "Expected string after 'from'".to_string(),
-                });
+                return Err(self.error("Expected string after 'from'".to_string()));
             };
             
             (module_path, Some(items), None)
@@ -347,18 +341,14 @@ impl Parser {
             let module_path = if let Token::String(path) = self.advance() {
                 path
             } else {
-                return Err(ParseError {
-                    message: "Expected module path string after 'import'".to_string(),
-                });
+                return Err(self.error("Expected module path string after 'import'".to_string()));
             };
             
             let alias = if self.match_token(&Token::As) {
                 if let Token::Identifier(alias_name) = self.advance() {
                     Some(alias_name)
                 } else {
-                    return Err(ParseError {
-                        message: "Expected identifier after 'as'".to_string(),
-                    });
+                return Err(self.error("Expected identifier after 'as'".to_string()));
                 }
             } else {
                 None
@@ -378,9 +368,7 @@ impl Parser {
             let name = if let Token::Identifier(name) = self.advance() {
                 name
             } else {
-                return Err(ParseError {
-                    message: "Expected function name after 'export fn'".to_string(),
-                });
+                return Err(self.error("Expected function name after 'export fn'".to_string()));
             };
             
             self.consume(Token::LeftParen, "Expected '(' after function name")?;
@@ -401,9 +389,7 @@ impl Parser {
                             default_value,
                         });
                     } else {
-                        return Err(ParseError {
-                            message: "Expected parameter name".to_string(),
-                        });
+                        return Err(self.error("Expected parameter name".to_string()));
                     }
                     
                     if !self.match_token(&Token::Comma) {
@@ -426,9 +412,7 @@ impl Parser {
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
-            return Err(ParseError {
-                message: "Expected identifier after 'export'".to_string(),
-            });
+            return Err(self.error("Expected identifier after 'export'".to_string()));
         };
         
         self.consume(Token::Equal, "Expected '=' after export name")?;
@@ -467,35 +451,88 @@ impl Parser {
                 continue;
             }
             
+            // Before parsing the next statement, check for patterns that suggest missing 'end'
+            if self.is_likely_missing_end(&statements) {
+                return Err(self.error("Missing 'end' keyword for if statement".to_string()));
+            }
+            
             let stmt = self.statement()?;
             statements.push(stmt);
-            
-            // If we just parsed a return statement and the next token suggests we're outside
-            // the if block (like another return statement or function call), this suggests
-            // a missing 'end' token
-            if let Some(last_stmt) = statements.last() {
-                if matches!(last_stmt, crate::ast::Stmt::Return(_)) {
-                    // Skip newlines to peek at the next meaningful token
-                    let mut peek_pos = self.current;
-                    while peek_pos < self.tokens.len() && matches!(self.tokens[peek_pos], Token::Newline) {
-                        peek_pos += 1;
+        }
+        
+        Ok(statements)
+    }
+    
+    // Check if the current context suggests a missing 'end' keyword
+    fn is_likely_missing_end(&self, statements: &[Stmt]) -> bool {
+        // Only check if we've already parsed some statements in this block
+        if statements.is_empty() {
+            return false;
+        }
+        
+        // Check if the last statement was a return
+        let has_return = statements.iter().any(|stmt| matches!(stmt, crate::ast::Stmt::Return(_)));
+        
+        if has_return {
+            // Look at the current token - if it's something that typically appears at top level
+            // after an if block, it's likely we're missing an 'end'
+            match &self.peek() {
+                Token::Return => {
+                    // Multiple return statements at the same level suggest missing 'end'
+                    // Look ahead to see if this pattern continues
+                    self.is_consecutive_top_level_pattern()
+                }
+                Token::Print => {
+                    // Print statement after return in if block suggests missing 'end'
+                    true
+                }
+                Token::Fn => {
+                    // Function definition after if block suggests missing 'end'
+                    true
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+    
+    // Check if we see a pattern of consecutive top-level statements
+    fn is_consecutive_top_level_pattern(&self) -> bool {
+        let mut pos = self.current;
+        let mut return_count = 0;
+        let mut other_statements = 0;
+        
+        // Look ahead at the next few tokens to detect patterns
+        while pos < self.tokens.len() && return_count + other_statements < 3 {
+            match &self.tokens[pos].0 {
+                Token::Return => {
+                    return_count += 1;
+                    pos += 1;
+                    // Skip until we find the next statement or newline
+                    while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::Newline | Token::Return | Token::Print | Token::Fn | Token::End | Token::Eof) {
+                        pos += 1;
                     }
-                    
-                    if peek_pos < self.tokens.len() {
-                        match &self.tokens[peek_pos] {
-                            Token::Return | Token::Identifier(_) => {
-                                // This suggests we might have gone past the if block
-                                // Let's exit the loop and let if_statement handle the error
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
+                }
+                Token::Print | Token::Fn => {
+                    other_statements += 1;
+                    pos += 1;
+                }
+                Token::Newline => {
+                    pos += 1;
+                }
+                Token::End | Token::Eof => {
+                    break;
+                }
+                _ => {
+                    pos += 1;
                 }
             }
         }
         
-        Ok(statements)
+        // If we see multiple statements at what appears to be the top level,
+        // it's likely we're missing an 'end'
+        return_count >= 1 && (return_count + other_statements) >= 2
     }
     
     fn expression(&mut self) -> ParseResult<Expr> {
@@ -651,9 +688,7 @@ impl Parser {
                         property,
                     };
                 } else {
-                    return Err(ParseError {
-                        message: "Expected property name after '.'".to_string(),
-                    });
+                    return Err(self.error("Expected property name after '.'".to_string()));
                 }
             } else {
                 break;
@@ -750,9 +785,7 @@ impl Parser {
                             Token::Identifier(name) => name,
                             Token::String(s) => s,
                             _ => {
-                                return Err(ParseError {
-                                    message: "Expected string or identifier as dictionary key".to_string(),
-                                });
+                                return Err(self.error("Expected string or identifier as dictionary key".to_string()));
                             }
                         };
                         
@@ -769,9 +802,7 @@ impl Parser {
                 self.consume(Token::RightBrace, "Expected '}' after dictionary elements")?;
                 Ok(Expr::Dictionary(pairs))
             }
-            token => Err(ParseError {
-                message: format!("Unexpected token: {:?}", token),
-            }),
+            token => Err(self.error(format!("Unexpected token: {:?}", token))),
         }
     }
     
@@ -784,9 +815,7 @@ impl Parser {
                 if let Token::Identifier(name) = self.advance() {
                     params.push(name);
                 } else {
-                    return Err(ParseError {
-                        message: "Expected parameter name".to_string(),
-                    });
+                    return Err(self.error("Expected parameter name".to_string()));
                 }
                 if !self.match_token(&Token::Comma) {
                     break;
@@ -866,9 +895,7 @@ impl Parser {
                     Ok(crate::ast::Pattern::Identifier(name))
                 }
             }
-            token => Err(ParseError {
-                message: format!("Unexpected token in pattern: {:?}", token),
-            }),
+            token => Err(self.error(format!("Unexpected token in pattern: {:?}", token))),
         }
     }
     
@@ -959,24 +986,41 @@ impl Parser {
     }
     
     fn peek(&self) -> Token {
-        self.tokens[self.current].clone()
+        self.tokens[self.current].0.clone()
     }
     
     fn peek_ahead(&self, offset: usize) -> Option<Token> {
-        self.tokens.get(self.current + offset).cloned()
+        self.tokens.get(self.current + offset).map(|(token, _)| token.clone())
     }
     
     fn previous(&self) -> Token {
-        self.tokens[self.current - 1].clone()
+        self.tokens[self.current - 1].0.clone()
+    }
+    
+    fn current_position(&self) -> crate::lexer::SourcePosition {
+        if self.current < self.tokens.len() {
+            self.tokens[self.current].1.clone()
+        } else if !self.tokens.is_empty() {
+            self.tokens[self.tokens.len() - 1].1.clone()
+        } else {
+            crate::lexer::SourcePosition::new(1, 1, 0)
+        }
+    }
+    
+    fn error(&self, message: String) -> ParseError {
+        let pos = self.current_position();
+        ParseError {
+            message,
+            line: Some(pos.line),
+            column: Some(pos.column),
+        }
     }
     
     fn consume(&mut self, token: Token, message: &str) -> ParseResult<Token> {
         if self.check(&token) {
             Ok(self.advance())
         } else {
-            Err(ParseError {
-                message: format!("{} but got {:?}", message, self.peek()),
-            })
+            Err(self.error(format!("{} but got {:?}", message, self.peek())))
         }
     }
 }
