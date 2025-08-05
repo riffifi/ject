@@ -89,6 +89,47 @@ impl fmt::Display for Value {
     }
 }
 
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        match (self, other) {
+            // Numbers can be compared
+            (Value::Integer(a), Value::Integer(b)) => a.partial_cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+            (Value::Integer(a), Value::Float(b)) => (*a as f64).partial_cmp(b),
+            (Value::Float(a), Value::Integer(b)) => a.partial_cmp(&(*b as f64)),
+            
+            // Strings can be compared
+            (Value::String(a), Value::String(b)) => a.partial_cmp(b),
+            
+            // Bools can be compared
+            (Value::Bool(a), Value::Bool(b)) => a.partial_cmp(b),
+            
+            // Arrays can be compared lexicographically
+            (Value::Array(a), Value::Array(b)) => a.partial_cmp(b),
+            
+            // For different types, use a consistent ordering
+            (a, b) => {
+                let type_order = |v: &Value| match v {
+                    Value::Nil => 0,
+                    Value::Bool(_) => 1,
+                    Value::Integer(_) => 2,
+                    Value::Float(_) => 3,
+                    Value::String(_) => 4,
+                    Value::Array(_) => 5,
+                    Value::Dictionary(_) => 6,
+                    Value::Function { .. } => 7,
+                    Value::ModuleFunction { .. } => 8,
+                    Value::Lambda { .. } => 9,
+                    Value::ModuleObject(_) => 10,
+                    Value::BuiltinFunction(_) => 11,
+                };
+                type_order(a).partial_cmp(&type_order(b))
+            }
+        }
+    }
+}
+
 impl Value {
     pub fn is_truthy(&self) -> bool {
         match self {
@@ -105,10 +146,10 @@ impl Value {
     
     pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Integer(_) => "integer",
-            Value::Float(_) => "float",
+            Value::Integer(_) => "number",
+            Value::Float(_) => "number",
             Value::String(_) => "string",
-            Value::Bool(_) => "bool",
+            Value::Bool(_) => "boolean",
             Value::Nil => "nil",
             Value::Array(_) => "array",
             Value::Dictionary(_) => "dictionary",

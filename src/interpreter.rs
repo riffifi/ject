@@ -461,8 +461,11 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             // Comparison
             (Value::Integer(a), BinaryOp::Equal, Value::Integer(b)) => Ok(Value::Bool(a == b)),
             (Value::Float(a), BinaryOp::Equal, Value::Float(b)) => Ok(Value::Bool(a == b)),
+            (Value::Integer(a), BinaryOp::Equal, Value::Float(b)) => Ok(Value::Bool(*a as f64 == *b)),
+            (Value::Float(a), BinaryOp::Equal, Value::Integer(b)) => Ok(Value::Bool(*a == *b as f64)),
             (Value::String(a), BinaryOp::Equal, Value::String(b)) => Ok(Value::Bool(a == b)),
             (Value::Bool(a), BinaryOp::Equal, Value::Bool(b)) => Ok(Value::Bool(a == b)),
+            (Value::Array(a), BinaryOp::Equal, Value::Array(b)) => Ok(Value::Bool(a == b)),
             (Value::Nil, BinaryOp::Equal, Value::Nil) => Ok(Value::Bool(true)),
             (_, BinaryOp::Equal, _) => Ok(Value::Bool(false)),
             

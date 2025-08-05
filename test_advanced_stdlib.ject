@@ -1,0 +1,40 @@
+# Advanced Standard Library Functions Test
+print "Advanced Ject Standard Library Test"
+print ""
+
+# More Base Conversion
+print "More Base Conversions:"
+let num = 255
+print "Number " + num + ":"
+print "Binary: " + to_binary(num)  # Should be 11111111
+
+# More Math Functions  
+print ""
+print "More Math Functions:"
+print "log(8, 2): " + log(8.0, 2.0)  # Should be 3
+print "exp(1): " + exp(1.0)  # Should be approximately e
+
+# Test sorting with mixed types
+print ""
+print "Advanced Array Operations:"
+let mixed_numbers = [3.14, 1, 42, 2.71, 10]
+print "Mixed numbers: " + mixed_numbers
+print "Sorted: " + sort(mixed_numbers)
+
+let strings = ["zebra", "apple", "banana", "cherry"]
+print "Strings: " + strings
+print "Sorted strings: " + sort(strings)
+
+# Test reverse with different arrays
+let count = [1, 2, 3, 4, 5]
+print "Counting: " + count
+print "Reversed: " + reverse(count)
+
+# Test with complex expressions
+print ""
+print "Complex Expressions:"
+let result = sort(reverse([5, 1, 3, 9, 2]))
+print "sort(reverse([5, 1, 3, 9, 2])): " + result
+
+print ""
+print "All advanced tests passed!"

@@ -103,12 +103,234 @@ pub fn create_stdlib() -> HashMap<String, Value> {
     stdlib.insert("env".to_string(), Value::BuiltinFunction("env".to_string()));
     stdlib.insert("exit".to_string(), Value::BuiltinFunction("exit".to_string()));
     
+    // More array functions
+    stdlib.insert("first".to_string(), Value::BuiltinFunction("first".to_string()));
+    stdlib.insert("last".to_string(), Value::BuiltinFunction("last".to_string()));
+    stdlib.insert("take".to_string(), Value::BuiltinFunction("take".to_string()));
+    stdlib.insert("drop".to_string(), Value::BuiltinFunction("drop".to_string()));
+    stdlib.insert("concat".to_string(), Value::BuiltinFunction("concat".to_string()));
+    stdlib.insert("flatten".to_string(), Value::BuiltinFunction("flatten".to_string()));
+    stdlib.insert("zip".to_string(), Value::BuiltinFunction("zip".to_string()));
+    stdlib.insert("enumerate".to_string(), Value::BuiltinFunction("enumerate".to_string()));
+    stdlib.insert("any".to_string(), Value::BuiltinFunction("any".to_string()));
+    stdlib.insert("all".to_string(), Value::BuiltinFunction("all".to_string()));
+    
+    // More string functions
+    stdlib.insert("capitalize".to_string(), Value::BuiltinFunction("capitalize".to_string()));
+    stdlib.insert("title_case".to_string(), Value::BuiltinFunction("title_case".to_string()));
+    stdlib.insert("count".to_string(), Value::BuiltinFunction("count".to_string()));
+    stdlib.insert("is_empty".to_string(), Value::BuiltinFunction("is_empty".to_string()));
+    stdlib.insert("is_numeric".to_string(), Value::BuiltinFunction("is_numeric".to_string()));
+    stdlib.insert("is_alpha".to_string(), Value::BuiltinFunction("is_alpha".to_string()));
+    stdlib.insert("lines".to_string(), Value::BuiltinFunction("lines".to_string()));
+    
+    // Type conversion functions
+    stdlib.insert("to_int".to_string(), Value::BuiltinFunction("to_int".to_string()));
+    stdlib.insert("to_float".to_string(), Value::BuiltinFunction("to_float".to_string()));
+    stdlib.insert("to_string".to_string(), Value::BuiltinFunction("to_string".to_string()));
+    stdlib.insert("to_bool".to_string(), Value::BuiltinFunction("to_bool".to_string()));
+    
+    // More math functions
+    stdlib.insert("sign".to_string(), Value::BuiltinFunction("sign".to_string()));
+    stdlib.insert("gcd".to_string(), Value::BuiltinFunction("gcd".to_string()));
+    stdlib.insert("lcm".to_string(), Value::BuiltinFunction("lcm".to_string()));
+    stdlib.insert("factorial".to_string(), Value::BuiltinFunction("factorial".to_string()));
+    stdlib.insert("is_prime".to_string(), Value::BuiltinFunction("is_prime".to_string()));
+    stdlib.insert("random_int".to_string(), Value::BuiltinFunction("random_int".to_string()));
+    stdlib.insert("random_float".to_string(), Value::BuiltinFunction("random_float".to_string()));
+    
+    // Input/output functions
+    stdlib.insert("input".to_string(), Value::BuiltinFunction("input".to_string()));
+    stdlib.insert("println".to_string(), Value::BuiltinFunction("println".to_string()));
+    
+    // System functions
+    stdlib.insert("exec".to_string(), Value::BuiltinFunction("exec".to_string()));
+    stdlib.insert("file_exists".to_string(), Value::BuiltinFunction("file_exists".to_string()));
+    stdlib.insert("is_file".to_string(), Value::BuiltinFunction("is_file".to_string()));
+    stdlib.insert("is_dir".to_string(), Value::BuiltinFunction("is_dir".to_string()));
+    stdlib.insert("list_dir".to_string(), Value::BuiltinFunction("list_dir".to_string()));
+    stdlib.insert("mkdir".to_string(), Value::BuiltinFunction("mkdir".to_string()));
+    stdlib.insert("remove_file".to_string(), Value::BuiltinFunction("remove_file".to_string()));
+    
+    // Testing functions
+    stdlib.insert("assert".to_string(), Value::BuiltinFunction("assert".to_string()));
+    
+    // Type inspection
+    stdlib.insert("type".to_string(), Value::BuiltinFunction("type".to_string()));
+    
+    // String functions - fix naming to match usage
+    stdlib.insert("uppercase".to_string(), Value::BuiltinFunction("uppercase".to_string()));
+    stdlib.insert("lowercase".to_string(), Value::BuiltinFunction("lowercase".to_string()));
+    
     stdlib
 }
 
 pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
     std::env::set_var("RUST_BACKTRACE", "full");
-    match name {
+match name {
+        // Enhanced array functions
+        "sort" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "sort() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    let mut new_arr = arr.clone();
+                    new_arr.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    Ok(Value::Array(new_arr))
+                }
+                _ => Err(RuntimeError {
+                    message: "sort() requires an array".to_string(),
+                }),
+            }
+        },
+        "reverse" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "reverse() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    let mut new_arr = arr.clone();
+                    new_arr.reverse();
+                    Ok(Value::Array(new_arr))
+                }
+                _ => Err(RuntimeError {
+                    message: "reverse() requires an array".to_string(),
+                }),
+            }
+        },
+
+        // Enhanced string functions
+        "starts_with" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "startswith() takes exactly 2 arguments (string, prefix)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::String(prefix)) => Ok(Value::Bool(s.starts_with(prefix))),
+                _ => Err(RuntimeError {
+                    message: "startswith() requires two strings".to_string(),
+                }),
+            }
+        },
+        "ends_with" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "endswith() takes exactly 2 arguments (string, suffix)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::String(suffix)) => Ok(Value::Bool(s.ends_with(suffix))),
+                _ => Err(RuntimeError {
+                    message: "endswith() requires two strings".to_string(),
+                }),
+            }
+        },
+
+        // Base conversion functions
+        "to_binary" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_binary() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => Ok(Value::String(format!("{:b}", n))),
+                _ => Err(RuntimeError {
+                    message: "to_binary() requires an integer".to_string(),
+                }),
+            }
+        },
+        "from_binary" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "from_binary() takes exactly 1 argument (binary string)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => match i64::from_str_radix(s, 2) {
+                    Ok(num) => Ok(Value::Integer(num)),
+                    Err(_) => Err(RuntimeError {
+                        message: "Invalid binary string".to_string(),
+                    }),
+                },
+                _ => Err(RuntimeError {
+                    message: "from_binary() requires a binary string".to_string(),
+                }),
+            }
+        },
+
+        // Enhanced math functions
+        "log" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "log() takes exactly 2 arguments (value, base)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Float(n), Value::Float(base)) => {
+                    if *n <= 0.0 || *base <= 0.0 {
+                        return Err(RuntimeError {
+                            message: "log() requires positive number and base".to_string(),
+                        });
+                    }
+                    Ok(Value::Float(n.log(*base)))
+                },
+                _ => Err(RuntimeError {
+                    message: "log() requires two numbers".to_string(),
+                }),
+            }
+        },
+        "exp" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "exp() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Float(n) => Ok(Value::Float(n.exp())),
+                _ => Err(RuntimeError {
+                    message: "exp() requires a number".to_string(),
+                }),
+            }
+        },
+
+        // Date/time functions
+        "now" => {
+            if !args.is_empty() {
+                return Err(RuntimeError {
+                    message: "now() takes no arguments".to_string(),
+                });
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs();
+            Ok(Value::Integer(now as i64))
+        },
+
+        // Environment/system functions
+        "env" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "env() takes exactly 1 argument (variable name)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(var) => match std::env::var(var) {
+                    Ok(val) => Ok(Value::String(val)),
+                    Err(_) => Ok(Value::Nil),
+                },
+                _ => Err(RuntimeError {
+                    message: "env() requires a string variable name".to_string(),
+                }),
+            }
+        },
         "abs" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -122,7 +344,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "abs() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "sqrt" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -136,7 +358,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "sqrt() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "pow" => {
             if args.len() != 2 {
                 return Err(RuntimeError {
@@ -160,7 +382,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "pow() requires two numbers".to_string(),
                 }),
             }
-        }
+        },
         "sin" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -174,7 +396,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "sin() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "cos" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -188,7 +410,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "cos() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "tan" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -202,7 +424,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "tan() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "floor" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -216,7 +438,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "floor() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "ceil" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -230,7 +452,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "ceil() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "round" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -244,7 +466,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "round() requires a number".to_string(),
                 }),
             }
-        }
+        },
         "min" => {
             if args.is_empty() {
                 return Err(RuntimeError {
@@ -272,7 +494,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 }
             }
             Ok(min_val.clone())
-        }
+        },
         "read_file" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -291,7 +513,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "read_file() requires a string file path".to_string(),
                 })
             }
-        }
+        },
         "write_file" => {
             if args.len() != 2 {
                 return Err(RuntimeError {
@@ -310,7 +532,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "write_file() requires a string file path and content".to_string(),
                 })
             }
-        }
+        },
         "max" => {
             if args.is_empty() {
                 return Err(RuntimeError {
@@ -338,7 +560,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 }
             }
             Ok(max_val.clone())
-        }
+        },
         "len" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -352,7 +574,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "len() requires an array or string".to_string(),
                 }),
             }
-        }
+        },
         "sum" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -385,7 +607,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "sum() requires an array".to_string(),
                 }),
             }
-        }
+        },
         "upper" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -398,7 +620,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "upper() requires a string".to_string(),
                 }),
             }
-        }
+        },
         "lower" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -411,7 +633,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "lower() requires a string".to_string(),
                 }),
             }
-        }
+        },
         "trim" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -424,7 +646,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "trim() requires a string".to_string(),
                 }),
             }
-        }
+        },
         "split" => {
             if args.len() != 2 {
                 return Err(RuntimeError {
@@ -441,8 +663,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "split() requires a string and a string delimiter".to_string(),
                 }),
             }
-        }
-
+        },
         "join" => {
             if args.len() != 2 {
                 return Err(RuntimeError {
@@ -459,8 +680,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "join() requires an array of strings and a string delimiter".to_string(),
                 }),
             }
-        }
-
+        },
         "replace" => {
             if args.len() != 3 {
                 return Err(RuntimeError {
@@ -477,8 +697,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "replace() requires three string arguments".to_string(),
                 }),
             }
-        }
-
+        },
         "type_of" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -486,7 +705,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 });
             }
             Ok(Value::String(args[0].type_name().to_string()))
-        }
+        },
         "push" => {
             if args.len() != 2 {
                 return Err(RuntimeError {
@@ -503,7 +722,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "push() requires an array as first argument".to_string(),
                 }),
             }
-        }
+        },
         "pop" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -525,7 +744,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "pop() requires an array".to_string(),
                 }),
             }
-        }
+        },
         "parse_json" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -544,7 +763,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "parse_json() requires a string argument".to_string(),
                 })
             }
-        }
+        },
         "to_json" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -560,7 +779,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 },
                 Err(e) => Err(e),
             }
-        }
+        },
         "char_at" => {
             if args.len() != 2 {
                 return Err(RuntimeError {
@@ -583,7 +802,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "char_at() requires a string and an integer index".to_string(),
                 }),
             }
-        }
+        },
         "substring" => {
             match args.len() {
                 2 => {
@@ -627,7 +846,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "substring() takes 2 or 3 arguments".to_string(),
                 }),
             }
-        }
+        },
         "range" => {
             match args.len() {
                 1 => {
@@ -693,7 +912,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "range() takes 1, 2, or 3 arguments".to_string(),
                 }),
             }
-        }
+        },
         "random" => {
             if args.len() != 0 {
                 return Err(RuntimeError {
@@ -710,7 +929,868 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             let hash = hasher.finish();
             let random_val = (hash as f64) / (u64::MAX as f64);
             Ok(Value::Float(random_val))
-        }
+        },
+        
+        // Array functions
+        "first" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "first() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    if arr.is_empty() {
+                        Ok(Value::Nil)
+                    } else {
+                        Ok(arr[0].clone())
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "first() requires an array".to_string(),
+                }),
+            }
+        },
+        "last" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "last() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    if arr.is_empty() {
+                        Ok(Value::Nil)
+                    } else {
+                        Ok(arr[arr.len() - 1].clone())
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "last() requires an array".to_string(),
+                }),
+            }
+        },
+"take" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "take() takes exactly 2 arguments (array, count)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Array(arr), Value::Integer(n)) => {
+                    let count = (*n as usize).min(arr.len());
+                    Ok(Value::Array(arr[..count].to_vec()))
+                }
+                _ => Err(RuntimeError {
+                    message: "take() requires an array and an integer".to_string(),
+                }),
+            }
+        },
+        "zip" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "zip() takes exactly 2 arguments (array1, array2)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Array(arr1), Value::Array(arr2)) => {
+                    let min_len = arr1.len().min(arr2.len());
+                    let zipped: Vec<Value> = arr1.iter().zip(arr2.iter()).take(min_len).map(|(a, b)| Value::Array(vec![a.clone(), b.clone()])).collect();
+                    Ok(Value::Array(zipped))
+                }
+                _ => Err(RuntimeError {
+                    message: "zip() requires two arrays".to_string(),
+                }),
+            }
+        },
+        "enumerate" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "enumerate() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    let enumerated: Vec<Value> = arr.iter().enumerate().map(|(i, v)| Value::Array(vec![Value::Integer(i as i64), v.clone()])).collect();
+                    Ok(Value::Array(enumerated))
+                }
+                _ => Err(RuntimeError {
+                    message: "enumerate() requires an array".to_string(),
+                }),
+            }
+        },
+        "unique" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "unique() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    let mut seen = Vec::new();
+                    let mut unique = Vec::new();
+                    for item in arr {
+                        if !seen.contains(item) {
+                            seen.push(item.clone());
+                            unique.push(item.clone());
+                        }
+                    }
+                    Ok(Value::Array(unique))
+                }
+                _ => Err(RuntimeError {
+                    message: "unique() requires an array".to_string(),
+                }),
+            }
+        },
+        "contains" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "contains() takes exactly 2 arguments (array, value)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Array(arr), value) => Ok(Value::Bool(arr.contains(value))),
+                _ => Err(RuntimeError {
+                    message: "contains() requires an array and a value".to_string(),
+                }),
+            }
+        },
+        "index_of" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "index_of() takes exactly 2 arguments (array, value)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Array(arr), value) => Ok(Value::Integer(arr.iter().position(|x| x == value).map_or(-1, |i| i as i64))),
+                _ => Err(RuntimeError {
+                    message: "index_of() requires an array and a value".to_string(),
+                }),
+            }
+        },
+        "slice" => {
+            if args.len() != 3 {
+                return Err(RuntimeError {
+                    message: "slice() takes exactly 3 arguments (array, start, end)".to_string(),
+                });
+            }
+            match (&args[0], &args[1], &args[2]) {
+                (Value::Array(arr), Value::Integer(start), Value::Integer(end)) => {
+                    let start = *start as usize;
+                    let end = (*end as usize).min(arr.len());
+                    if start <= end {
+                        Ok(Value::Array(arr[start..end].to_vec()))
+                    } else {
+                        Err(RuntimeError {
+                            message: "slice() start index must be less than or equal to end index".to_string(),
+                        })
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "slice() requires an array and two integers".to_string(),
+                }),
+            }
+        },
+        "title_case" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "title_case() takes exactly 1 argument (string)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => {
+                    let titled: String = s.split_whitespace()
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            if let Some(first) = chars.next() {
+                                first.to_uppercase().collect::<String>() + chars.as_str()
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    Ok(Value::String(titled))
+                }
+                _ => Err(RuntimeError {
+                    message: "title_case() requires a string".to_string(),
+                }),
+            }
+        },
+        "count" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "count() takes exactly 2 arguments (string, substring)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::String(sub)) => {
+                    Ok(Value::Integer(s.matches(sub).count() as i64))
+                }
+                _ => Err(RuntimeError {
+                    message: "count() requires two strings".to_string(),
+                }),
+            }
+        },
+        "lines" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "lines() takes exactly 1 argument (string)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => {
+                    let lines: Vec<Value> = s.lines().map(|line| Value::String(line.to_string())).collect();
+                    Ok(Value::Array(lines))
+                }
+                _ => Err(RuntimeError {
+                    message: "lines() requires a string".to_string(),
+                }),
+            }
+        },
+        "gcd" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "gcd() takes exactly 2 arguments (int, int)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Integer(a), Value::Integer(b)) => {
+                    fn gcd(mut n: i64, mut m: i64) -> i64 {
+                        while m != 0 {
+                            let temp = m;
+                            m = n % m;
+                            n = temp;
+                        }
+                        n.abs()
+                    }
+                    Ok(Value::Integer(gcd(*a, *b)))
+                }
+                _ => Err(RuntimeError {
+                    message: "gcd() requires two integers".to_string(),
+                }),
+            }
+        },
+        "lcm" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "lcm() takes exactly 2 arguments (int, int)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Integer(a), Value::Integer(b)) => {
+                    fn lcm(n: i64, m: i64) -> i64 {
+                        (n * m / gcd(n, m)).abs()
+                    }
+                    fn gcd(mut n: i64, mut m: i64) -> i64 {
+                        while m != 0 {
+                            let temp = m;
+                            m = n % m;
+                            n = temp;
+                        }
+                        n.abs()
+                    }
+                    Ok(Value::Integer(lcm(*a, *b)))
+                }
+                _ => Err(RuntimeError {
+                    message: "lcm() requires two integers".to_string(),
+                }),
+            }
+        },
+        "is_prime" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "is_prime() takes exactly 1 argument (int)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => {
+                    if *n <= 1 {
+                        return Ok(Value::Bool(false));
+                    }
+                    for i in 2..=((*n as f64).sqrt() as i64) {
+                        if *n % i == 0 {
+                            return Ok(Value::Bool(false));
+                        }
+                    }
+                    Ok(Value::Bool(true))
+                }
+                _ => Err(RuntimeError {
+                    message: "is_prime() requires an integer".to_string(),
+                }),
+            }
+        },
+        "to_octal" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_octal() takes exactly 1 argument (int)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => Ok(Value::String(format!("{:o}", n))),
+                _ => Err(RuntimeError {
+                    message: "to_octal() requires an integer".to_string(),
+                }),
+            }
+        },
+        "from_octal" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "from_octal() takes exactly 1 argument (string)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => match i64::from_str_radix(s, 8) {
+                    Ok(num) => Ok(Value::Integer(num)),
+                    Err(_) => Err(RuntimeError {
+                        message: "Invalid octal string".to_string(),
+                    }),
+                },
+                _ => Err(RuntimeError {
+                    message: "from_octal() requires a string".to_string(),
+                }),
+            }
+        },
+        "to_hex" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_hex() takes exactly 1 argument (int)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => Ok(Value::String(format!("{:x}", n))),
+                _ => Err(RuntimeError {
+                    message: "to_hex() requires an integer".to_string(),
+                }),
+            }
+        },
+        "from_hex" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "from_hex() takes exactly 1 argument (string)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => match i64::from_str_radix(s, 16) {
+                    Ok(num) => Ok(Value::Integer(num)),
+                    Err(_) => Err(RuntimeError {
+                        message: "Invalid hexadecimal string".to_string(),
+                    }),
+                },
+                _ => Err(RuntimeError {
+                    message: "from_hex() requires a string".to_string(),
+                }),
+            }
+        },
+        "base_repr" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "base_repr() takes exactly 2 arguments (int, base)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Integer(n), Value::Integer(base)) => {
+                    if !(*base == 2 || *base == 8 || *base == 10 || *base == 16) {
+                        return Err(RuntimeError {
+                            message: "base_repr() supports only base 2, 8, 10, or 16".to_string(),
+                        });
+                    }
+                    let representation = match *base {
+                        2 => format!("{:b}", n),
+                        8 => format!("{:o}", n),
+                        10 => n.to_string(),
+                        16 => format!("{:x}", n),
+                        _ => unreachable!(),
+                    };
+                    Ok(Value::String(representation))
+                }
+                _ => Err(RuntimeError {
+                    message: "base_repr() requires an integer and a base".to_string(),
+                }),
+            }
+        },
+        "from_base" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "from_base() takes exactly 2 arguments (string, base)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::Integer(base)) => match i64::from_str_radix(s, *base as u32) {
+                    Ok(num) => Ok(Value::Integer(num)),
+                    Err(_) => Err(RuntimeError {
+                        message: format!("Invalid string for base {}", base).to_string(),
+                    }),
+                },
+                _ => Err(RuntimeError {
+                    message: "from_base() requires a string and a base".to_string(),
+                }),
+            }
+        },
+        "drop" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "drop() takes exactly 2 arguments (array, count)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Array(arr), Value::Integer(n)) => {
+                    let count = (*n as usize).min(arr.len());
+                    Ok(Value::Array(arr[count..].to_vec()))
+                }
+                _ => Err(RuntimeError {
+                    message: "drop() requires an array and an integer".to_string(),
+                }),
+            }
+        },
+        "concat" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "concat() takes exactly 2 arguments (array, array)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Array(arr1), Value::Array(arr2)) => {
+                    let mut result = arr1.clone();
+                    result.extend(arr2.clone());
+                    Ok(Value::Array(result))
+                }
+                _ => Err(RuntimeError {
+                    message: "concat() requires two arrays".to_string(),
+                }),
+            }
+        },
+        "flatten" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "flatten() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    let mut result = Vec::new();
+                    for item in arr {
+                        match item {
+                            Value::Array(inner) => result.extend(inner.clone()),
+                            _ => result.push(item.clone()),
+                        }
+                    }
+                    Ok(Value::Array(result))
+                }
+                _ => Err(RuntimeError {
+                    message: "flatten() requires an array".to_string(),
+                }),
+            }
+        },
+        
+        // String functions
+        "capitalize" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "capitalize() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => {
+                    let mut chars: Vec<char> = s.chars().collect();
+                    if !chars.is_empty() {
+                        chars[0] = chars[0].to_uppercase().next().unwrap_or(chars[0]);
+                        for i in 1..chars.len() {
+                            chars[i] = chars[i].to_lowercase().next().unwrap_or(chars[i]);
+                        }
+                    }
+                    Ok(Value::String(chars.into_iter().collect()))
+                }
+                _ => Err(RuntimeError {
+                    message: "capitalize() requires a string".to_string(),
+                }),
+            }
+        },
+        "is_empty" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "is_empty() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => Ok(Value::Bool(s.is_empty())),
+                Value::Array(arr) => Ok(Value::Bool(arr.is_empty())),
+                _ => Ok(Value::Bool(false)),
+            }
+        },
+        "is_numeric" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "is_numeric() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => Ok(Value::Bool(s.parse::<f64>().is_ok())),
+                Value::Integer(_) | Value::Float(_) => Ok(Value::Bool(true)),
+                _ => Ok(Value::Bool(false)),
+            }
+        },
+        "is_alpha" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "is_alpha() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => Ok(Value::Bool(s.chars().all(|c| c.is_alphabetic()))),
+                _ => Ok(Value::Bool(false)),
+            }
+        },
+        
+        // Type conversion functions
+        "to_int" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_int() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => Ok(Value::Integer(*n)),
+                Value::Float(f) => Ok(Value::Integer(*f as i64)),
+                Value::String(s) => match s.parse::<i64>() {
+                    Ok(n) => Ok(Value::Integer(n)),
+                    Err(_) => Err(RuntimeError {
+                        message: "Cannot convert string to integer".to_string(),
+                    }),
+                },
+                Value::Bool(b) => Ok(Value::Integer(if *b { 1 } else { 0 })),
+                _ => Err(RuntimeError {
+                    message: "Cannot convert to integer".to_string(),
+                }),
+            }
+        },
+        "to_float" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_float() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => Ok(Value::Float(*n as f64)),
+                Value::Float(f) => Ok(Value::Float(*f)),
+                Value::String(s) => match s.parse::<f64>() {
+                    Ok(f) => Ok(Value::Float(f)),
+                    Err(_) => Err(RuntimeError {
+                        message: "Cannot convert string to float".to_string(),
+                    }),
+                },
+                _ => Err(RuntimeError {
+                    message: "Cannot convert to float".to_string(),
+                }),
+            }
+        },
+        "to_string" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_string() takes exactly 1 argument".to_string(),
+                });
+            }
+            Ok(Value::String(args[0].to_string()))
+        },
+        "to_bool" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_bool() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Bool(b) => Ok(Value::Bool(*b)),
+                Value::Integer(n) => Ok(Value::Bool(*n != 0)),
+                Value::Float(f) => Ok(Value::Bool(*f != 0.0)),
+                Value::String(s) => {
+                    match s.to_lowercase().as_str() {
+                        "true" | "1" | "yes" | "on" => Ok(Value::Bool(true)),
+                        "false" | "0" | "no" | "off" | "" => Ok(Value::Bool(false)),
+                        _ => Ok(Value::Bool(true)), // Non-empty strings are truthy by default
+                    }
+                }
+                Value::Nil => Ok(Value::Bool(false)),
+                _ => Ok(Value::Bool(args[0].is_truthy())),
+            }
+        },
+        
+        // Math functions
+        "sign" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "sign() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => Ok(Value::Integer(if *n > 0 { 1 } else if *n < 0 { -1 } else { 0 })),
+                Value::Float(f) => Ok(Value::Integer(if *f > 0.0 { 1 } else if *f < 0.0 { -1 } else { 0 })),
+                _ => Err(RuntimeError {
+                    message: "sign() requires a number".to_string(),
+                }),
+            }
+        },
+        "factorial" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "factorial() takes exactly 1 argument".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Integer(n) => {
+                    if *n < 0 {
+                        return Err(RuntimeError {
+                            message: "factorial() requires a non-negative integer".to_string(),
+                        });
+                    }
+                    let mut result = 1i64;
+                    for i in 1..=*n {
+                        result *= i;
+                    }
+                    Ok(Value::Integer(result))
+                }
+                _ => Err(RuntimeError {
+                    message: "factorial() requires an integer".to_string(),
+                }),
+            }
+        },
+        "random_int" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "random_int() takes exactly 2 arguments (min, max)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Integer(min), Value::Integer(max)) => {
+                    if min >= max {
+                        return Err(RuntimeError {
+                            message: "random_int() min must be less than max".to_string(),
+                        });
+                    }
+                    use std::collections::hash_map::DefaultHasher;
+                    use std::hash::{Hash, Hasher};
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    
+                    let mut hasher = DefaultHasher::new();
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+                    let hash = hasher.finish();
+                    let range = max - min;
+                    let result = min + ((hash as i64) % range);
+                    Ok(Value::Integer(result))
+                }
+                _ => Err(RuntimeError {
+                    message: "random_int() requires two integers".to_string(),
+                }),
+            }
+        },
+        
+        // I/O functions
+        "println" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "println() takes exactly 1 argument".to_string(),
+                });
+            }
+            println!("{}", args[0]);
+            Ok(Value::Nil)
+        },
+        
+        // File system functions
+        "file_exists" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "file_exists() takes exactly 1 argument (path)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(path) => Ok(Value::Bool(std::path::Path::new(path).exists())),
+                _ => Err(RuntimeError {
+                    message: "file_exists() requires a string path".to_string(),
+                }),
+            }
+        },
+        "is_file" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "is_file() takes exactly 1 argument (path)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(path) => Ok(Value::Bool(std::path::Path::new(path).is_file())),
+                _ => Err(RuntimeError {
+                    message: "is_file() requires a string path".to_string(),
+                }),
+            }
+        },
+        "is_dir" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "is_dir() takes exactly 1 argument (path)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(path) => Ok(Value::Bool(std::path::Path::new(path).is_dir())),
+                _ => Err(RuntimeError {
+                    message: "is_dir() requires a string path".to_string(),
+                }),
+            }
+        },
+        
+        "any" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "any() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    for value in arr {
+                        if value.is_truthy() {
+                            return Ok(Value::Bool(true));
+                        }
+                    }
+                    Ok(Value::Bool(false))
+                }
+                _ => Err(RuntimeError {
+                    message: "any() requires an array".to_string(),
+                }),
+            }
+        },
+        "all" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "all() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    for value in arr {
+                        if !value.is_truthy() {
+                            return Ok(Value::Bool(false));
+                        }
+                    }
+                    Ok(Value::Bool(true))
+                }
+                _ => Err(RuntimeError {
+                    message: "all() requires an array".to_string(),
+                }),
+            }
+        },
+        "contains_str" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "contains_str() takes exactly 2 arguments (string, substring)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::String(sub)) => Ok(Value::Bool(s.contains(sub))),
+                _ => Err(RuntimeError {
+                    message: "contains_str() requires two strings".to_string(),
+                }),
+            }
+        },
+        "pad_left" => {
+            if args.len() != 3 {
+                return Err(RuntimeError {
+                    message: "pad_left() takes exactly 3 arguments (string, length, padding)".to_string(),
+                });
+            }
+            match (&args[0], &args[1], &args[2]) {
+                (Value::String(s), Value::Integer(len), Value::String(pad)) => {
+                    let target_len = *len as usize;
+                    if s.len() >= target_len {
+                        Ok(Value::String(s.clone()))
+                    } else {
+                        let pad_count = target_len - s.len();
+                        let padding = pad.repeat(pad_count);
+                        Ok(Value::String(format!("{}{}", padding, s)))
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "pad_left() requires a string, integer length, and padding string".to_string(),
+                }),
+            }
+        },
+        "pad_right" => {
+            if args.len() != 3 {
+                return Err(RuntimeError {
+                    message: "pad_right() takes exactly 3 arguments (string, length, padding)".to_string(),
+                });
+            }
+            match (&args[0], &args[1], &args[2]) {
+                (Value::String(s), Value::Integer(len), Value::String(pad)) => {
+                    let target_len = *len as usize;
+                    if s.len() >= target_len {
+                        Ok(Value::String(s.clone()))
+                    } else {
+                        let pad_count = target_len - s.len();
+                        let padding = pad.repeat(pad_count);
+                        Ok(Value::String(format!("{}{}", s, padding)))
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "pad_right() requires a string, integer length, and padding string".to_string(),
+                }),
+            }
+        },
+        "repeat" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "repeat() takes exactly 2 arguments (string, count)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::Integer(count)) => {
+                    if *count < 0 {
+                        return Err(RuntimeError {
+                            message: "repeat() count must be non-negative".to_string(),
+                        });
+                    }
+                    Ok(Value::String(s.repeat(*count as usize)))
+                }
+                _ => Err(RuntimeError {
+                    message: "repeat() requires a string and an integer count".to_string(),
+                }),
+            }
+        },
+        "reverse_str" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "reverse_str() takes exactly 1 argument (string)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(s) => {
+                    let reversed: String = s.chars().rev().collect();
+                    Ok(Value::String(reversed))
+                }
+                _ => Err(RuntimeError {
+                    message: "reverse_str() requires a string".to_string(),
+                }),
+            }
+        },
+        "assert" => {
+            if args.len() < 1 || args.len() > 2 {
+                return Err(RuntimeError {
+                    message: "assert() takes 1 or 2 arguments (condition, optional message)".to_string(),
+                });
+            }
+            let condition = &args[0];
+            if !condition.is_truthy() {
+                let message = if args.len() == 2 {
+                    match &args[1] {
+                        Value::String(msg) => msg.clone(),
+                        _ => "Assertion failed".to_string(),
+                    }
+                } else {
+                    "Assertion failed".to_string()
+                };
+                return Err(RuntimeError {
+                    message,
+                });
+            }
+            Ok(Value::Nil)
+        },
+        
         _ => Err(RuntimeError {
             message: format!("Unknown builtin function: {}", name),
         }),
@@ -770,7 +1850,15 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
                 Err(e) => Err(e),
             }
         }
-        Value::Function { .. } | Value::ModuleFunction { .. } | Value::Lambda { .. } | Value::BuiltinFunction(_) | Value::Dictionary(_) | Value::ModuleObject(_) => {
+        Value::Dictionary(dict) => {
+            let mut json_obj = serde_json::Map::new();
+            for (key, value) in dict {
+                let json_value = ject_value_to_json(value)?;
+                json_obj.insert(key.clone(), json_value);
+            }
+            Ok(serde_json::Value::Object(json_obj))
+        }
+        Value::Function { .. } | Value::ModuleFunction { .. } | Value::Lambda { .. } | Value::BuiltinFunction(_) | Value::ModuleObject(_) => {
             Err(RuntimeError {
                 message: "Cannot convert function to JSON".to_string(),
             })

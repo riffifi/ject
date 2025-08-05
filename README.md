@@ -400,11 +400,11 @@ angle = math.sin(math.pi / 4)
 
 Ject was designed with these principles in mind:
 
-1. **Simplicity First** - If it ain't simple -- fuck right off, it does not belong here
-2. **Readable Code** - Code should read easily, maybe not like natural English, but at least to some extent
-3. **Fast Development** - Get things done, no bullshit, in-out
-4. **Performance Matters** - Built in Rust, so yeah, no sluggishness there
-5. **Enjoyable Syntax** - Code you will enjoy writing and reading
+1. **Simplicity First** - Clean, uncomplicated syntax without unnecessary complexity
+2. **Readable Code** - Code should be easy to read and understand
+3. **Fast Development** - Quick iteration and minimal boilerplate
+4. **Performance Matters** - Built in Rust for speed and memory safety
+5. **Enjoyable Syntax** - Pleasant to write and maintain
 
 ## Architecture
 
@@ -416,13 +416,13 @@ Ject was designed with these principles in mind:
 
 ## Roadmap
 
-- [x] **Native elseif keyword** - Clean conditional chains ✅
-- [x] **Rich standard library** - Math, arrays, strings, utilities ✅
-- [x] **Comprehensive examples** - Real-world data analysis demos ✅
-- [x] **Beautiful range syntax** - Python-inspired `start..end:step` notation ✅
-- [x] **Enhanced REPL** - Arrow key navigation, command history, and line editing ✅
-- [x] **Lambda functions** - Anonymous function expressions ✅
-- [x] **Module system** - Import/export functionality ✅
+- [x] **Native elseif keyword** - Clean conditional chains
+- [x] **Rich standard library** - Math, arrays, strings, utilities
+- [x] **Comprehensive examples** - Real-world data analysis demos
+- [x] **Range syntax** - Python-inspired `start..end:step` notation
+- [x] **Enhanced REPL** - Arrow key navigation, command history, and line editing
+- [x] **Lambda functions** - Anonymous function expressions
+- [x] **Module system** - Import/export functionality
 - [ ] **Extended standard library** - File I/O, HTTP, JSON, etc.
 - [ ] **Package manager** - Easy dependency management
 - [ ] **Advanced REPL features** - Syntax highlighting, autocomplete, better error messages
@@ -432,13 +432,13 @@ Ject was designed with these principles in mind:
 ## Inspiration
 
 Ject draws inspiration from:
-- **Crystal** - Beautiful, just fricking awesome syntax and their performance focus
-- **Ruby** - For its expressiveness (almost as Crystal)
-- **Python** - Readable and user(mostly)-friendly
-- **Rust** - For its safety and performance
+- **Crystal** - Elegant syntax and performance focus
+- **Ruby** - Expressiveness and readability
+- **Python** - User-friendly design
+- **Rust** - Safety and performance
 
 ---
 
-**Made with sweat, bad sleeping schedule, and <3**
+**Made with passion and dedication**
 
-*Hope you enjoy it!!!*
+*Hope you enjoy it!*

@@ -1,31 +1,31 @@
-# 🎯 Ject Range Syntax Showcase
-# Beautiful Python-inspired range syntax with elegant step notation
+# Ject Range Syntax Showcase
+# Python-inspired range syntax with step notation
 
-print "🌟 Welcome to Ject's Beautiful Range Syntax! 🌟"
+print "Ject Range Syntax Showcase"
 print ""
 
 # Basic ranges
-print "📐 Basic Ranges:"
+print "Basic Ranges:"
 print "1..5: " + (1..5)
 print "0..10: " + (0..10)
 print "Empty range 5..5: " + (5..5)
 print ""
 
 # Ranges with steps
-print "🚀 Ranges with Steps (using colon syntax):"
+print "Ranges with Steps (using colon syntax):"
 print "1..10:2 (odds): " + (1..10:2)
 print "2..10:2 (evens): " + (2..10:2)  
 print "0..20:5 (multiples of 5): " + (0..20:5)
 print ""
 
 # Reverse ranges
-print "🔄 Reverse Ranges:"
+print "Reverse Ranges:"
 print "10..0:-1: " + (10..0:-1)
 print "20..0:-5: " + (20..0:-5)
 print ""
 
 # Comparing with traditional range() function
-print "🆚 Traditional vs New Syntax:"
+print "Traditional vs New Syntax:"
 print "Traditional: range(1, 6) = " + range(1, 6)
 print "New syntax:  1..6 = " + (1..6)
 print "Traditional: range(0, 10, 2) = " + range(0, 10, 2)
@@ -33,7 +33,7 @@ print "New syntax:  0..10:2 = " + (0..10:2)
 print ""
 
 # Using in for loops
-print "🔄 Beautiful For Loops:"
+print "For Loops:"
 print "Counting 1 to 5:"
 for i in 1..6 do
     print "  Count: " + i
@@ -48,11 +48,11 @@ print "Countdown from 5:"
 for i in 5..0:-1 do
     print "  " + i + "..."
 end
-print "  🚀 Blast off!"
+print "  Blast off!"
 print ""
 
 # Practical examples
-print "🎪 Practical Examples:"
+print "Practical Examples:"
 
 # Generate multiplication table
 print "Multiplication table for 3:"
@@ -66,7 +66,7 @@ print "Creating a star pattern:"
 for i in 1..6 do
     let stars = ""
     for j in 1..i+1 do
-        stars = stars + "⭐"
+        stars = stars + "*"
     end
     print stars
 end
@@ -80,4 +80,4 @@ for i in 1..6 do
 end
 print ""
 
-print "✨ Ject's range syntax: where elegance meets functionality! ✨"
+print "Ject's range syntax demonstration complete."

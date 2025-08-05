@@ -114,6 +114,103 @@ impl Linter {
         // String indexing/slicing functions
         self.functions.insert("char_at".to_string());
         self.functions.insert("substring".to_string());
+        
+        // Enhanced array functions
+        self.functions.insert("sort".to_string());
+        self.functions.insert("reverse".to_string());
+        self.functions.insert("unique".to_string());
+        self.functions.insert("contains".to_string());
+        self.functions.insert("index_of".to_string());
+        self.functions.insert("slice".to_string());
+        self.functions.insert("find".to_string());
+        
+        // Enhanced string functions
+        self.functions.insert("starts_with".to_string());
+        self.functions.insert("ends_with".to_string());
+        self.functions.insert("pad_left".to_string());
+        self.functions.insert("pad_right".to_string());
+        self.functions.insert("repeat".to_string());
+        self.functions.insert("reverse_str".to_string());
+        self.functions.insert("contains_str".to_string());
+        
+        // Base conversion functions
+        self.functions.insert("to_binary".to_string());
+        self.functions.insert("to_octal".to_string());
+        self.functions.insert("to_hex".to_string());
+        self.functions.insert("from_binary".to_string());
+        self.functions.insert("from_octal".to_string());
+        self.functions.insert("from_hex".to_string());
+        self.functions.insert("base_repr".to_string());
+        self.functions.insert("from_base".to_string());
+        
+        // Enhanced math functions
+        self.functions.insert("log".to_string());
+        self.functions.insert("log10".to_string());
+        self.functions.insert("exp".to_string());
+        self.functions.insert("degrees".to_string());
+        self.functions.insert("radians".to_string());
+        self.functions.insert("clamp".to_string());
+        
+        // Date/time functions
+        self.functions.insert("now".to_string());
+        self.functions.insert("timestamp".to_string());
+        self.functions.insert("sleep".to_string());
+        
+        // Environment/system functions
+        self.functions.insert("env".to_string());
+        self.functions.insert("exit".to_string());
+        
+        // More array functions
+        self.functions.insert("first".to_string());
+        self.functions.insert("last".to_string());
+        self.functions.insert("take".to_string());
+        self.functions.insert("drop".to_string());
+        self.functions.insert("concat".to_string());
+        self.functions.insert("flatten".to_string());
+        self.functions.insert("zip".to_string());
+        self.functions.insert("enumerate".to_string());
+        self.functions.insert("any".to_string());
+        self.functions.insert("all".to_string());
+        
+        // More string functions
+        self.functions.insert("capitalize".to_string());
+        self.functions.insert("title_case".to_string());
+        self.functions.insert("count".to_string());
+        self.functions.insert("is_empty".to_string());
+        self.functions.insert("is_numeric".to_string());
+        self.functions.insert("is_alpha".to_string());
+        self.functions.insert("lines".to_string());
+        
+        // Type conversion functions
+        self.functions.insert("to_int".to_string());
+        self.functions.insert("to_float".to_string());
+        self.functions.insert("to_string".to_string());
+        self.functions.insert("to_bool".to_string());
+        
+        // More math functions
+        self.functions.insert("sign".to_string());
+        self.functions.insert("gcd".to_string());
+        self.functions.insert("lcm".to_string());
+        self.functions.insert("factorial".to_string());
+        self.functions.insert("is_prime".to_string());
+        self.functions.insert("random_int".to_string());
+        self.functions.insert("random_float".to_string());
+        
+        // Input/output functions
+        self.functions.insert("input".to_string());
+        self.functions.insert("println".to_string());
+        
+        // System functions
+        self.functions.insert("exec".to_string());
+        self.functions.insert("file_exists".to_string());
+        self.functions.insert("is_file".to_string());
+        self.functions.insert("is_dir".to_string());
+        self.functions.insert("list_dir".to_string());
+        self.functions.insert("mkdir".to_string());
+        self.functions.insert("remove_file".to_string());
+        
+        // Testing functions
+        self.functions.insert("assert".to_string());
     }
     
     pub fn with_tokens_and_source(mut self, positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>, source: String) -> Self {

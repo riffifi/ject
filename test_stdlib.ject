@@ -1,0 +1,72 @@
+# Test New Standard Library Functions
+print "Testing Enhanced Ject Standard Library"
+print ""
+
+# Array Functions
+print "Array Functions:"
+let numbers = [5, 2, 8, 1, 9, 3]
+print "Original array: " + numbers
+
+let sorted = sort(numbers)
+print "Sorted: " + sorted
+
+let reversed = reverse(numbers)
+print "Reversed: " + reversed
+
+print ""
+
+# String Functions  
+print "String Functions:"
+let text = "Hello World"
+print "Text: '" + text + "'"
+
+print "starts_with('Hello'): " + starts_with(text, "Hello")
+print "starts_with('World'): " + starts_with(text, "World")
+print "ends_with('World'): " + ends_with(text, "World")
+print "ends_with('Hello'): " + ends_with(text, "Hello")
+
+print ""
+
+# Base Conversion Functions
+print "Base Conversion Functions:"
+let num = 42
+print "Number " + num + ":"
+print "Binary: " + to_binary(num)
+
+let binary_str = "101010"
+print "Binary '" + binary_str + "' to decimal: " + from_binary(binary_str)
+
+print ""
+
+# Math Functions
+print "Enhanced Math Functions:"
+print "log(100, 10): " + log(100.0, 10.0)
+print "exp(2): " + exp(2.0)
+
+print ""
+
+# Environment Functions
+print "Environment Functions:"
+let user = env("USER")
+if user != nil then
+    print "Current user: " + user
+else
+    print "USER environment variable not found"
+end
+
+let path = env("PATH")
+if path != nil then
+    print "PATH length: " + len(path)
+else
+    print "PATH environment variable not found"
+end
+
+print ""
+
+# Time Functions
+print "Time Functions:"
+let current_time = now()
+print "Current timestamp: " + current_time
+
+print ""
+print "Standard library tests completed!"

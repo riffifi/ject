@@ -1,0 +1,18 @@
+# Simple verification test
+fn main()
+    print "Testing basic functions..."
+    
+    # Test basic math
+    let result = abs(-5)
+    print "abs(-5) = " + result
+    
+    # Test array functions  
+    let arr = [1, 2, 3]
+    print "len([1,2,3]) = " + len(arr)
+    
+    # Test string functions
+    let str = "hello"
+    print "upper(hello) = " + upper(str)
+    
+    print "Basic tests completed!"
+end
