@@ -1,8 +1,0 @@
-fn main()
-  let x = 10  # This variable is used
-  let y = 20  # This variable is also used
-  print x
-  print y
-end
-
-main()

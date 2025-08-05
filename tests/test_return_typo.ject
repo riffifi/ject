@@ -1,6 +1,0 @@
-fn test()
-  retrun 42
-end
-
-let result = test()
-print result

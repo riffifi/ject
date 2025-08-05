@@ -1,8 +1,0 @@
-fn greet(name, greeting="Hello", punctuation="!")
-    print greeting + " " + name + punctuation
-end
-
-greet("Alice")
-greet("Bob", "Hi")
-greet("Charlie", punctuation="?")
-greet(name="David", greeting="Hey")

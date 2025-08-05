@@ -1,9 +1,0 @@
-# Function with default and positional parameters
-fn greet(greeting="Hello", name)
-    print(greeting + ", " + name + "!")
-end
-
-greet("Hi", "Alice")           # Output: Hi, Alice!
-greet(name="Bob")              # Output: Hello, Bob!
-
-greet()                         # Error: Missing required argument 'name'

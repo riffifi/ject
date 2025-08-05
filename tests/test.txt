@@ -1,3 +1,0 @@
-Hello, File I/O!
-This is a test of Ject's file operations.
-Line 3

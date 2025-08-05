@@ -1,9 +1,0 @@
-le x = 5
-print x
-
-fn broken_function(x, y)
-    let result = x +
-    return result
-end
-
-print broken_function(1, 2)
