@@ -58,6 +58,51 @@ pub fn create_stdlib() -> HashMap<String, Value> {
     stdlib.insert("char_at".to_string(), Value::BuiltinFunction("char_at".to_string()));
     stdlib.insert("substring".to_string(), Value::BuiltinFunction("substring".to_string()));
     
+    // Enhanced array functions
+    stdlib.insert("sort".to_string(), Value::BuiltinFunction("sort".to_string()));
+    stdlib.insert("reverse".to_string(), Value::BuiltinFunction("reverse".to_string()));
+    stdlib.insert("unique".to_string(), Value::BuiltinFunction("unique".to_string()));
+    stdlib.insert("contains".to_string(), Value::BuiltinFunction("contains".to_string()));
+    stdlib.insert("index_of".to_string(), Value::BuiltinFunction("index_of".to_string()));
+    stdlib.insert("slice".to_string(), Value::BuiltinFunction("slice".to_string()));
+    stdlib.insert("find".to_string(), Value::BuiltinFunction("find".to_string()));
+    
+    // Enhanced string functions
+    stdlib.insert("starts_with".to_string(), Value::BuiltinFunction("starts_with".to_string()));
+    stdlib.insert("ends_with".to_string(), Value::BuiltinFunction("ends_with".to_string()));
+    stdlib.insert("pad_left".to_string(), Value::BuiltinFunction("pad_left".to_string()));
+    stdlib.insert("pad_right".to_string(), Value::BuiltinFunction("pad_right".to_string()));
+    stdlib.insert("repeat".to_string(), Value::BuiltinFunction("repeat".to_string()));
+    stdlib.insert("reverse_str".to_string(), Value::BuiltinFunction("reverse_str".to_string()));
+    stdlib.insert("contains_str".to_string(), Value::BuiltinFunction("contains_str".to_string()));
+    
+    // Base conversion functions
+    stdlib.insert("to_binary".to_string(), Value::BuiltinFunction("to_binary".to_string()));
+    stdlib.insert("to_octal".to_string(), Value::BuiltinFunction("to_octal".to_string()));
+    stdlib.insert("to_hex".to_string(), Value::BuiltinFunction("to_hex".to_string()));
+    stdlib.insert("from_binary".to_string(), Value::BuiltinFunction("from_binary".to_string()));
+    stdlib.insert("from_octal".to_string(), Value::BuiltinFunction("from_octal".to_string()));
+    stdlib.insert("from_hex".to_string(), Value::BuiltinFunction("from_hex".to_string()));
+    stdlib.insert("base_repr".to_string(), Value::BuiltinFunction("base_repr".to_string()));
+    stdlib.insert("from_base".to_string(), Value::BuiltinFunction("from_base".to_string()));
+    
+    // Enhanced math functions
+    stdlib.insert("log".to_string(), Value::BuiltinFunction("log".to_string()));
+    stdlib.insert("log10".to_string(), Value::BuiltinFunction("log10".to_string()));
+    stdlib.insert("exp".to_string(), Value::BuiltinFunction("exp".to_string()));
+    stdlib.insert("degrees".to_string(), Value::BuiltinFunction("degrees".to_string()));
+    stdlib.insert("radians".to_string(), Value::BuiltinFunction("radians".to_string()));
+    stdlib.insert("clamp".to_string(), Value::BuiltinFunction("clamp".to_string()));
+    
+    // Date/time functions
+    stdlib.insert("now".to_string(), Value::BuiltinFunction("now".to_string()));
+    stdlib.insert("timestamp".to_string(), Value::BuiltinFunction("timestamp".to_string()));
+    stdlib.insert("sleep".to_string(), Value::BuiltinFunction("sleep".to_string()));
+    
+    // Environment/system functions
+    stdlib.insert("env".to_string(), Value::BuiltinFunction("env".to_string()));
+    stdlib.insert("exit".to_string(), Value::BuiltinFunction("exit".to_string()));
+    
     stdlib
 }
 
