@@ -158,6 +158,20 @@ pub fn create_stdlib() -> HashMap<String, Value> {
     // Type inspection
     stdlib.insert("type".to_string(), Value::BuiltinFunction("type".to_string()));
     
+    // Collection functions
+    stdlib.insert("collection".to_string(), Value::BuiltinFunction("collection".to_string()));
+    stdlib.insert("add_to".to_string(), Value::BuiltinFunction("add_to".to_string()));
+    stdlib.insert("remove_from".to_string(), Value::BuiltinFunction("remove_from".to_string()));
+    stdlib.insert("has".to_string(), Value::BuiltinFunction("has".to_string()));
+    stdlib.insert("union".to_string(), Value::BuiltinFunction("union".to_string()));
+    stdlib.insert("intersect".to_string(), Value::BuiltinFunction("intersect".to_string()));
+    stdlib.insert("difference".to_string(), Value::BuiltinFunction("difference".to_string()));
+    stdlib.insert("size".to_string(), Value::BuiltinFunction("size".to_string()));
+    stdlib.insert("is_subset".to_string(), Value::BuiltinFunction("is_subset".to_string()));
+    stdlib.insert("is_superset".to_string(), Value::BuiltinFunction("is_superset".to_string()));
+    stdlib.insert("clear_collection".to_string(), Value::BuiltinFunction("clear_collection".to_string()));
+    stdlib.insert("to_array".to_string(), Value::BuiltinFunction("to_array".to_string()));
+    
     // String functions - fix naming to match usage
     stdlib.insert("uppercase".to_string(), Value::BuiltinFunction("uppercase".to_string()));
     stdlib.insert("lowercase".to_string(), Value::BuiltinFunction("lowercase".to_string()));
@@ -1791,6 +1805,239 @@ match name {
             Ok(Value::Nil)
         },
         
+        // Collection functions
+        "collection" => {
+            // Creates a new empty collection or from array/string arguments
+            let mut set = std::collections::HashSet::new();
+            for arg in args {
+                match arg {
+                    Value::Array(arr) => {
+                        for item in arr {
+                            set.insert(item.to_string());
+                        }
+                    }
+                    _ => {
+                        set.insert(arg.to_string());
+                    }
+                }
+            }
+            Ok(Value::Collection(set))
+        },
+        "add_to" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "add_to() takes exactly 2 arguments (collection, item)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Collection(set) => {
+                    let mut new_set = set.clone();
+                    new_set.insert(args[1].to_string());
+                    Ok(Value::Collection(new_set))
+                }
+                _ => Err(RuntimeError {
+                    message: "add_to() requires a collection as first argument".to_string(),
+                }),
+            }
+        },
+        "remove_from" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "remove_from() takes exactly 2 arguments (collection, item)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Collection(set) => {
+                    let mut new_set = set.clone();
+                    new_set.remove(&args[1].to_string());
+                    Ok(Value::Collection(new_set))
+                }
+                _ => Err(RuntimeError {
+                    message: "remove_from() requires a collection as first argument".to_string(),
+                }),
+            }
+        },
+        "has" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "has() takes exactly 2 arguments (collection, item)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Collection(set) => {
+                    Ok(Value::Bool(set.contains(&args[1].to_string())))
+                }
+                _ => Err(RuntimeError {
+                    message: "has() requires a collection as first argument".to_string(),
+                }),
+            }
+        },
+        "union" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "union() takes exactly 2 arguments (collection1, collection2)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Collection(set1), Value::Collection(set2)) => {
+                    let union_set: std::collections::HashSet<String> = set1.union(set2).cloned().collect();
+                    Ok(Value::Collection(union_set))
+                }
+                _ => Err(RuntimeError {
+                    message: "union() requires two collections".to_string(),
+                }),
+            }
+        },
+        "intersect" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "intersect() takes exactly 2 arguments (collection1, collection2)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Collection(set1), Value::Collection(set2)) => {
+                    let intersection_set: std::collections::HashSet<String> = set1.intersection(set2).cloned().collect();
+                    Ok(Value::Collection(intersection_set))
+                }
+                _ => Err(RuntimeError {
+                    message: "intersect() requires two collections".to_string(),
+                }),
+            }
+        },
+        "difference" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "difference() takes exactly 2 arguments (collection1, collection2)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Collection(set1), Value::Collection(set2)) => {
+                    let difference_set: std::collections::HashSet<String> = set1.difference(set2).cloned().collect();
+                    Ok(Value::Collection(difference_set))
+                }
+                _ => Err(RuntimeError {
+                    message: "difference() requires two collections".to_string(),
+                }),
+            }
+        },
+        "size" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "size() takes exactly 1 argument (collection)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Collection(set) => {
+                    Ok(Value::Integer(set.len() as i64))
+                }
+                Value::Array(arr) => {
+                    Ok(Value::Integer(arr.len() as i64))
+                }
+                Value::String(s) => {
+                    Ok(Value::Integer(s.chars().count() as i64))
+                }
+                Value::Dictionary(dict) => {
+                    Ok(Value::Integer(dict.len() as i64))
+                }
+                _ => Err(RuntimeError {
+                    message: "size() requires a collection, array, string, or dictionary".to_string(),
+                }),
+            }
+        },
+        "is_subset" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "is_subset() takes exactly 2 arguments (collection1, collection2)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Collection(set1), Value::Collection(set2)) => {
+                    Ok(Value::Bool(set1.is_subset(set2)))
+                }
+                _ => Err(RuntimeError {
+                    message: "is_subset() requires two collections".to_string(),
+                }),
+            }
+        },
+        "is_superset" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "is_superset() takes exactly 2 arguments (collection1, collection2)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Collection(set1), Value::Collection(set2)) => {
+                    Ok(Value::Bool(set1.is_superset(set2)))
+                }
+                _ => Err(RuntimeError {
+                    message: "is_superset() requires two collections".to_string(),
+                }),
+            }
+        },
+        "clear_collection" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "clear_collection() takes exactly 1 argument (collection)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Collection(_) => {
+                    Ok(Value::Collection(std::collections::HashSet::new()))
+                }
+                _ => Err(RuntimeError {
+                    message: "clear_collection() requires a collection".to_string(),
+                }),
+            }
+        },
+        "to_array" => {
+            if args.len() < 1 || args.len() > 2 {
+                return Err(RuntimeError {
+                    message: "to_array() takes 1 or 2 arguments (collection/string, optional delimiter)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Collection(set) => {
+                    if args.len() == 2 {
+                        return Err(RuntimeError {
+                            message: "to_array() delimiter parameter only works with strings".to_string(),
+                        });
+                    }
+                    let mut items: Vec<String> = set.iter().cloned().collect();
+                    items.sort(); // Sort for consistent output
+                    let values: Vec<Value> = items.into_iter().map(Value::String).collect();
+                    Ok(Value::Array(values))
+                }
+                Value::String(s) => {
+                    if args.len() == 2 {
+                        // to_array(string, delimiter) - split by delimiter
+                        match &args[1] {
+                            Value::String(delimiter) => {
+                                if delimiter.is_empty() {
+                                    // Empty delimiter means split into characters (same as 1-arg version)
+                                    let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
+                                    Ok(Value::Array(chars))
+                                } else {
+                                    // Split by delimiter
+                                    let parts: Vec<Value> = s.split(delimiter).map(|part| Value::String(part.to_string())).collect();
+                                    Ok(Value::Array(parts))
+                                }
+                            }
+                            _ => Err(RuntimeError {
+                                message: "to_array() delimiter must be a string".to_string(),
+                            }),
+                        }
+                    } else {
+                        // to_array(string) - split into characters
+                        let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
+                        Ok(Value::Array(chars))
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "to_array() requires a collection or string".to_string(),
+                }),
+            }
+        },
+        
         _ => Err(RuntimeError {
             message: format!("Unknown builtin function: {}", name),
         }),
@@ -1857,6 +2104,12 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
                 json_obj.insert(key.clone(), json_value);
             }
             Ok(serde_json::Value::Object(json_obj))
+        }
+        Value::Collection(set) => {
+            let json_array: Vec<serde_json::Value> = set.iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            Ok(serde_json::Value::Array(json_array))
         }
         Value::Function { .. } | Value::ModuleFunction { .. } | Value::Lambda { .. } | Value::BuiltinFunction(_) | Value::ModuleObject(_) => {
             Err(RuntimeError {

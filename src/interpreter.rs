@@ -466,6 +466,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             (Value::String(a), BinaryOp::Equal, Value::String(b)) => Ok(Value::Bool(a == b)),
             (Value::Bool(a), BinaryOp::Equal, Value::Bool(b)) => Ok(Value::Bool(a == b)),
             (Value::Array(a), BinaryOp::Equal, Value::Array(b)) => Ok(Value::Bool(a == b)),
+            (Value::Collection(a), BinaryOp::Equal, Value::Collection(b)) => Ok(Value::Bool(a == b)),
             (Value::Nil, BinaryOp::Equal, Value::Nil) => Ok(Value::Bool(true)),
             (_, BinaryOp::Equal, _) => Ok(Value::Bool(false)),
             
@@ -518,6 +519,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             (Value::String(key), BinaryOp::In, Value::Dictionary(dict)) => {
                 Ok(Value::Bool(dict.contains_key(key)))
+            }
+            (Value::String(key), BinaryOp::In, Value::Collection(set)) => {
+                Ok(Value::Bool(set.contains(key)))
             }
             
             // Logical

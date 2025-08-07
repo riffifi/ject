@@ -27,6 +27,7 @@ struct LintWarning {
     position: Option<crate::lexer::SourcePosition>,
 }
 
+#[derive(Clone)]
 pub struct Linter {
     scopes: Vec<HashMap<String, Variable>>, // Stack of scopes with variable info
     warnings: Vec<LintWarning>,
@@ -211,6 +212,20 @@ impl Linter {
         
         // Testing functions
         self.functions.insert("assert".to_string());
+        
+        // Collection functions
+        self.functions.insert("collection".to_string());
+        self.functions.insert("add_to".to_string());
+        self.functions.insert("remove_from".to_string());
+        self.functions.insert("has".to_string());
+        self.functions.insert("union".to_string());
+        self.functions.insert("intersect".to_string());
+        self.functions.insert("difference".to_string());
+        self.functions.insert("size".to_string());
+        self.functions.insert("is_subset".to_string());
+        self.functions.insert("is_superset".to_string());
+        self.functions.insert("clear_collection".to_string());
+        self.functions.insert("to_array".to_string());
     }
     
     pub fn with_tokens_and_source(mut self, positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>, source: String) -> Self {
@@ -250,6 +265,53 @@ impl Linter {
             }
         }
 
+        // Convert to diagnostics
+        let mut diagnostics = Vec::new();
+        let mut has_errors = false;
+        
+        for error in &self.errors {
+            has_errors = true;
+            let mut diagnostic = Diagnostic::error(error.message.clone()).with_code("E0001".to_string());
+            if let Some(pos) = &error.position {
+                diagnostic = diagnostic.with_location(pos.line, pos.column);
+            }
+            diagnostics.push(diagnostic);
+        }
+        
+        for warning in &self.warnings {
+            let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W0001".to_string());
+            if let Some(pos) = &warning.position {
+                diagnostic = diagnostic.with_location(pos.line, pos.column);
+            }
+            diagnostics.push(diagnostic);
+        }
+        
+        (diagnostics, has_errors)
+    }
+    
+    // REPL-specific linting that maintains state between statements
+    pub fn lint_repl(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
+        // Only clear warnings and errors, keep global scope variables and functions
+        self.warnings.clear();
+        self.errors.clear();
+        
+        // Ensure we have at least the global scope
+        if self.scopes.is_empty() {
+            self.scopes.push(HashMap::new());
+        }
+        
+        // Make sure built-in functions are always available
+        self.add_builtin_functions();
+        
+        self.in_function = false;
+
+        // Single pass: analyze all statements
+        for stmt in statements {
+            self.analyze_statement(stmt);
+        }
+
+        // Don't check for unused variables in REPL mode - they might be used later
+        
         // Convert to diagnostics
         let mut diagnostics = Vec::new();
         let mut has_errors = false;
@@ -463,8 +525,38 @@ impl Linter {
             Stmt::Expression(expr) => {
                 self.analyze_expr(expr);
             }
-            Stmt::Import { .. } | Stmt::Export { .. } | Stmt::ExportFunction { .. } => {
-                // TODO: Handle imports/exports if needed
+            Stmt::Import { module_path: _, items, alias } => {
+                // For simplicity, assume all imports succeed, as we're only linting
+                if items.is_some() {
+                    for item in items.as_ref().unwrap() {
+                        self.declare_variable(item.clone());
+                    }
+                } else {
+                    // Import all items from the module
+                    // Assuming module has been correctly imported, typically we'd extract actual items
+                }
+
+                if let Some(alias_name) = alias {
+                    self.declare_variable(alias_name.clone());
+                }
+            }
+            Stmt::Export { name, value } => {
+                self.analyze_expr(value);
+                self.declare_variable(name.clone());
+            }
+            Stmt::ExportFunction { name, params, body } => {
+                self.declare_variable(name.clone());
+                self.push_scope();
+                
+                for param in params {
+                    self.declare_variable(param.name.clone());
+                }
+
+                for stmt in body {
+                    self.analyze_statement(stmt);
+                }
+
+                self.pop_scope();
             }
         }
     }

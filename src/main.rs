@@ -48,6 +48,7 @@ fn run_repl() {
     println!("'exit' to, well, exit\n");
     
     let mut interpreter = Interpreter::new();
+    let mut linter = linter::Linter::new();  // Persistent linter for REPL
     let mut rl = DefaultEditor::new().expect("Failed to create readline editor");
 
     // Try to load history from file
@@ -63,7 +64,7 @@ fn run_repl() {
                 }
                 if !input.is_empty() {
                     let _ = rl.add_history_entry(input);
-                    execute_source(input, &mut interpreter, None);
+                    execute_source_repl(input, &mut interpreter, &mut linter);
                 }
             }
             Err(ReadlineError::Interrupted) => {
@@ -140,6 +141,55 @@ fn execute_source(source: &str, interpreter: &mut Interpreter, filename: Option<
             if filename.is_some() {
                 std::process::exit(1);
             }
+        },
+    }
+}
+
+fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut linter::Linter) {
+    let mut lexer = Lexer::new(source);
+    let located_tokens = lexer.tokenize_with_positions();
+    let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> = located_tokens.into_iter().map(|lt| (lt.token, lt.position)).collect();
+    
+    // Clone positioned tokens for linter before parser consumes them
+    let positioned_tokens_for_linter = positioned_tokens.clone();
+    let mut parser = Parser::new(positioned_tokens);
+
+    match parser.parse() {
+        Ok(statements) => {
+            // Use REPL-aware linter that maintains state
+            *linter = linter.clone().with_tokens_and_source(positioned_tokens_for_linter, source.to_string());
+            let (diagnostics, has_errors) = linter.lint_repl(&statements);
+            
+            // Create diagnostic renderer for beautiful output
+            let renderer = DiagnosticRenderer::new();
+            
+            // Display all diagnostics with colorful formatting
+            for diagnostic in &diagnostics {
+                renderer.render(diagnostic, None, Some(source));
+            }
+            
+            // Only run interpreter if no errors were found
+            if !has_errors {
+                match interpreter.interpret(&statements) {
+                    Ok(_) => {}
+                    Err(error) => {
+                        println!("Runtime Error: {}", error);
+                    },
+                }
+            }
+        }
+        Err(error) => {
+            // Create diagnostic renderer for parse errors
+            let renderer = DiagnosticRenderer::new();
+            let mut parse_diagnostic = crate::diagnostic::Diagnostic::error(error.message.clone())
+                .with_code("E0002".to_string());
+            
+            // Use position information if available
+            if let (Some(line), Some(column)) = (error.line, error.column) {
+                parse_diagnostic = parse_diagnostic.with_location(line, column);
+            }
+            
+            renderer.render(&parse_diagnostic, None, Some(source));
         },
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use crate::ast::{Stmt, Parameter};
 
@@ -11,6 +11,7 @@ pub enum Value {
     Nil,
     Array(Vec<Value>),
     Dictionary(std::collections::HashMap<String, Value>),
+    Collection(std::collections::HashSet<String>),
     Function {
         params: Vec<Parameter>,
         body: Vec<Stmt>,
@@ -49,6 +50,16 @@ impl fmt::Display for Value {
                 for (i, (key, value)) in map.iter().enumerate() {
                     if i > 0 { write!(f, ", ")?; }
                     write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Collection(set) => {
+                write!(f, "collection{{")?;
+                let mut items: Vec<_> = set.iter().collect();
+                items.sort(); // Sort for consistent display
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", item)?;
                 }
                 write!(f, "}}")
             }
@@ -118,11 +129,12 @@ impl PartialOrd for Value {
                     Value::String(_) => 4,
                     Value::Array(_) => 5,
                     Value::Dictionary(_) => 6,
-                    Value::Function { .. } => 7,
-                    Value::ModuleFunction { .. } => 8,
-                    Value::Lambda { .. } => 9,
-                    Value::ModuleObject(_) => 10,
-                    Value::BuiltinFunction(_) => 11,
+                    Value::Collection(_) => 7,
+                    Value::Function { .. } => 8,
+                    Value::ModuleFunction { .. } => 9,
+                    Value::Lambda { .. } => 10,
+                    Value::ModuleObject(_) => 11,
+                    Value::BuiltinFunction(_) => 12,
                 };
                 type_order(a).partial_cmp(&type_order(b))
             }
@@ -140,6 +152,7 @@ impl Value {
             Value::String(s) => !s.is_empty(),
             Value::Array(arr) => !arr.is_empty(),
             Value::Dictionary(dict) => !dict.is_empty(),
+            Value::Collection(set) => !set.is_empty(),
             _ => true,
         }
     }
@@ -153,6 +166,7 @@ impl Value {
             Value::Nil => "nil",
             Value::Array(_) => "array",
             Value::Dictionary(_) => "dictionary",
+            Value::Collection(_) => "collection",
             Value::Function { .. } => "function",
             Value::ModuleFunction { .. } => "function",
             Value::Lambda { .. } => "lambda",
