@@ -1,0 +1,50 @@
+# System Standard Library Module
+
+export fn input(prompt)
+    return input(prompt)
+end
+
+export fn exec(command)
+    return exec(command)
+end
+
+export fn env(var_name)
+    return env(var_name)
+end
+
+export fn exit(code)
+    return exit(code)
+end
+
+export fn file_exists(path)
+    return file_exists(path)
+end
+
+export fn is_file(path)
+    return is_file(path)
+end
+
+export fn is_dir(path)
+    return is_dir(path)
+end
+
+export fn list_dir(path)
+    return list_dir(path)
+end
+
+export fn mkdir(path)
+    return mkdir(path)
+end
+
+export fn remove_file(path)
+    return remove_file(path)
+end
+
+export fn get_cwd()
+    return exec("pwd")
+end
+
+export fn change_dir(path)
+    return exec("cd " + path)
+end
+

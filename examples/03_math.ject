@@ -1,0 +1,9 @@
+let a = 10
+let b = 5
+
+print "Sum: " + (a + b)
+print "Product: " + (a * b)
+print "Quotient: " + (a / b)
+print "Power: " + pow(a, b)
+print "Square root of 16: " + sqrt(16)
+

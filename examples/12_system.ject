@@ -1,0 +1,16 @@
+print "Current directory:"
+let cwd = exec("pwd")
+print cwd
+
+print "\nListing files:"
+let files = exec("ls -la")
+print files
+
+print "\nEnvironment variable HOME:"
+let home = env("HOME")
+print home
+
+print "\nSystem info:"
+let uname = exec("uname -a")
+print uname
+

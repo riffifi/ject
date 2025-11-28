@@ -1,0 +1,19 @@
+fn divide(a, b)
+    if b == 0 then
+        throw "Division by zero"
+    end
+    return a / b
+end
+
+try
+    let result = divide(10, 2)
+    print "Result: " + result
+    
+    let bad = divide(10, 0)
+    print "This won't print"
+catch err
+    print "Error caught: " + err
+end
+
+print "Program continues after error handling"
+

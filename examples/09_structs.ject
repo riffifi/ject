@@ -1,0 +1,26 @@
+struct Point {
+    x, y
+}
+
+struct Person {
+    name,
+    age,
+    email
+}
+
+let p1 = new Point { x: 10, y: 20 }
+let p2 = new Point { x: 30, y: 40 }
+
+print "Point 1: (" + p1.x + ", " + p1.y + ")"
+print "Point 2: (" + p2.x + ", " + p2.y + ")"
+
+let person = new Person {
+    name: "Bob",
+    age: 30,
+    email: "bob@example.com"
+}
+
+print "Name: " + person.name
+print "Age: " + person.age
+print "Email: " + person.email
+

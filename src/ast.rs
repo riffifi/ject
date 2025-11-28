@@ -33,6 +33,14 @@ pub enum Expr {
         object: Box<Expr>,
         property: String,
     },
+    StructAccess {
+        object: Box<Expr>,
+        field: String,
+    },
+    StructInit {
+        struct_name: String,
+        fields: Vec<(String, Expr)>,
+    },
     Range {
         start: Box<Expr>,
         end: Box<Expr>,
@@ -168,6 +176,16 @@ pub enum Stmt {
     },
     Return(Option<Expr>),
     Print(Expr),
+    Struct {
+        name: String,
+        fields: Vec<String>,
+    },
+    Try {
+        body: Vec<Stmt>,
+        catch_var: Option<String>,
+        catch_body: Vec<Stmt>,
+    },
+    Throw(Expr),
 }
 
 impl fmt::Display for Expr {
@@ -224,6 +242,17 @@ impl fmt::Display for Expr {
             }
             Expr::Member { object, property } => {
                 write!(f, "{}.{}", object, property)
+            }
+            Expr::StructAccess { object, field } => {
+                write!(f, "{}.{}", object, field)
+            }
+            Expr::StructInit { struct_name, fields } => {
+                write!(f, "new {} {{", struct_name)?;
+                for (i, (key, value)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
             }
             Expr::Range { start, end, step } => {
                 match step {
@@ -361,6 +390,24 @@ impl fmt::Display for Stmt {
             Stmt::Return(Some(expr)) => write!(f, "return {}", expr),
             Stmt::Return(None) => write!(f, "return"),
             Stmt::Print(expr) => write!(f, "print {}", expr),
+            Stmt::Struct { name, fields } => {
+                write!(f, "struct {} {{", name)?;
+                for (i, field) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", field)?;
+                }
+                write!(f, "}}")
+            }
+            Stmt::Try { body: _, catch_var, catch_body: _ } => {
+                write!(f, "try")?;
+                if let Some(var) = catch_var {
+                    write!(f, " catch {}", var)?;
+                } else {
+                    write!(f, " catch")?;
+                }
+                Ok(())
+            }
+            Stmt::Throw(expr) => write!(f, "throw {}", expr),
         }
     }
 }

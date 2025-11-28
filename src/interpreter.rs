@@ -29,27 +29,83 @@ pub struct Interpreter {
 pub enum ControlFlow {
     None,
     Return(Value),
+    Throw(Value),
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         let mut environment = Environment::new();
         
-        // Load standard library
+        // Load standard library from Rust (for builtin functions that need Rust implementation)
         let stdlib = crate::stdlib::create_stdlib();
         for (name, value) in stdlib {
             environment.define(name, value);
         }
+        
+        // Load standard library from Ject files
+        // Try to load stdlib/index.ject which imports all stdlib modules
+        if let Ok(_) = Self::load_stdlib_from_ject(&mut environment) {
+            // Successfully loaded
+        }
+        // If it fails, we still have the Rust stdlib, so continue
         
         Interpreter {
             environment,
         }
     }
     
+    fn load_stdlib_from_ject(environment: &mut Environment) -> RuntimeResult<()> {
+        // Load stdlib/index.ject
+        let stdlib_path = "stdlib/index.ject";
+        
+        if !Path::new(stdlib_path).exists() {
+            // If stdlib doesn't exist in Ject files, that's okay - use Rust stdlib
+            return Ok(());
+        }
+        
+        // Read and parse the stdlib index
+        let stdlib_content = fs::read_to_string(stdlib_path)
+            .map_err(|e| RuntimeError {
+                message: format!("Failed to read stdlib: {}", e),
+            })?;
+            
+        let mut lexer = crate::lexer::Lexer::new(&stdlib_content);
+        let located_tokens = lexer.tokenize_with_positions();
+        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+        let mut parser = crate::parser::Parser::new_simple(tokens);
+        let statements = parser.parse().map_err(|e| RuntimeError {
+            message: format!("Parse error in stdlib: {}", e),
+        })?;
+        
+        // Create a temporary interpreter to execute stdlib
+        let mut stdlib_interpreter = Interpreter {
+            environment: environment.clone(),
+        };
+        
+        // Execute stdlib statements
+        for statement in &statements {
+            match stdlib_interpreter.execute_statement(statement)? {
+                ControlFlow::Return(_) => break,
+                ControlFlow::Throw(_) => break, // Errors in stdlib are ignored
+                ControlFlow::None => continue,
+            }
+        }
+        
+        // Merge stdlib environment back
+        *environment = stdlib_interpreter.environment;
+        
+        Ok(())
+    }
+    
     pub fn interpret(&mut self, statements: &[Stmt]) -> RuntimeResult<()> {
         for statement in statements {
             match self.execute_statement(statement)? {
                 ControlFlow::Return(_) => break,
+                ControlFlow::Throw(error) => {
+                    return Err(RuntimeError {
+                        message: format!("Uncaught error: {}", error),
+                    });
+                }
                 ControlFlow::None => continue,
             }
         }
@@ -111,6 +167,7 @@ impl Interpreter {
                 while self.evaluate_expression(condition)?.is_truthy() {
                     match self.execute_block(body)? {
                         ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                        ControlFlow::Throw(error) => return Ok(ControlFlow::Throw(error)),
                         ControlFlow::None => continue,
                     }
                 }
@@ -129,6 +186,10 @@ impl Interpreter {
                                 ControlFlow::Return(value) => {
                                     self.environment.pop_scope();
                                     return Ok(ControlFlow::Return(value));
+                                }
+                                ControlFlow::Throw(error) => {
+                                    self.environment.pop_scope();
+                                    return Ok(ControlFlow::Throw(error));
                                 }
                                 ControlFlow::None => {}
                             }
@@ -175,6 +236,45 @@ impl Interpreter {
                 println!("{}", value);
                 Ok(ControlFlow::None)
             }
+            Stmt::Struct { name, fields } => {
+                let struct_def = Value::StructDefinition {
+                    name: name.clone(),
+                    fields: fields.clone(),
+                };
+                self.environment.define(name.clone(), struct_def);
+                Ok(ControlFlow::None)
+            }
+            Stmt::Try { body, catch_var, catch_body } => {
+                let try_result = self.execute_block(body);
+                match try_result {
+                    Ok(ControlFlow::Throw(error_value)) => {
+                        // Catch the error
+                        self.environment.push_scope();
+                        if let Some(var_name) = catch_var {
+                            // Store the error value directly (it can be any value)
+                            self.environment.define(var_name.clone(), error_value.clone());
+                        }
+                        let result = self.execute_block(catch_body)?;
+                        self.environment.pop_scope();
+                        Ok(result)
+                    }
+                    Ok(other) => Ok(other),
+                    Err(e) => {
+                        // Runtime error from function call - convert to throw
+                        self.environment.push_scope();
+                        if let Some(var_name) = catch_var {
+                            self.environment.define(var_name.clone(), Value::String(e.message.clone()));
+                        }
+                        let result = self.execute_block(catch_body)?;
+                        self.environment.pop_scope();
+                        Ok(result)
+                    }
+                }
+            }
+            Stmt::Throw(expr) => {
+                let error_value = self.evaluate_expression(expr)?;
+                Ok(ControlFlow::Throw(error_value))
+            }
         }
     }
     
@@ -182,6 +282,7 @@ impl Interpreter {
         for statement in statements {
             match self.execute_statement(statement)? {
                 ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                ControlFlow::Throw(error) => return Ok(ControlFlow::Throw(error)),
                 ControlFlow::None => continue,
             }
         }
@@ -307,6 +408,65 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     }
                     _ => Err(RuntimeError {
                         message: format!("Cannot access property '{}' on {}", property, obj.type_name()),
+                    })
+                }
+            }
+            Expr::StructAccess { object, field } => {
+                let obj = self.evaluate_expression(object)?;
+                
+                match obj {
+                    Value::StructInstance { fields, .. } => {
+                        fields.get(field).cloned().ok_or_else(|| RuntimeError {
+                            message: format!("Field '{}' not found in struct instance", field),
+                        })
+                    }
+                    Value::ModuleObject(exports) => {
+                        // Also support module member access via dot notation
+                        exports.get(field).cloned().ok_or_else(|| RuntimeError {
+                            message: format!("Property '{}' not found in module", field),
+                        })
+                    }
+                    _ => Err(RuntimeError {
+                        message: format!("Cannot access field '{}' on {}", field, obj.type_name()),
+                    })
+                }
+            }
+            Expr::StructInit { struct_name, fields } => {
+                // Get struct definition
+                let struct_def = self.environment.get(struct_name)
+                    .ok_or_else(|| RuntimeError {
+                        message: format!("Struct '{}' not defined", struct_name),
+                    })?;
+                
+                if let Value::StructDefinition { fields: def_fields, .. } = struct_def {
+                    // Create struct instance
+                    let mut instance_fields = HashMap::new();
+                    
+                    // Initialize fields from the struct init
+                    for (field_name, field_value_expr) in fields {
+                        if !def_fields.contains(field_name) {
+                            return Err(RuntimeError {
+                                message: format!("Field '{}' not found in struct '{}'", field_name, struct_name),
+                            });
+                        }
+                        let field_value = self.evaluate_expression(field_value_expr)?;
+                        instance_fields.insert(field_name.clone(), field_value);
+                    }
+                    
+                    // Initialize missing fields to nil
+                    for field_name in &def_fields {
+                        if !instance_fields.contains_key(field_name) {
+                            instance_fields.insert(field_name.clone(), Value::Nil);
+                        }
+                    }
+                    
+                    Ok(Value::StructInstance {
+                        struct_name: struct_name.clone(),
+                        fields: instance_fields,
+                    })
+                } else {
+                    Err(RuntimeError {
+                        message: format!("'{}' is not a struct", struct_name),
                     })
                 }
             }
@@ -558,8 +718,28 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
     }
     
     fn load_module(&mut self, module_path: &str, items: &Option<Vec<String>>, alias: &Option<String>) -> RuntimeResult<()> {
-        // Look for module in examples/modules/ directory for now
-        let module_file_path = format!("examples/modules/{}.ject", module_path);
+        // Determine the module file path
+        // First check stdlib, then examples/modules, then relative paths
+        let module_file_path = if !module_path.starts_with("./") && !module_path.starts_with("../") && !module_path.contains("/") {
+            // Simple module name - check stdlib first, then examples/modules
+            let stdlib_path = format!("stdlib/{}.ject", module_path);
+            if Path::new(&stdlib_path).exists() {
+                stdlib_path
+            } else {
+                format!("examples/modules/{}.ject", module_path)
+            }
+        } else if module_path.starts_with("./") || module_path.starts_with("../") {
+            // Relative path - resolve relative to current file's directory
+            // For now, assume we're in examples/ directory
+            let path = module_path.trim_start_matches("./");
+            format!("examples/{}.ject", path)
+        } else if module_path.contains("/") {
+            // Absolute path from examples/ directory
+            format!("examples/{}.ject", module_path)
+        } else {
+            // Fallback
+            format!("examples/modules/{}.ject", module_path)
+        };
         
         if !Path::new(&module_file_path).exists() {
             return Err(RuntimeError {
@@ -605,7 +785,8 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
         }
         
-        // First, process export functions and define them in the module environment
+        // Process export functions and define them in the module environment first
+        // This ensures they're available in the module scope for potential self-references
         for statement in &statements {
             if let Stmt::ExportFunction { name, params, body } = statement {
                 let func = Value::Function {
@@ -625,12 +806,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     exports.insert(name.clone(), val.clone());
                 }
                 Stmt::ExportFunction { name, params, body } => {
+                    // Create ModuleFunction with the current module environment as closure
+                    // This captures all the module's variables and functions
                     let func = Value::ModuleFunction {
                         params: params.clone(),
                         body: body.clone(),
                         closure_env: self.environment.clone(),
                     };
-                    exports.insert(name.clone(), func.clone());
+                    exports.insert(name.clone(), func);
                 }
                 _ => {
                     // Already processed
@@ -690,6 +873,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 
                 let result = match self.execute_block(&body)? {
                     ControlFlow::Return(value) => value,
+                    ControlFlow::Throw(error) => return Err(RuntimeError {
+                        message: format!("Error in function: {}", error),
+                    }),
                     ControlFlow::None => Value::Nil,
                 };
                 
@@ -710,6 +896,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 
                 let result = match self.execute_block(&body)? {
                     ControlFlow::Return(value) => value,
+                    ControlFlow::Throw(error) => return Err(RuntimeError {
+                        message: format!("Error in function: {}", error),
+                    }),
                     ControlFlow::None => Value::Nil,
                 };
                 
@@ -754,6 +943,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     crate::ast::LambdaBody::Block(statements) => {
                         match self.execute_block(&statements)? {
                             ControlFlow::Return(value) => value,
+                            ControlFlow::Throw(error) => return Err(RuntimeError {
+                                message: format!("Error in lambda: {}", error),
+                            }),
                             ControlFlow::None => Value::Nil,
                         }
                     }

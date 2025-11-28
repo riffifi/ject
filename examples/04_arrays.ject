@@ -1,0 +1,12 @@
+let numbers = [1, 2, 3, 4, 5]
+print "Numbers: " + numbers
+print "Length: " + len(numbers)
+print "Sum: " + sum(numbers)
+print "Average: " + (sum(numbers) / len(numbers))
+
+let doubled = map(numbers, lambda(x) -> x * 2)
+print "Doubled: " + doubled
+
+let evens = filter(numbers, lambda(x) -> x % 2 == 0)
+print "Evens: " + evens
+

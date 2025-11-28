@@ -1,7 +1,0 @@
-# Module alias test
-
-import "simple_test" as test
-
-print test.message
-print test.number
-print test.greet("Alias")

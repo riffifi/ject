@@ -286,6 +286,44 @@ print art.banner("Welcome!")
 # Full imports - import all exports directly
 import "game_utils"
 let dice_roll = roll_dice(6)
+
+# Import from stdlib
+import "math"
+print "PI = " + PI
+```
+
+### Structs
+
+Ject supports struct definitions for creating custom data types:
+
+```ject
+# Define a struct
+struct Point {
+    x, y
+}
+
+struct Person {
+    name,
+    age,
+    email
+}
+
+# Create struct instances
+let p1 = new Point { x: 10, y: 20 }
+let p2 = new Point { x: 30, y: 40 }
+
+# Access fields
+print "Point: " + p1.x + ", " + p1.y
+
+# Create a person
+let person = new Person {
+    name: "Alice",
+    age: 30,
+    email: "alice@example.com"
+}
+
+print "Name: " + person.name
+print "Age: " + person.age
 ```
 
 ### Standard Library
@@ -423,11 +461,16 @@ Ject was designed with these principles in mind:
 - [x] **Enhanced REPL** - Arrow key navigation, command history, and line editing
 - [x] **Lambda functions** - Anonymous function expressions
 - [x] **Module system** - Import/export functionality
-- [ ] **Extended standard library** - File I/O, HTTP, JSON, etc.
+- [x] **Struct system** - Define and use custom data structures
+- [x] **Enhanced linter** - Better error messages with suggestions and colored diagnostics
+- [x] **Standard library in Ject** - Proper stdlib folder structure with Ject modules
+- [x] **Extended standard library** - File I/O, HTTP, JSON, etc. (via builtin functions)
 - [ ] **Package manager** - Easy dependency management
-- [ ] **Advanced REPL features** - Syntax highlighting, autocomplete, better error messages
+- [ ] **Advanced REPL features** - Syntax highlighting, autocomplete
 - [ ] **Compiled mode** - Optional compilation for production use
 - [ ] **VSCode extension** - Syntax highlighting and language support
+- [ ] **Error handling** - Try/catch or similar error handling mechanism
+- [ ] **Generics/Templates** - Type parameters for functions and structs
 
 ## Inspiration
 

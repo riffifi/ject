@@ -59,9 +59,12 @@ impl Parser {
             Token::While => self.while_statement(),
             Token::For => self.for_statement(),
             Token::Return => self.return_statement(),
+            Token::Throw => self.throw_statement(),
             Token::Print => self.print_statement(),
             Token::Import => self.import_statement(),
             Token::Export => self.export_statement(),
+            Token::Struct => self.struct_statement(),
+            Token::Try => self.try_statement(),
             Token::Identifier(_) => {
                 // Check if this is an assignment
                 if self.peek_ahead(1).map(|t| matches!(t, Token::Equal)).unwrap_or(false) {
@@ -173,28 +176,73 @@ impl Parser {
             while self.match_token(&Token::Newline) {}
             
             // Check for "else if" pattern
+            // Only convert to elseif if it's a simple else-if without nested end
+            // Otherwise, treat it as a nested if statement
             if self.check(&Token::If) {
-                // This is an "else if" - recursively parse remaining elseifs and else
-                let remaining_if = self.if_statement()?;
-                if let Stmt::If { condition: nested_condition, then_branch: nested_then, elseif_branches: mut nested_elseifs, else_branch: nested_else } = remaining_if {
-                    // Convert the nested if into an elseif branch
-                    elseif_branches.push(crate::ast::ElseIfBranch {
-                        condition: nested_condition,
-                        body: nested_then,
-                    });
-                    
-                    // Add all nested elseif branches
-                    elseif_branches.append(&mut nested_elseifs);
-                    
-                    // Set the final else branch
+                // Look ahead to see if this is a nested if with its own 'end'
+                // Count tokens until we find an 'end' that would close the nested if
+                let mut pos = self.current + 1; // Skip the 'if' token
+                let mut depth = 1; // We're inside the nested if
+                let mut found_nested_end = false;
+                
+                // Look ahead to find the nested if's 'end'
+                while pos < self.tokens.len() {
+                    match &self.tokens[pos].0 {
+                        Token::If => depth += 1,
+                        Token::End => {
+                            depth -= 1;
+                            if depth == 0 {
+                                found_nested_end = true;
+                                // Check if the next token after this 'end' is another 'end' (for outer if)
+                                // or something else
+                                if pos + 1 < self.tokens.len() {
+                                    let next_after_end = &self.tokens[pos + 1].0;
+                                    // If next token is 'end', 'elseif', 'else', or end of block, it's a nested if
+                                    if matches!(next_after_end, Token::End | Token::ElseIf | Token::Else | Token::Eof) {
+                                        found_nested_end = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    pos += 1;
+                }
+                
+                if found_nested_end {
+                    // This is a nested if statement - parse as regular else block
+                    let else_body = self.if_block()?;
+                    self.consume(Token::End, "Expected 'end' after if statement")?;
                     return Ok(Stmt::If {
                         condition,
                         then_branch,
                         elseif_branches,
-                        else_branch: nested_else,
+                        else_branch: Some(else_body),
                     });
+                } else {
+                    // This is an "else if" chain - recursively parse remaining elseifs and else
+                    let remaining_if = self.if_statement()?;
+                    if let Stmt::If { condition: nested_condition, then_branch: nested_then, elseif_branches: mut nested_elseifs, else_branch: nested_else } = remaining_if {
+                        // Convert the nested if into an elseif branch
+                        elseif_branches.push(crate::ast::ElseIfBranch {
+                            condition: nested_condition,
+                            body: nested_then,
+                        });
+                        
+                        // Add all nested elseif branches
+                        elseif_branches.append(&mut nested_elseifs);
+                        
+                        // Set the final else branch
+                        return Ok(Stmt::If {
+                            condition,
+                            then_branch,
+                            elseif_branches,
+                            else_branch: nested_else,
+                        });
+                    }
+                    needs_end_token = false; // The recursive call already consumed the end token
                 }
-                needs_end_token = false; // The recursive call already consumed the end token
             } else {
                 // Regular else block
                 let else_body = self.if_block()?;
@@ -290,6 +338,12 @@ impl Parser {
         self.consume(Token::Print, "Expected 'print'")?;
         let expr = self.expression()?;
         Ok(Stmt::Print(expr))
+    }
+    
+    fn throw_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Throw, "Expected 'throw'")?;
+        let error_expr = self.expression()?;
+        Ok(Stmt::Throw(error_expr))
     }
     
     fn assignment_statement(&mut self) -> ParseResult<Stmt> {
@@ -419,6 +473,99 @@ impl Parser {
         let value = self.expression()?;
         
         Ok(Stmt::Export { name, value })
+    }
+    
+    fn struct_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Struct, "Expected 'struct'")?;
+        
+        let name = if let Token::Identifier(name) = self.advance() {
+            name
+        } else {
+            return Err(self.error("Expected struct name".to_string()));
+        };
+        
+        self.consume(Token::LeftBrace, "Expected '{' after struct name")?;
+        
+        // Skip optional newlines
+        while self.match_token(&Token::Newline) {}
+        
+        let mut fields = Vec::new();
+        if !self.check(&Token::RightBrace) {
+            loop {
+                // Skip optional newlines before field
+                while self.match_token(&Token::Newline) {}
+                
+                if let Token::Identifier(field_name) = self.advance() {
+                    fields.push(field_name);
+                } else {
+                    return Err(self.error("Expected field name".to_string()));
+                }
+                
+                // Skip optional newlines after field
+                while self.match_token(&Token::Newline) {}
+                
+                if !self.match_token(&Token::Comma) {
+                    // Skip optional newlines before checking for closing brace
+                    while self.match_token(&Token::Newline) {}
+                    break;
+                }
+                
+                // Skip optional newlines after comma
+                while self.match_token(&Token::Newline) {}
+            }
+        }
+        
+        // Skip optional newlines before closing brace
+        while self.match_token(&Token::Newline) {}
+        
+        self.consume(Token::RightBrace, "Expected '}' after struct fields")?;
+        
+        Ok(Stmt::Struct { name, fields })
+    }
+    
+    fn try_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Try, "Expected 'try'")?;
+        
+        // Skip optional newlines
+        while self.match_token(&Token::Newline) {}
+        
+        let mut body = Vec::new();
+        while !self.check(&Token::End) && !self.check(&Token::Catch) && !self.is_at_end() {
+            if self.match_token(&Token::Newline) {
+                continue;
+            }
+            body.push(self.statement()?);
+        }
+        
+        // Consume 'end' if present
+        if self.check(&Token::End) {
+            self.consume(Token::End, "Expected 'end'")?;
+        }
+        
+        // Expect catch
+        self.consume(Token::Catch, "Expected 'catch' after 'try' block")?;
+        
+        // Optional catch variable
+        let catch_var = if matches!(self.peek(), Token::Identifier(_)) {
+            if let Token::Identifier(name) = self.advance() {
+                Some(name)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        // Skip optional newlines
+        while self.match_token(&Token::Newline) {}
+        
+        let catch_body = self.block()?;
+        
+        Ok(Stmt::Try {
+            body,
+            catch_var,
+            catch_body,
+        })
     }
     
     fn block(&mut self) -> ParseResult<Vec<Stmt>> {
@@ -683,9 +830,12 @@ impl Parser {
                 };
             } else if self.match_token(&Token::Dot) {
                 if let Token::Identifier(property) = self.advance() {
-                    expr = Expr::Member {
+                    // Check if this is a struct access or module member access
+                    // For now, we'll use StructAccess for struct instances and Member for modules
+                    // We'll determine at runtime which one it is
+                    expr = Expr::StructAccess {
                         object: Box::new(expr),
-                        property,
+                        field: property,
                     };
                 } else {
                     return Err(self.error("Expected property name after '.'".to_string()));
@@ -746,7 +896,9 @@ impl Parser {
     fn primary(&mut self) -> ParseResult<Expr> {
         match self.advance() {
             Token::Match => self.match_expression(),
+            Token::If => self.conditional_expression(),
             Token::Lambda => self.lambda_expression(),
+            Token::New => self.struct_init_expression(),
             Token::True => Ok(Expr::Bool(true)),
             Token::False => Ok(Expr::Bool(false)),
             Token::Nil => Ok(Expr::Nil),
@@ -844,6 +996,112 @@ impl Parser {
         };
 
         Ok(Expr::Lambda { params, body })
+    }
+    
+    fn conditional_expression(&mut self) -> ParseResult<Expr> {
+        // We already consumed 'if', now parse condition
+        let condition = self.expression()?;
+        
+        // Optional 'then' keyword
+        self.match_token(&Token::Then);
+        
+        // Skip optional newlines
+        while self.match_token(&Token::Newline) {}
+        
+        // Parse then expression
+        let then_expr = self.expression()?;
+        
+        // Parse elseif branches
+        let mut elseif_branches = Vec::new();
+        while self.match_token(&Token::ElseIf) {
+            let elseif_condition = self.expression()?;
+            
+            // Optional 'then' keyword
+            self.match_token(&Token::Then);
+            
+            // Skip optional newlines
+            while self.match_token(&Token::Newline) {}
+            
+            let elseif_then_expr = self.expression()?;
+            
+            elseif_branches.push(crate::ast::ConditionalElseIfBranch {
+                condition: elseif_condition,
+                then_expr: elseif_then_expr,
+            });
+        }
+        
+        // Parse else branch if present
+        let else_expr = if self.match_token(&Token::Else) {
+            // Skip optional newlines
+            while self.match_token(&Token::Newline) {}
+            Some(Box::new(self.expression()?))
+        } else {
+            None
+        };
+        
+        // Consume 'end'
+        self.consume(Token::End, "Expected 'end' after conditional expression")?;
+        
+        Ok(Expr::ConditionalExpr {
+            condition: Box::new(condition),
+            then_expr: Box::new(then_expr),
+            elseif_branches,
+            else_expr,
+        })
+    }
+    
+    fn struct_init_expression(&mut self) -> ParseResult<Expr> {
+        let struct_name = if let Token::Identifier(name) = self.advance() {
+            name
+        } else {
+            return Err(self.error("Expected struct name after 'new'".to_string()));
+        };
+        
+        self.consume(Token::LeftBrace, "Expected '{' after struct name")?;
+        
+        // Skip optional newlines
+        while self.match_token(&Token::Newline) {}
+        
+        let mut fields = Vec::new();
+        if !self.check(&Token::RightBrace) {
+            loop {
+                // Skip optional newlines before field
+                while self.match_token(&Token::Newline) {}
+                
+                let field_name = if let Token::Identifier(name) = self.advance() {
+                    name
+                } else {
+                    return Err(self.error("Expected field name".to_string()));
+                };
+                
+                self.consume(Token::Colon, "Expected ':' after field name")?;
+                let field_value = self.expression()?;
+                
+                fields.push((field_name, field_value));
+                
+                // Skip optional newlines after field value
+                while self.match_token(&Token::Newline) {}
+                
+                if !self.match_token(&Token::Comma) {
+                    // Skip optional newlines before checking for closing brace
+                    while self.match_token(&Token::Newline) {}
+                    break;
+                }
+                
+                // Skip optional newlines after comma
+                while self.match_token(&Token::Newline) {}
+            }
+        }
+        
+        // Skip optional newlines before closing brace
+        while self.match_token(&Token::Newline) {}
+        
+        self.consume(Token::RightBrace, "Expected '}' after struct fields")?;
+        
+        Ok(Expr::StructInit {
+            struct_name,
+            fields,
+        })
     }
     
     fn match_expression(&mut self) -> ParseResult<Expr> {

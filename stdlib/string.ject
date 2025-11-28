@@ -1,0 +1,271 @@
+# String Standard Library Module
+# Professional, production-ready string manipulation functions
+
+# Case conversion (use builtins for Unicode support)
+export fn upper(str)
+    return upper(str)
+end
+
+export fn lower(str)
+    return lower(str)
+end
+
+# Trim whitespace (use builtin)
+export fn trim(str)
+    return trim(str)
+end
+
+# Split string (use builtin)
+export fn split(str, delimiter)
+    return split(str, delimiter)
+end
+
+# Join array (use builtin)
+export fn join(arr, separator)
+    return join(arr, separator)
+end
+
+# Replace substring (use builtin)
+export fn replace(str, old, new_str)
+    return replace(str, old, new_str)
+end
+
+# Check prefixes/suffixes (use builtins)
+export fn starts_with(str, prefix)
+    return starts_with(str, prefix)
+end
+
+export fn ends_with(str, suffix)
+    return ends_with(str, suffix)
+end
+
+# Padding (use builtins)
+export fn pad_left(str, width, pad_char)
+    return pad_left(str, width, pad_char)
+end
+
+export fn pad_right(str, width, pad_char)
+    return pad_right(str, width, pad_char)
+end
+
+# Repeat string (use builtin)
+export fn repeat(str, count)
+    return repeat(str, count)
+end
+
+# Reverse string (use builtin)
+export fn reverse_str(str)
+    return reverse_str(str)
+end
+
+# Contains substring (use builtin)
+export fn contains_str(str, substr)
+    return contains_str(str, substr)
+end
+
+# Character access (use builtin)
+export fn char_at(str, index)
+    return char_at(str, index)
+end
+
+# Substring (use builtin)
+export fn substring(str, start, end)
+    return substring(str, start, end)
+end
+
+# Capitalize first letter
+export fn capitalize(str)
+    if len(str) == 0 then
+        return str
+    end
+    return upper(char_at(str, 0)) + substring(str, 1, len(str))
+end
+
+# Title case (capitalize each word)
+export fn title_case(str)
+    let words = split(str, " ")
+    let result = []
+    let i = 0
+    while i < len(words) do
+        result = push(result, capitalize(words[i]))
+        i = i + 1
+    end
+    return join(result, " ")
+end
+
+# Count occurrences of substring
+export fn count(str, substr)
+    if len(substr) == 0 then
+        return 0
+    end
+    
+    let count = 0
+    let start = 0
+    let pos = find(str, substr, start)
+    
+    while pos >= 0 do
+        count = count + 1
+        start = pos + 1
+        pos = find(str, substr, start)
+    end
+    
+    return count
+end
+
+# Find substring position (simple implementation)
+export fn find(str, substr, start)
+    return find(str, substr, start)
+end
+
+# Check if string is empty
+export fn is_empty(str)
+    return len(str) == 0
+end
+
+# Check if string is numeric
+export fn is_numeric(str)
+    return is_numeric(str)
+end
+
+# Check if string is alphabetic
+export fn is_alpha(str)
+    return is_alpha(str)
+end
+
+# Split into lines
+export fn lines(str)
+    return lines(str)
+end
+
+# Remove all occurrences of substring
+export fn remove(str, substr)
+    return replace(str, substr, "")
+end
+
+# Remove leading/trailing characters
+export fn trim_chars(str, chars)
+    let result = str
+    let i = 0
+    while i < len(chars) and len(result) > 0 do
+        if starts_with(result, char_at(chars, i)) then
+            result = substring(result, 1, len(result))
+        elseif ends_with(result, char_at(chars, i)) then
+            result = substring(result, 0, len(result) - 1)
+        else
+            i = i + 1
+        end
+    end
+    return result
+end
+
+# Pad string to center
+export fn pad_center(str, width, pad_char)
+    if len(str) >= width then
+        return str
+    end
+    
+    let padding = width - len(str)
+    let left_pad = padding / 2
+    let right_pad = padding - left_pad
+    
+    return repeat(pad_char, left_pad) + str + repeat(pad_char, right_pad)
+end
+
+# Format string with placeholders (simple version)
+export fn format(template, args)
+    let result = template
+    let i = 0
+    while i < len(args) do
+        let placeholder = "{" + to_string(i) + "}"
+        result = replace(result, placeholder, to_string(args[i]))
+        i = i + 1
+    end
+    return result
+end
+
+# Escape special characters
+export fn escape(str)
+    let result = ""
+    let i = 0
+    while i < len(str) do
+        let ch = char_at(str, i)
+        if ch == "\n" then
+            result = result + "\\n"
+        elseif ch == "\t" then
+            result = result + "\\t"
+        elseif ch == "\r" then
+            result = result + "\\r"
+        elseif ch == "\\" then
+            result = result + "\\\\"
+        elseif ch == "\"" then
+            result = result + "\\\""
+        else
+            result = result + ch
+        end
+        i = i + 1
+    end
+    return result
+end
+
+# Unescape special characters
+export fn unescape(str)
+    let result = ""
+    let i = 0
+    while i < len(str) do
+        let ch = char_at(str, i)
+        if ch == "\\" and i + 1 < len(str) then
+            let next = char_at(str, i + 1)
+            if next == "n" then
+                result = result + "\n"
+                i = i + 1
+            elseif next == "t" then
+                result = result + "\t"
+                i = i + 1
+            elseif next == "r" then
+                result = result + "\r"
+                i = i + 1
+            elseif next == "\\" then
+                result = result + "\\"
+                i = i + 1
+            elseif next == "\"" then
+                result = result + "\""
+                i = i + 1
+            else
+                result = result + ch
+            end
+        else
+            result = result + ch
+        end
+        i = i + 1
+    end
+    return result
+end
+
+# Check if string matches pattern (simple wildcard)
+export fn matches(str, pattern)
+    # Simple wildcard matching: * matches any sequence
+    return matches(str, pattern)
+end
+
+# Extract numbers from string
+export fn extract_numbers(str)
+    let result = []
+    let current = ""
+    let i = 0
+    while i < len(str) do
+        let ch = char_at(str, i)
+        if is_numeric(ch) or ch == "." or ch == "-" then
+            current = current + ch
+        else
+            if len(current) > 0 then
+                result = push(result, to_float(current))
+                current = ""
+            end
+        end
+        i = i + 1
+    end
+    if len(current) > 0 then
+        result = push(result, to_float(current))
+    end
+    return result
+end

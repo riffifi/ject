@@ -1,0 +1,34 @@
+fn calculate(operation, a, b)
+    if operation == "+" then
+        return a + b
+    elseif operation == "-" then
+        return a - b
+    elseif operation == "*" then
+        return a * b
+    elseif operation == "/" then
+        if b == 0 then
+            throw "Cannot divide by zero"
+        end
+        return a / b
+    else
+        throw "Unknown operation: " + operation
+    end
+end
+
+print "Simple Calculator"
+print "Operations: +, -, *, /"
+
+let op = input("Operation: ")
+let num1_str = input("First number: ")
+let num2_str = input("Second number: ")
+
+let num1 = to_float(num1_str)
+let num2 = to_float(num2_str)
+
+try
+    let result = calculate(op, num1, num2)
+    print num1 + " " + op + " " + num2 + " = " + result
+catch error
+    print "Error: " + error
+end
+

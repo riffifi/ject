@@ -1,6 +1,0 @@
-# A simple hello world in Ject
-print "Hello, World!"
-print "Welcome to Ject!"
-
-let name = "Developer"
-print "Hello, " + name + "!"

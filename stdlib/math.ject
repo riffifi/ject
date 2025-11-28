@@ -1,0 +1,216 @@
+# Math Standard Library Module
+# Professional, production-ready mathematical functions
+
+export PI = 3.141592653589793
+export E = 2.718281828459045
+
+# Absolute value
+export fn abs(x)
+    if x < 0 then
+        return -x
+    else
+        return x
+    end
+end
+
+# Square root (uses builtin for precision)
+export fn sqrt(x)
+    return sqrt(x)
+end
+
+# Power function (uses builtin for precision)
+export fn pow(base, exponent)
+    return pow(base, exponent)
+end
+
+# Trigonometric functions (use builtins for precision)
+export fn sin(x)
+    return sin(x)
+end
+
+export fn cos(x)
+    return cos(x)
+end
+
+export fn tan(x)
+    return tan(x)
+end
+
+export fn asin(x)
+    return asin(x)
+end
+
+export fn acos(x)
+    return acos(x)
+end
+
+export fn atan(x)
+    return atan(x)
+end
+
+export fn atan2(y, x)
+    return atan2(y, x)
+end
+
+# Rounding functions
+export fn floor(x)
+    return floor(x)
+end
+
+export fn ceil(x)
+    return ceil(x)
+end
+
+export fn round(x)
+    return round(x)
+end
+
+# Min/Max - implemented in Ject for multiple arguments
+export fn min(a, b)
+    if a < b then
+        return a
+    else
+        return b
+    end
+end
+
+export fn max(a, b)
+    if a > b then
+        return a
+    else
+        return b
+    end
+end
+
+# Logarithmic functions
+export fn log(x)
+    return log(x)
+end
+
+export fn log10(x)
+    return log10(x)
+end
+
+export fn log2(x)
+    return log2(x)
+end
+
+export fn exp(x)
+    return exp(x)
+end
+
+# Angle conversion
+export fn degrees(radians)
+    return radians * 180.0 / PI
+end
+
+export fn radians(degrees)
+    return degrees * PI / 180.0
+end
+
+# Clamp value between min and max
+export fn clamp(value, min_val, max_val)
+    if value < min_val then
+        return min_val
+    elseif value > max_val then
+        return max_val
+    else
+        return value
+    end
+end
+
+# Sign function
+export fn sign(x)
+    if x > 0 then
+        return 1
+    elseif x < 0 then
+        return -1
+    else
+        return 0
+    end
+end
+
+# Greatest Common Divisor (Euclidean algorithm)
+export fn gcd(a, b)
+    let a_abs = abs(a)
+    let b_abs = abs(b)
+    
+    if b_abs == 0 then
+        return a_abs
+    else
+        return gcd(b_abs, a_abs % b_abs)
+    end
+end
+
+# Least Common Multiple
+export fn lcm(a, b)
+    return abs(a * b) / gcd(a, b)
+end
+
+# Factorial
+export fn factorial(n)
+    if n <= 1 then
+        return 1
+    else
+        return n * factorial(n - 1)
+    end
+end
+
+# Check if number is prime
+export fn is_prime(n)
+    if n < 2 then
+        return false
+    elseif n == 2 then
+        return true
+    elseif n % 2 == 0 then
+        return false
+    else
+        let i = 3
+        while i * i <= n do
+            if n % i == 0 then
+                return false
+            end
+            i = i + 2
+        end
+        return true
+    end
+end
+
+# Random number generation (uses builtin)
+export fn random()
+    return random()
+end
+
+export fn random_int(min_val, max_val)
+    return random_int(min_val, max_val)
+end
+
+export fn random_float(min_val, max_val)
+    return random_float(min_val, max_val)
+end
+
+# Round to n decimal places
+export fn round_to(value, decimals)
+    let factor = pow(10, decimals)
+    return round(value * factor) / factor
+end
+
+# Linear interpolation
+export fn lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+# Distance between two 2D points
+export fn distance2d(x1, y1, x2, y2)
+    let dx = x2 - x1
+    let dy = y2 - y1
+    return sqrt(dx * dx + dy * dy)
+end
+
+# Distance between two 3D points
+export fn distance3d(x1, y1, z1, x2, y2, z2)
+    let dx = x2 - x1
+    let dy = y2 - y1
+    let dz = z2 - z1
+    return sqrt(dx * dx + dy * dy + dz * dz)
+end

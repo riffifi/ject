@@ -1,0 +1,14 @@
+let filename = "test.txt"
+let content = "Hello from Ject!\nThis is a test file."
+
+write_file(filename, content)
+print "File written: " + filename
+
+let read_content = read_file(filename)
+print "File content:"
+print read_content
+
+if file_exists(filename) then
+    print "File exists: " + file_exists(filename)
+end
+

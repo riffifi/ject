@@ -1,0 +1,44 @@
+# DateTime Standard Library Module
+# Date and time operations
+
+# Get current timestamp (use builtin)
+export fn now()
+    return now()
+end
+
+export fn timestamp()
+    return timestamp()
+end
+
+# Sleep for seconds (use builtin)
+export fn sleep(seconds)
+    return sleep(seconds)
+end
+
+# Format timestamp as string (simple)
+export fn format_time(timestamp, format_str)
+    # For now, return timestamp as string
+    # Full date formatting would need more implementation
+    return to_string(timestamp)
+end
+
+# Get time components from timestamp
+export fn get_year(timestamp)
+    # Would need proper date library
+    return timestamp
+end
+
+export fn get_month(timestamp)
+    return timestamp
+end
+
+export fn get_day(timestamp)
+    return timestamp
+end
+
+# Create timestamp from components
+export fn create_timestamp(year, month, day, hour, minute, second)
+    # Would need proper date library
+    return timestamp()
+end
+

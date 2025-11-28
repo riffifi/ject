@@ -1,0 +1,15 @@
+let score = 85
+
+if score >= 90 then
+    print "Grade: A"
+elseif score >= 80 then
+    print "Grade: B"
+elseif score >= 70 then
+    print "Grade: C"
+else
+    print "Grade: F"
+end
+
+let result = if score >= 60 then "Pass" else "Fail" end
+print "Result: " + result
+

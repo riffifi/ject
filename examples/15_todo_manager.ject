@@ -1,0 +1,73 @@
+struct Todo {
+    id,
+    task,
+    completed
+}
+
+let todos = []
+let next_id = 1
+
+fn add_todo(task)
+    let todo = new Todo {
+        id: next_id,
+        task: task,
+        completed: false
+    }
+    todos = push(todos, todo)
+    next_id = next_id + 1
+    return todo
+end
+
+fn list_todos()
+    if len(todos) == 0 then
+        print "No todos"
+        return
+    end
+    
+    for todo in todos do
+        let status = if todo.completed then "[X]" else "[ ]" end
+        print status + " " + todo.id + ": " + todo.task
+    end
+end
+
+fn complete_todo(id)
+    let found = false
+    let i = 0
+    while i < len(todos) do
+        if todos[i].id == id then
+            todos[i].completed = true
+            found = true
+            break
+        end
+        i = i + 1
+    end
+    return found
+end
+
+print "Todo Manager"
+print "Commands: add, list, complete, exit"
+
+while true do
+    let cmd = input("\n> ")
+    
+    if cmd == "exit" then
+        break
+    elseif cmd == "add" then
+        let task = input("Task: ")
+        add_todo(task)
+        print "Todo added"
+    elseif cmd == "list" then
+        list_todos()
+    elseif cmd == "complete" then
+        let id_str = input("Todo ID: ")
+        let id = to_int(id_str)
+        if complete_todo(id) then
+            print "Todo completed"
+        else
+            print "Todo not found"
+        end
+    else
+        print "Unknown command"
+    end
+end
+

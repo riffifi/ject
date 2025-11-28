@@ -1,0 +1,43 @@
+# JSON Standard Library Module
+# JSON parsing and encoding
+
+# JSON operations (use builtins - these need Rust)
+export fn parse_json(json_str)
+    return parse_json(json_str)
+end
+
+export fn to_json(value)
+    return to_json(value)
+end
+
+# Pretty print JSON (simple indentation)
+export fn to_json_pretty(value, indent)
+    # For now, use regular to_json
+    # Full pretty printing would need more complex implementation
+    return to_json(value)
+end
+
+# Validate JSON string
+export fn is_valid_json(str)
+    let result = parse_json(str)
+    return result != nil
+end
+
+# Get JSON value at path (simple dot notation)
+export fn json_get(json_obj, path)
+    let keys = split(path, ".")
+    let current = json_obj
+    let i = 0
+    while i < len(keys) do
+        if type_of(current) == "dictionary" then
+            current = current[keys[i]]
+            if current == nil then
+                return nil
+            end
+        else
+            return nil
+        end
+        i = i + 1
+    end
+    return current
+end

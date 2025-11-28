@@ -1,0 +1,74 @@
+# I/O Standard Library Module
+# File and system I/O operations
+
+# File operations (use builtins - these need Rust)
+export fn read_file(path)
+    return read_file(path)
+end
+
+export fn write_file(path, content)
+    return write_file(path, content)
+end
+
+export fn file_exists(path)
+    return file_exists(path)
+end
+
+export fn is_file(path)
+    return is_file(path)
+end
+
+export fn is_dir(path)
+    return is_dir(path)
+end
+
+export fn list_dir(path)
+    return list_dir(path)
+end
+
+export fn mkdir(path)
+    return mkdir(path)
+end
+
+export fn remove_file(path)
+    return remove_file(path)
+end
+
+# Read file as lines
+export fn read_lines(path)
+    let content = read_file(path)
+    if content == nil then
+        return []
+    end
+    return lines(content)
+end
+
+# Write lines to file
+export fn write_lines(path, lines_arr)
+    let content = join(lines_arr, "\n")
+    return write_file(path, content)
+end
+
+# Append to file
+export fn append_file(path, content)
+    let existing = read_file(path)
+    if existing == nil then
+        existing = ""
+    end
+    return write_file(path, existing + content)
+end
+
+# Read JSON file
+export fn read_json(path)
+    let content = read_file(path)
+    if content == nil then
+        return nil
+    end
+    return parse_json(content)
+end
+
+# Write JSON file
+export fn write_json(path, value)
+    let json_str = to_json(value)
+    return write_file(path, json_str)
+end

@@ -1,0 +1,124 @@
+# Utility Standard Library Module
+# Professional utility functions
+
+# Type checking
+export fn type_of(value)
+    return type_of(value)
+end
+
+# Random number generation (uses builtin)
+export fn random()
+    return random()
+end
+
+export fn random_int(min_val, max_val)
+    return random_int(min_val, max_val)
+end
+
+export fn random_float(min_val, max_val)
+    return random_float(min_val, max_val)
+end
+
+# Type conversions (use builtins)
+export fn to_int(value)
+    return to_int(value)
+end
+
+export fn to_float(value)
+    return to_float(value)
+end
+
+export fn to_string(value)
+    return to_string(value)
+end
+
+export fn to_bool(value)
+    return to_bool(value)
+end
+
+# Identity function
+export fn identity(x)
+    return x
+end
+
+# Constant function
+export fn constant(value)
+    return lambda(_) -> value
+end
+
+# Compose two functions
+export fn compose(f, g)
+    return lambda(x) -> f(g(x))
+end
+
+# Apply function to value
+export fn apply(func, value)
+    return func(value)
+end
+
+# Check if value is nil
+export fn is_nil(value)
+    return value == nil
+end
+
+# Check if value is truthy
+export fn is_truthy(value)
+    if value == nil then
+        return false
+    elseif value == false then
+        return false
+    elseif value == 0 then
+        return false
+    elseif type_of(value) == "number" and value == 0.0 then
+        return false
+    elseif type_of(value) == "string" and len(value) == 0 then
+        return false
+    elseif type_of(value) == "array" and len(value) == 0 then
+        return false
+    else
+        return true
+    end
+end
+
+# Deep equality check
+export fn deep_equal(a, b)
+    if type_of(a) != type_of(b) then
+        return false
+    end
+    
+    if type_of(a) == "array" then
+        if len(a) != len(b) then
+            return false
+        end
+        let i = 0
+        while i < len(a) do
+            if not deep_equal(a[i], b[i]) then
+                return false
+            end
+            i = i + 1
+        end
+        return true
+    else
+        return a == b
+    end
+end
+
+# Hash function (simple)
+export fn hash(value)
+    return hash(value)
+end
+
+# Copy value (deep copy for arrays/dicts)
+export fn copy(value)
+    if type_of(value) == "array" then
+        let result = []
+        let i = 0
+        while i < len(value) do
+            result = push(result, copy(value[i]))
+            i = i + 1
+        end
+        return result
+    else
+        return value
+    end
+end

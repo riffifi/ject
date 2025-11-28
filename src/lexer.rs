@@ -67,6 +67,12 @@ pub enum Token {
     As,
     Match,
     When,
+    Struct,
+    New,
+    Try,
+    Catch,
+    Throw,
+    Error,
     
     // Operators
     Plus,
@@ -409,6 +415,12 @@ while let Some(ch) = self.current_char {
             "or" => Token::Or,
             "match" => Token::Match,
             "when" => Token::When,
+            "struct" => Token::Struct,
+            "new" => Token::New,
+            "try" => Token::Try,
+            "catch" => Token::Catch,
+            "throw" => Token::Throw,
+            "error" => Token::Error,
             _ => Token::Identifier(identifier),
         }
     }

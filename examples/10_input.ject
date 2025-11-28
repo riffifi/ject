@@ -1,0 +1,11 @@
+print "What is your name?"
+let name = input("Name: ")
+
+print "Hello, " + name + "!"
+
+print "Enter a number:"
+let num_str = input("Number: ")
+let num = to_int(num_str)
+
+print "Your number squared: " + (num * num)
+

@@ -27,6 +27,15 @@ pub enum Value {
     },
     ModuleObject(std::collections::HashMap<String, Value>),
     BuiltinFunction(String),
+    StructInstance {
+        struct_name: String,
+        fields: HashMap<String, Value>,
+    },
+    StructDefinition {
+        name: String,
+        fields: Vec<String>,
+    },
+    Error(String),
 }
 
 impl fmt::Display for Value {
@@ -95,7 +104,24 @@ impl fmt::Display for Value {
                 }
                 write!(f, " }}")
             }
-            Value::BuiltinFunction(name) => write!(f, "<builtin: {}>", name)
+            Value::BuiltinFunction(name) => write!(f, "<builtin: {}>", name),
+            Value::StructInstance { struct_name, fields } => {
+                write!(f, "{} {{", struct_name)?;
+                for (i, (key, value)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
+            Value::StructDefinition { name, fields } => {
+                write!(f, "struct {} {{", name)?;
+                for (i, field) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", field)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Error(msg) => write!(f, "error: {}", msg),
         }
     }
 }
@@ -135,6 +161,9 @@ impl PartialOrd for Value {
                     Value::Lambda { .. } => 10,
                     Value::ModuleObject(_) => 11,
                     Value::BuiltinFunction(_) => 12,
+                    Value::StructInstance { .. } => 13,
+                    Value::StructDefinition { .. } => 14,
+                    Value::Error(_) => 15,
                 };
                 type_order(a).partial_cmp(&type_order(b))
             }
@@ -172,6 +201,9 @@ impl Value {
             Value::Lambda { .. } => "lambda",
             Value::ModuleObject(_) => "module",
             Value::BuiltinFunction(_) => "builtin",
+            Value::StructInstance { .. } => "struct",
+            Value::StructDefinition { .. } => "struct_definition",
+            Value::Error(_) => "error",
         }
     }
 }

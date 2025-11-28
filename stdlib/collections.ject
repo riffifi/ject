@@ -1,0 +1,62 @@
+# Collections Standard Library Module
+# Set and collection operations
+
+# Collection operations (use builtins)
+export fn collection(items)
+    return collection(items)
+end
+
+export fn add_to(coll, item)
+    return add_to(coll, item)
+end
+
+export fn remove_from(coll, item)
+    return remove_from(coll, item)
+end
+
+export fn has(coll, item)
+    return has(coll, item)
+end
+
+export fn union(coll1, coll2)
+    return union(coll1, coll2)
+end
+
+export fn intersect(coll1, coll2)
+    return intersect(coll1, coll2)
+end
+
+export fn difference(coll1, coll2)
+    return difference(coll1, coll2)
+end
+
+export fn size(coll)
+    return size(coll)
+end
+
+export fn is_subset(coll1, coll2)
+    return is_subset(coll1, coll2)
+end
+
+export fn is_superset(coll1, coll2)
+    return is_superset(coll1, coll2)
+end
+
+export fn clear_collection(coll)
+    return clear_collection(coll)
+end
+
+export fn to_array(coll)
+    return to_array(coll)
+end
+
+# Convert array to collection
+export fn from_array(arr)
+    return collection(arr)
+end
+
+# Check if collection is empty
+export fn is_empty_collection(coll)
+    return size(coll) == 0
+end
+

@@ -1,0 +1,13 @@
+let text = "  Hello, World!  "
+print "Original: '" + text + "'"
+print "Trimmed: '" + trim(text) + "'"
+print "Upper: " + upper(text)
+print "Lower: " + lower(text)
+
+let words = split(trim(text), " ")
+print "Words: " + words
+print "Joined: " + join(words, "-")
+
+print "Contains 'World': " + contains_str(text, "World")
+print "Starts with 'Hello': " + starts_with(text, "Hello")
+

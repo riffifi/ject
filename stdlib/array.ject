@@ -1,0 +1,314 @@
+# Array Standard Library Module
+# Professional, production-ready array manipulation functions
+
+# Get array length (uses builtin for efficiency)
+export fn len(arr)
+    return len(arr)
+end
+
+# Array manipulation (use builtins for efficiency)
+export fn push(arr, item)
+    return push(arr, item)
+end
+
+export fn pop(arr)
+    return pop(arr)
+end
+
+export fn map(arr, func)
+    return map(arr, func)
+end
+
+export fn filter(arr, func)
+    return filter(arr, func)
+end
+
+export fn reduce(arr, func, initial)
+    return reduce(arr, func, initial)
+end
+
+export fn sum(arr)
+    return sum(arr)
+end
+
+export fn sort(arr)
+    return sort(arr)
+end
+
+export fn reverse(arr)
+    return reverse(arr)
+end
+
+export fn unique(arr)
+    return unique(arr)
+end
+
+export fn contains(arr, item)
+    return contains(arr, item)
+end
+
+export fn index_of(arr, item)
+    return index_of(arr, item)
+end
+
+export fn slice(arr, start, end)
+    return slice(arr, start, end)
+end
+
+export fn find(arr, func)
+    return find(arr, func)
+end
+
+export fn range(start, end)
+    return range(start, end)
+end
+
+# Get first element
+export fn first(arr)
+    if len(arr) > 0 then
+        return arr[0]
+    else
+        return nil
+    end
+end
+
+# Get last element
+export fn last(arr)
+    let length = len(arr)
+    if length > 0 then
+        return arr[length - 1]
+    else
+        return nil
+    end
+end
+
+# Take first n elements
+export fn take(arr, n)
+    if n <= 0 then
+        return []
+    end
+    
+    let result = []
+    let i = 0
+    while i < n and i < len(arr) do
+        result = push(result, arr[i])
+        i = i + 1
+    end
+    return result
+end
+
+# Drop first n elements
+export fn drop(arr, n)
+    if n <= 0 then
+        return arr
+    end
+    
+    let result = []
+    let i = n
+    while i < len(arr) do
+        result = push(result, arr[i])
+        i = i + 1
+    end
+    return result
+end
+
+# Concatenate arrays
+export fn concat(arr1, arr2)
+    let result = []
+    let i = 0
+    while i < len(arr1) do
+        result = push(result, arr1[i])
+        i = i + 1
+    end
+    
+    i = 0
+    while i < len(arr2) do
+        result = push(result, arr2[i])
+        i = i + 1
+    end
+    return result
+end
+
+# Flatten nested arrays
+export fn flatten(arr)
+    let result = []
+    let i = 0
+    while i < len(arr) do
+        let item = arr[i]
+        if type_of(item) == "array" then
+            let flattened = flatten(item)
+            let j = 0
+            while j < len(flattened) do
+                result = push(result, flattened[j])
+                j = j + 1
+            end
+        else
+            result = push(result, item)
+        end
+        i = i + 1
+    end
+    return result
+end
+
+# Zip two arrays into pairs
+export fn zip(arr1, arr2)
+    let result = []
+    let min_len = min(len(arr1), len(arr2))
+    let i = 0
+    while i < min_len do
+        result = push(result, [arr1[i], arr2[i]])
+        i = i + 1
+    end
+    return result
+end
+
+# Enumerate array with indices
+export fn enumerate(arr)
+    let result = []
+    let i = 0
+    while i < len(arr) do
+        result = push(result, [i, arr[i]])
+        i = i + 1
+    end
+    return result
+end
+
+# Check if any element matches predicate
+export fn any(arr, func)
+    let i = 0
+    while i < len(arr) do
+        if func(arr[i]) then
+            return true
+        end
+        i = i + 1
+    end
+    return false
+end
+
+# Check if all elements match predicate
+export fn all(arr, func)
+    let i = 0
+    while i < len(arr) do
+        if not func(arr[i]) then
+            return false
+        end
+        i = i + 1
+    end
+    return true
+end
+
+# Count elements matching predicate
+export fn count(arr, func)
+    let result = 0
+    let i = 0
+    while i < len(arr) do
+        if func(arr[i]) then
+            result = result + 1
+        end
+        i = i + 1
+    end
+    return result
+end
+
+# Get array average
+export fn average(arr)
+    if len(arr) == 0 then
+        return 0
+    end
+    return sum(arr) / len(arr)
+end
+
+# Get array median
+export fn median(arr)
+    if len(arr) == 0 then
+        return nil
+    end
+    
+    let sorted_arr = sort(arr)
+    let length = len(sorted_arr)
+    
+    if length % 2 == 0 then
+        return (sorted_arr[length / 2 - 1] + sorted_arr[length / 2]) / 2.0
+    else
+        return sorted_arr[length / 2]
+    end
+end
+
+# Remove element at index
+export fn remove_at(arr, index)
+    if index < 0 or index >= len(arr) then
+        return arr
+    end
+    
+    let result = []
+    let i = 0
+    while i < len(arr) do
+        if i != index then
+            result = push(result, arr[i])
+        end
+        i = i + 1
+    end
+    return result
+end
+
+# Insert element at index
+export fn insert_at(arr, index, item)
+    if index < 0 then
+        index = 0
+    end
+    if index > len(arr) then
+        index = len(arr)
+    end
+    
+    let result = []
+    let i = 0
+    while i < index do
+        result = push(result, arr[i])
+        i = i + 1
+    end
+    
+    result = push(result, item)
+    
+    while i < len(arr) do
+        result = push(result, arr[i])
+        i = i + 1
+    end
+    return result
+end
+
+# Chunk array into groups of size n
+export fn chunk(arr, size)
+    if size <= 0 then
+        return []
+    end
+    
+    let result = []
+    let i = 0
+    while i < len(arr) do
+        let chunk_arr = []
+        let j = 0
+        while j < size and i + j < len(arr) do
+            chunk_arr = push(chunk_arr, arr[i + j])
+            j = j + 1
+        end
+        result = push(result, chunk_arr)
+        i = i + size
+    end
+    return result
+end
+
+# Group array by key function
+export fn group_by(arr, key_func)
+    let groups = {}
+    let i = 0
+    while i < len(arr) do
+        let key = key_func(arr[i])
+        let key_str = to_string(key)
+        if not contains_str(to_string(groups), key_str) then
+            groups[key_str] = []
+        end
+        groups[key_str] = push(groups[key_str], arr[i])
+        i = i + 1
+    end
+    return groups
+end

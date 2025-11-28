@@ -195,6 +195,12 @@ match name {
                     new_arr.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     Ok(Value::Array(new_arr))
                 }
+                Value::StructInstance { .. } | Value::StructDefinition { .. } => Err(RuntimeError {
+                    message: "sort() requires an array, not a struct".to_string(),
+                }),
+                Value::StructInstance { .. } | Value::StructDefinition { .. } => Err(RuntimeError {
+                    message: "sort() requires an array, not a struct".to_string(),
+                }),
                 _ => Err(RuntimeError {
                     message: "sort() requires an array".to_string(),
                 }),
@@ -2038,6 +2044,85 @@ match name {
             }
         },
         
+        "input" => {
+            let prompt = if args.len() > 0 {
+                match &args[0] {
+                    Value::String(s) => s.clone(),
+                    _ => "".to_string(),
+                }
+            } else {
+                "".to_string()
+            };
+            
+            if !prompt.is_empty() {
+                print!("{}", prompt);
+                use std::io::Write;
+                std::io::stdout().flush().unwrap();
+            }
+            
+            let mut line = String::new();
+            match std::io::stdin().read_line(&mut line) {
+                Ok(_) => Ok(Value::String(line.trim_end().to_string())),
+                Err(_) => Ok(Value::String("".to_string())),
+            }
+        },
+        
+        "exec" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "exec() takes exactly 1 argument (command)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(cmd) => {
+                    use std::process::Command;
+                    let output = if cfg!(target_os = "windows") {
+                        Command::new("cmd")
+                            .args(["/C", cmd])
+                            .output()
+                    } else {
+                        Command::new("sh")
+                            .args(["-c", cmd])
+                            .output()
+                    };
+                    
+                    match output {
+                        Ok(output) => {
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            Ok(Value::String(stdout.trim_end().to_string()))
+                        }
+                        Err(e) => Err(RuntimeError {
+                            message: format!("Failed to execute command: {}", e),
+                        }),
+                    }
+                }
+                _ => Err(RuntimeError {
+                    message: "exec() requires a string command".to_string(),
+                }),
+            }
+        },
+        
+        "exit" => {
+            let code = if args.len() > 0 {
+                match &args[0] {
+                    Value::Integer(n) => *n as i32,
+                    Value::Float(f) => *f as i32,
+                    _ => 0,
+                }
+            } else {
+                0
+            };
+            std::process::exit(code);
+        },
+        
+        "println" => {
+            for arg in args {
+                print!("{}", arg);
+            }
+            println!();
+            Ok(Value::Nil)
+        },
+        
         _ => Err(RuntimeError {
             message: format!("Unknown builtin function: {}", name),
         }),
@@ -2076,6 +2161,24 @@ fn json_to_ject_value(json_value: serde_json::Value) -> Value {
 // Helper function to convert Ject Value to serde_json::Value
 fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeError> {
     match ject_value {
+        Value::StructInstance { struct_name, fields } => {
+            // Convert struct to JSON object
+            let mut json_obj = serde_json::Map::new();
+            json_obj.insert("_type".to_string(), serde_json::Value::String(struct_name.clone()));
+            for (key, value) in fields {
+                json_obj.insert(key.clone(), ject_value_to_json(value)?);
+            }
+            Ok(serde_json::Value::Object(json_obj))
+        }
+        Value::StructDefinition { name, fields } => {
+            // Convert struct definition to JSON
+            let mut json_obj = serde_json::Map::new();
+            json_obj.insert("_type".to_string(), serde_json::Value::String("struct_definition".to_string()));
+            json_obj.insert("name".to_string(), serde_json::Value::String(name.clone()));
+            let fields_array: Vec<serde_json::Value> = fields.iter().map(|f| serde_json::Value::String(f.clone())).collect();
+            json_obj.insert("fields".to_string(), serde_json::Value::Array(fields_array));
+            Ok(serde_json::Value::Object(json_obj))
+        }
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Bool(b) => Ok(serde_json::Value::Bool(*b)),
         Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
@@ -2115,6 +2218,12 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
             Err(RuntimeError {
                 message: "Cannot convert function to JSON".to_string(),
             })
+        }
+        Value::Error(msg) => {
+            let mut json_obj = serde_json::Map::new();
+            json_obj.insert("_type".to_string(), serde_json::Value::String("error".to_string()));
+            json_obj.insert("message".to_string(), serde_json::Value::String(msg.clone()));
+            Ok(serde_json::Value::Object(json_obj))
         }
     }
 }

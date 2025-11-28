@@ -69,6 +69,10 @@ impl Linter {
     }
     
     fn add_builtin_functions(&mut self) {
+        // Mathematical constants (these are variables, not functions)
+        self.declare_variable("PI".to_string());
+        self.declare_variable("E".to_string());
+        
         // Mathematical functions
         self.functions.insert("abs".to_string());
         self.functions.insert("sqrt".to_string());
@@ -274,6 +278,10 @@ impl Linter {
             let mut diagnostic = Diagnostic::error(error.message.clone()).with_code("E0001".to_string());
             if let Some(pos) = &error.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
+                // Add source line context
+                if let Some(source_line) = self.get_source_line(pos.line) {
+                    diagnostic = diagnostic.with_source_line(source_line);
+                }
             }
             diagnostics.push(diagnostic);
         }
@@ -282,6 +290,10 @@ impl Linter {
             let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W0001".to_string());
             if let Some(pos) = &warning.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
+                // Add source line context
+                if let Some(source_line) = self.get_source_line(pos.line) {
+                    diagnostic = diagnostic.with_source_line(source_line);
+                }
             }
             diagnostics.push(diagnostic);
         }
@@ -321,6 +333,10 @@ impl Linter {
             let mut diagnostic = Diagnostic::error(error.message.clone()).with_code("E0001".to_string());
             if let Some(pos) = &error.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
+                // Add source line context
+                if let Some(source_line) = self.get_source_line(pos.line) {
+                    diagnostic = diagnostic.with_source_line(source_line);
+                }
             }
             diagnostics.push(diagnostic);
         }
@@ -329,6 +345,10 @@ impl Linter {
             let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W0001".to_string());
             if let Some(pos) = &warning.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
+                // Add source line context
+                if let Some(source_line) = self.get_source_line(pos.line) {
+                    diagnostic = diagnostic.with_source_line(source_line);
+                }
             }
             diagnostics.push(diagnostic);
         }
@@ -387,6 +407,72 @@ impl Linter {
         false
     }
 
+    fn get_source_line(&self, line_num: usize) -> Option<String> {
+        if line_num == 0 {
+            return None;
+        }
+        let lines: Vec<&str> = self.source.lines().collect();
+        if line_num <= lines.len() {
+            Some(lines[line_num - 1].to_string())
+        } else {
+            None
+        }
+    }
+    
+    fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, ()> {
+        use std::fs;
+        use std::path::Path;
+        
+        // Determine the module file path (same logic as interpreter)
+        let module_file_path = if module_path.starts_with("./") || module_path.starts_with("../") {
+            // Relative path - resolve relative to current file's directory
+            let path = module_path.trim_start_matches("./");
+            format!("examples/{}.ject", path)
+        } else if module_path.contains("/") {
+            // Absolute path from examples/ directory
+            format!("examples/{}.ject", module_path)
+        } else {
+            // Simple module name - look in examples/modules/ directory
+            format!("examples/modules/{}.ject", module_path)
+        };
+        
+        if !Path::new(&module_file_path).exists() {
+            return Err(());
+        }
+        
+        // Read and parse the module file
+        let module_content = match fs::read_to_string(&module_file_path) {
+            Ok(content) => content,
+            Err(_) => return Err(()),
+        };
+        
+        let mut lexer = crate::lexer::Lexer::new(&module_content);
+        let located_tokens = lexer.tokenize_with_positions();
+        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+        let mut parser = crate::parser::Parser::new_simple(tokens);
+        
+        let statements = match parser.parse() {
+            Ok(stmts) => stmts,
+            Err(_) => return Err(()),
+        };
+        
+        // Extract export names
+        let mut exports = Vec::new();
+        for statement in &statements {
+            match statement {
+                crate::ast::Stmt::Export { name, .. } => {
+                    exports.push(name.clone());
+                }
+                crate::ast::Stmt::ExportFunction { name, .. } => {
+                    exports.push(name.clone());
+                }
+                _ => {}
+            }
+        }
+        
+        Ok(exports)
+    }
+    
     fn find_variable(&self, name: &str) -> bool {
         for scope in self.scopes.iter().rev() {
             if scope.contains_key(name) {
@@ -394,6 +480,46 @@ impl Linter {
             }
         }
         false
+    }
+    
+    fn find_similar_variables(&self, name: &str) -> Vec<String> {
+        let mut suggestions = Vec::new();
+        let name_lower = name.to_lowercase();
+        
+        // Check all scopes for similar variable names
+        for scope in &self.scopes {
+            for var_name in scope.keys() {
+                let var_lower = var_name.to_lowercase();
+                // Simple similarity check - same length and similar characters
+                if var_lower.len() == name_lower.len() {
+                    let mut diff = 0;
+                    for (c1, c2) in name_lower.chars().zip(var_lower.chars()) {
+                        if c1 != c2 {
+                            diff += 1;
+                        }
+                    }
+                    // If only 1-2 characters differ, suggest it
+                    if diff <= 2 && diff > 0 {
+                        suggestions.push(var_name.clone());
+                    }
+                } else if var_lower.contains(&name_lower) || name_lower.contains(&var_lower) {
+                    // Partial match
+                    suggestions.push(var_name.clone());
+                }
+            }
+        }
+        
+        // Also check function names
+        for func_name in &self.functions {
+            let func_lower = func_name.to_lowercase();
+            if func_lower == name_lower {
+                suggestions.push(func_name.clone());
+            }
+        }
+        
+        suggestions.sort();
+        suggestions.dedup();
+        suggestions
     }
 
     fn analyze_statement(&mut self, stmt: &Stmt) {
@@ -525,15 +651,21 @@ impl Linter {
             Stmt::Expression(expr) => {
                 self.analyze_expr(expr);
             }
-            Stmt::Import { module_path: _, items, alias } => {
-                // For simplicity, assume all imports succeed, as we're only linting
-                if items.is_some() {
-                    for item in items.as_ref().unwrap() {
+            Stmt::Import { module_path, items, alias } => {
+                // Handle selective imports
+                if let Some(item_list) = items {
+                    for item in item_list {
                         self.declare_variable(item.clone());
                     }
-                } else {
-                    // Import all items from the module
-                    // Assuming module has been correctly imported, typically we'd extract actual items
+                } else if alias.is_none() {
+                    // Full import - need to load module to know what's exported
+                    // Try to load the module and get its exports
+                    if let Ok(exports) = self.get_module_exports(module_path) {
+                        for export_name in exports {
+                            self.declare_variable(export_name);
+                        }
+                    }
+                    // If we can't load the module, we'll let the runtime handle the error
                 }
 
                 if let Some(alias_name) = alias {
@@ -558,6 +690,37 @@ impl Linter {
 
                 self.pop_scope();
             }
+            Stmt::Struct { name, fields: _ } => {
+                // Struct definitions are type definitions, not variables
+                // They should be tracked separately, but for now just declare them
+                // so they don't trigger "undeclared" errors
+                self.declare_variable(name.clone());
+                // Mark as used immediately so it doesn't show as unused
+                if let Some(scope) = self.scopes.last_mut() {
+                    if let Some(var) = scope.get_mut(name) {
+                        var.used = true; // Struct definitions are always "used"
+                    }
+                }
+            }
+            Stmt::Try { body, catch_var, catch_body } => {
+                self.push_scope();
+                for stmt in body {
+                    self.analyze_statement(stmt);
+                }
+                self.pop_scope();
+                
+                self.push_scope();
+                if let Some(var_name) = catch_var {
+                    self.declare_variable(var_name.clone());
+                }
+                for stmt in catch_body {
+                    self.analyze_statement(stmt);
+                }
+                self.pop_scope();
+            }
+            Stmt::Throw(expr) => {
+                self.analyze_expr(expr);
+            }
         }
     }
 
@@ -567,8 +730,26 @@ impl Linter {
                 // Check if it's a function first, then check if it's a variable
                 if !self.functions.contains(name) && !self.use_variable(name) {
                     let position = self.find_identifier_position(name);
+                    
+                    // Try to find similar variable names for suggestions
+                    let suggestions = self.find_similar_variables(name);
+                    let mut message = format!("use of undeclared variable `{}`", name);
+                    
+                    if !suggestions.is_empty() {
+                        if suggestions.len() == 1 {
+                            message.push_str(&format!("\n  help: did you mean `{}`?", suggestions[0]));
+                        } else {
+                            message.push_str("\n  help: did you mean one of these?");
+                            for sug in &suggestions[..suggestions.len().min(3)] {
+                                message.push_str(&format!("\n    - `{}`", sug));
+                            }
+                        }
+                    } else {
+                        message.push_str("\n  help: variables must be declared with `let` before use");
+                    }
+                    
                     self.errors.push(LintError {
-                        message: format!("use of undeclared variable `{}`", name),
+                        message,
                         position,
                     });
                 }
@@ -600,6 +781,23 @@ impl Linter {
             }
             Expr::Member { object, .. } => {
                 self.analyze_expr(object);
+            }
+            Expr::StructAccess { object, .. } => {
+                self.analyze_expr(object);
+            }
+            Expr::StructInit { struct_name, fields } => {
+                // Check if struct is defined
+                if !self.find_variable(struct_name) {
+                    let position = self.find_identifier_position(struct_name);
+                    self.errors.push(LintError {
+                        message: format!("use of undeclared struct `{}`", struct_name),
+                        position,
+                    });
+                }
+                // Analyze field values
+                for (_, field_value) in fields {
+                    self.analyze_expr(field_value);
+                }
             }
             Expr::Array(elements) => {
                 for elem in elements {

@@ -1,0 +1,8 @@
+let name = "Ject"
+let version = 1.0
+let active = true
+
+print "Language: " + name
+print "Version: " + version
+print "Active: " + active
+

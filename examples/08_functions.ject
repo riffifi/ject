@@ -1,0 +1,23 @@
+fn greet(name)
+    return "Hello, " + name + "!"
+end
+
+fn add(a, b)
+    return a + b
+end
+
+fn factorial(n)
+    if n <= 1 then
+        return 1
+    else
+        return n * factorial(n - 1)
+    end
+end
+
+print greet("Alice")
+print "5 + 3 = " + add(5, 3)
+print "5! = " + factorial(5)
+
+let square = lambda(x) -> x * x
+print "Square of 7: " + square(7)
+

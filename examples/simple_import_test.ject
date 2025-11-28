@@ -1,7 +1,0 @@
-# Simple import test
-
-import {message, number, greet} from "simple_test"
-
-print message
-print number
-print greet("World")
