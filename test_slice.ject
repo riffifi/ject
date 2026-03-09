@@ -1,0 +1,57 @@
+# Test slicing feature in Ject
+
+print "=== Array Slicing Tests ==="
+
+# Create test array
+let arr = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+print "Original array:", arr
+
+# Test 1: Named slice syntax - from and to
+print "\n--- Named Slice Syntax ---"
+print "arr[from:2 to:5]:", arr[from:2 to:5]
+
+# Test 2: Just from
+print "arr[from:5]:", arr[from:5]
+
+# Test 3: Just to
+print "arr[to:3]:", arr[to:3]
+
+# Test 4: With step
+print "arr[from:0 to:10 step:2]:", arr[from:0 to:10 step:2]
+
+# Test 5: Negative indices
+print "arr[from:-5 to:-1]:", arr[from:-5 to:-1]
+
+# Test 6: Reverse with negative step
+print "arr[from:5 to:0 step:-1]:", arr[from:5 to:0 step:-1]
+
+# Test 7: Range syntax
+print "\n--- Range Slice Syntax ---"
+print "arr[2..5]:", arr[2..5]
+print "arr[0..8:2]:", arr[0..8:2]
+
+# Test 8: Python-style colon syntax
+print "\n--- Python-style Colon Syntax ---"
+print "arr[:3]:", arr[:3]
+print "arr[5:]:", arr[5:]
+print "arr[1:6:2]:", arr[1:6:2]
+
+print "\n=== String Slicing Tests ==="
+
+# Create test string
+let text = "Hello, World!"
+print "Original string:", text
+
+# Test 9: String slicing
+print "text[from:0 to:5]:", text[from:0 to:5]
+print "text[from:7 to:12]:", text[from:7 to:12]
+print "text[step:2]:", text[step:2]
+print "text[from:-6 to:-1]:", text[from:-6 to:-1]
+
+print "\n=== Simple Index Tests ==="
+# Make sure simple indexing still works
+print "arr[0]:", arr[0]
+print "arr[-1]:", arr[-1]
+print "text[0]:", text[0]
+
+print "\n=== All tests completed! ==="

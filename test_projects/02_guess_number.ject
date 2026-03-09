@@ -1,0 +1,44 @@
+# Guess the Number Game
+# Testing: loops, random, conditionals, break/continue
+
+print "=== Guess the Number Game ==="
+
+# Generate random number between 1-100
+let secret = random_int(1, 100)
+let max_attempts = 10
+let attempts = 0
+let guessed = false
+
+print "I'm thinking of a number between 1 and 100"
+print "You have " + max_attempts + " attempts"
+print ""
+
+# Simulate some guesses (in real game, would use input())
+let guesses = [50, 25, 37, 42, 40, 41]
+
+for guess in guesses do
+    # MISSING: break statement to exit loop early
+    # MISSING: compound assignment (attempts += 1)
+    attempts = attempts + 1
+    
+    if guess == secret then
+        print "Correct! The number was " + guess
+        print "You got it in " + attempts + " attempts"
+        guessed = true
+        # MISSING: break - would exit loop here
+    elseif guess < secret then
+        print "Guess " + attempts + ": " + guess + " is too LOW"
+    else
+        print "Guess " + attempts + ": " + guess + " is too HIGH"
+    end
+    
+    # MISSING: early exit when max attempts reached
+    if attempts >= max_attempts then
+        print "Out of attempts!"
+        # MISSING: break
+    end
+end
+
+if !guessed then
+    print "Game over! The number was " + secret
+end

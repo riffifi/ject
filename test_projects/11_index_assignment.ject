@@ -1,0 +1,31 @@
+# Test Array Index Assignment
+print "=== Array Index Assignment Test ==="
+
+let arr = [1, 2, 3, 4, 5]
+print "Original: " + arr
+
+# Modify first element
+arr[0] = 10
+print "After arr[0] = 10: " + arr
+
+# Modify last element using negative index
+arr[-1] = 100
+print "After arr[-1] = 100: " + arr
+
+# Modify middle element
+arr[2] = 30
+print "After arr[2] = 30: " + arr
+
+print "\n=== Dictionary Assignment Test ==="
+let person = {name: "Alice", age: 30}
+print "Original: " + person
+
+# Modify existing field
+person.name = "Bob"
+print "After person.name = \"Bob\": " + person
+
+# Add new field
+person.city = "New York"
+print "After person.city = \"New York\": " + person
+
+print "\nAll tests passed!"

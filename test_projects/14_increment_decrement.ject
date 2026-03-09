@@ -1,0 +1,49 @@
+# Test Increment and Decrement Operators
+print "=== Increment/Decrement Test ==="
+
+# Test prefix ++
+print "\n--- Prefix Increment ---"
+let x = 5
+print "x = " + x
+let y = ++x
+print "y = ++x -> y = " + y + ", x = " + x
+
+# Test postfix ++
+print "\n--- Postfix Increment ---"
+let a = 5
+print "a = " + a
+let b = a++
+print "b = a++ -> b = " + b + ", a = " + a
+
+# Test prefix --
+print "\n--- Prefix Decrement ---"
+let m = 10
+print "m = " + m
+let n = --m
+print "n = --m -> n = " + n + ", m = " + m
+
+# Test postfix --
+print "\n--- Postfix Decrement ---"
+let p = 10
+print "p = " + p
+let q = p--
+print "q = p-- -> q = " + q + ", p = " + p
+
+# Test with array elements
+print "\n--- Array Element Increment ---"
+let arr = [1, 2, 3, 4, 5]
+print "Original: " + arr
+++arr[0]
+print "After ++arr[0]: " + arr
+arr[2]++
+print "After arr[2]++: " + arr
+
+# Test in loops
+print "\n--- Increment in Loop ---"
+let counter = 0
+for i in 1..6 do
+    counter++
+    print "i = " + i + ", counter = " + counter
+end
+
+print "\n=== All increment/decrement tests passed! ==="

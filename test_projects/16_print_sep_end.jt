@@ -1,0 +1,13 @@
+# Test print with separators and end parameter
+
+print "Hello", "World"
+print "Hello", "World", sep=""
+print "Hello", "World", sep="---"
+print "No newline", end=""
+print " on same line"
+print "Items:", 1, 2, 3, sep=", ", end="!\n"
+
+# Test with variables
+let x = 10
+let y = 20
+print "x =", x, "y =", y

@@ -1,0 +1,52 @@
+# File Processing Test
+# Testing: file I/O, string manipulation
+
+print "=== File Processing Test ==="
+
+# MISSING: Multi-line strings (heredoc)
+# Would be nice for templates:
+# let template = """
+#     Hello, {name}!
+#     Your balance is ${balance}.
+# """
+
+# Test file operations
+let filename = "test_data.txt"
+
+# MISSING: File writing
+# write_file(filename, "Line 1\nLine 2\nLine 3")
+
+# MISSING: File reading
+# let content = read_file(filename)
+# print content
+
+# MISSING: File lines iteration
+# for line in read_lines(filename) do
+#     print line
+# end
+
+# MISSING: File append
+# append_file(filename, "\nLine 4")
+
+# MISSING: Check if file exists
+# if file_exists(filename) then ...
+
+# String processing (these work!)
+let text = "Hello, World!"
+print "Upper: " + upper(text)
+print "Lower: " + lower(text)
+print "Length: " + len(text)
+
+# MISSING: String formatting
+# let formatted = format("Hello, {}! You are {} years old.", name, age)
+# let formatted = "Hello, {name}! You are {age} years old."
+
+print "\n=== CSV Processing Simulation ==="
+let csv_line = "apple,banana,cherry,date"
+let fruits = split(csv_line, ",")
+print "Fruits: " + fruits
+print "First fruit: " + fruits[0]
+print "Last fruit: " + fruits[len(fruits) - 1]
+
+# MISSING: Join with modification
+# let upper_fruits = join(map(fruits, upper), ", ")

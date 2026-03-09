@@ -1,0 +1,40 @@
+# Test CorLib and Module System
+
+print "=== CorLib (Always Available) ==="
+print "type_of(42):", type_of(42)
+print "len([1,2,3]):", len([1,2,3])
+print "range(1, 4):", range(1, 4)
+print "push/pop work:", push([1,2], 3)
+
+print "\n=== Math Module (Requires Import) ==="
+# This would fail without import:
+# print abs(-5)
+
+import "math"
+print "After import 'math':"
+print "  abs(-5):", abs(-5)
+print "  sqrt(16):", sqrt(16)
+print "  PI:", PI
+print "  sin(PI/2):", sin(PI / 2)
+
+print "\n=== Selective Import ==="
+import {max, min, E} from "math"
+print "  max(1,5,3):", max(1, 5, 3)
+print "  min(1,5,3):", min(1, 5, 3)
+print "  E:", E
+
+print "\n=== String Module ==="
+import "string"
+print "  upper('hello'):", upper("hello")
+print "  trim('  hi  '):", trim("  hi  ")
+print "  split('a,b,c', ','):", split("a,b,c", ",")
+
+print "\n=== Array Module ==="
+import "array"
+let arr = [3, 1, 4, 1, 5, 9, 2, 6]
+print "  Original:", arr
+print "  sort(arr):", sort(arr)
+print "  sum(arr):", sum(arr)
+print "  unique(arr):", unique(arr)
+
+print "\n=== All modules work! ==="

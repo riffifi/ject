@@ -2,180 +2,327 @@ use crate::value::Value;
 use crate::interpreter::RuntimeError;
 use std::collections::HashMap;
 
+/// Create CorLib - Core Library (always available)
+/// These are Rust primitives that CANNOT be written in Ject itself
+pub fn create_corlib() -> HashMap<String, Value> {
+    let mut corlib = HashMap::new();
+
+    // ========== Type Inspection & Conversion ==========
+    // These need Rust's internal type system access
+    corlib.insert("type_of".to_string(), Value::BuiltinFunction("type_of".to_string()));
+    corlib.insert("to_int".to_string(), Value::BuiltinFunction("to_int".to_string()));
+    corlib.insert("to_float".to_string(), Value::BuiltinFunction("to_float".to_string()));
+    corlib.insert("to_string".to_string(), Value::BuiltinFunction("to_string".to_string()));
+    corlib.insert("to_bool".to_string(), Value::BuiltinFunction("to_bool".to_string()));
+
+    // ========== Collection Primitives ==========
+    // These need internal access to data structures
+    corlib.insert("len".to_string(), Value::BuiltinFunction("len".to_string()));
+    corlib.insert("range".to_string(), Value::BuiltinFunction("range".to_string()));
+    corlib.insert("push".to_string(), Value::BuiltinFunction("push".to_string()));
+    corlib.insert("pop".to_string(), Value::BuiltinFunction("pop".to_string()));
+
+    // ========== Array Primitives ==========
+    // These need internal array access
+    corlib.insert("sum".to_string(), Value::BuiltinFunction("sum".to_string()));
+    corlib.insert("contains".to_string(), Value::BuiltinFunction("contains".to_string()));
+    corlib.insert("index_of".to_string(), Value::BuiltinFunction("index_of".to_string()));
+    corlib.insert("first".to_string(), Value::BuiltinFunction("first".to_string()));
+    corlib.insert("last".to_string(), Value::BuiltinFunction("last".to_string()));
+    corlib.insert("sort".to_string(), Value::BuiltinFunction("sort".to_string()));
+    corlib.insert("reverse".to_string(), Value::BuiltinFunction("reverse".to_string()));
+    corlib.insert("unique".to_string(), Value::BuiltinFunction("unique".to_string()));
+
+    // ========== Higher-Order Functions ==========
+    // These execute lambdas - need Rust interpreter access
+    corlib.insert("map".to_string(), Value::BuiltinFunction("map".to_string()));
+    corlib.insert("filter".to_string(), Value::BuiltinFunction("filter".to_string()));
+    corlib.insert("reduce".to_string(), Value::BuiltinFunction("reduce".to_string()));
+
+    // ========== Math Primitives ==========
+    // These use Rust's std::f64 math - cannot be written in Ject
+    corlib.insert("abs".to_string(), Value::BuiltinFunction("abs".to_string()));
+    corlib.insert("sqrt".to_string(), Value::BuiltinFunction("sqrt".to_string()));
+    corlib.insert("pow".to_string(), Value::BuiltinFunction("pow".to_string()));
+    corlib.insert("sin".to_string(), Value::BuiltinFunction("sin".to_string()));
+    corlib.insert("cos".to_string(), Value::BuiltinFunction("cos".to_string()));
+    corlib.insert("tan".to_string(), Value::BuiltinFunction("tan".to_string()));
+    corlib.insert("floor".to_string(), Value::BuiltinFunction("floor".to_string()));
+    corlib.insert("ceil".to_string(), Value::BuiltinFunction("ceil".to_string()));
+    corlib.insert("round".to_string(), Value::BuiltinFunction("round".to_string()));
+    corlib.insert("min".to_string(), Value::BuiltinFunction("min".to_string()));
+    corlib.insert("max".to_string(), Value::BuiltinFunction("max".to_string()));
+    corlib.insert("random".to_string(), Value::BuiltinFunction("random".to_string()));
+    corlib.insert("random_int".to_string(), Value::BuiltinFunction("random_int".to_string()));
+
+    // ========== String Primitives ==========
+    // These need internal string access
+    corlib.insert("upper".to_string(), Value::BuiltinFunction("upper".to_string()));
+    corlib.insert("lower".to_string(), Value::BuiltinFunction("lower".to_string()));
+    corlib.insert("trim".to_string(), Value::BuiltinFunction("trim".to_string()));
+    corlib.insert("split".to_string(), Value::BuiltinFunction("split".to_string()));
+    corlib.insert("join".to_string(), Value::BuiltinFunction("join".to_string()));
+    corlib.insert("replace".to_string(), Value::BuiltinFunction("replace".to_string()));
+    corlib.insert("char_at".to_string(), Value::BuiltinFunction("char_at".to_string()));
+    corlib.insert("substring".to_string(), Value::BuiltinFunction("substring".to_string()));
+    corlib.insert("repeat".to_string(), Value::BuiltinFunction("repeat".to_string()));
+
+    // ========== I/O Primitives ==========
+    // These need system access
+    corlib.insert("input".to_string(), Value::BuiltinFunction("input".to_string()));
+    corlib.insert("print".to_string(), Value::BuiltinFunction("print".to_string()));
+    corlib.insert("read_file".to_string(), Value::BuiltinFunction("read_file".to_string()));
+    corlib.insert("write_file".to_string(), Value::BuiltinFunction("write_file".to_string()));
+
+    // ========== Testing ==========
+    corlib.insert("assert".to_string(), Value::BuiltinFunction("assert".to_string()));
+
+    // ========== Constants ==========
+    corlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
+    corlib.insert("E".to_string(), Value::Float(std::f64::consts::E));
+
+    corlib
+}
+
+/// Get math module functions (import "math")
+/// Advanced math functions NOT in CorLib - written in Ject
+pub fn get_math_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+
+    // Advanced math (NOT in CorLib - written in Ject)
+    module.insert("log".to_string(), Value::BuiltinFunction("log".to_string()));
+    module.insert("log10".to_string(), Value::BuiltinFunction("log10".to_string()));
+    module.insert("exp".to_string(), Value::BuiltinFunction("exp".to_string()));
+    module.insert("log2".to_string(), Value::BuiltinFunction("log2".to_string()));
+    module.insert("ln".to_string(), Value::BuiltinFunction("ln".to_string()));
+
+    // Angle conversion
+    module.insert("degrees".to_string(), Value::BuiltinFunction("degrees".to_string()));
+    module.insert("radians".to_string(), Value::BuiltinFunction("radians".to_string()));
+    module.insert("deg_to_rad".to_string(), Value::BuiltinFunction("deg_to_rad".to_string()));
+    module.insert("rad_to_deg".to_string(), Value::BuiltinFunction("rad_to_deg".to_string()));
+
+    // Advanced functions
+    module.insert("clamp".to_string(), Value::BuiltinFunction("clamp".to_string()));
+    module.insert("sign".to_string(), Value::BuiltinFunction("sign".to_string()));
+    module.insert("gcd".to_string(), Value::BuiltinFunction("gcd".to_string()));
+    module.insert("lcm".to_string(), Value::BuiltinFunction("lcm".to_string()));
+
+    // Inverse trig (not in CorLib)
+    module.insert("asin".to_string(), Value::BuiltinFunction("asin".to_string()));
+    module.insert("acos".to_string(), Value::BuiltinFunction("acos".to_string()));
+    module.insert("atan".to_string(), Value::BuiltinFunction("atan".to_string()));
+    module.insert("atan2".to_string(), Value::BuiltinFunction("atan2".to_string()));
+
+    // Hyperbolic (not in CorLib)
+    module.insert("sinh".to_string(), Value::BuiltinFunction("sinh".to_string()));
+    module.insert("cosh".to_string(), Value::BuiltinFunction("cosh".to_string()));
+    module.insert("tanh".to_string(), Value::BuiltinFunction("tanh".to_string()));
+
+    // Rounding variants
+    module.insert("round_to".to_string(), Value::BuiltinFunction("round_to".to_string()));
+
+    module
+}
+
+/// Get string module functions (import "string")
+/// Advanced string functions NOT in CorLib - written in Ject
+pub fn get_string_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+
+    // Advanced case conversion (NOT in CorLib)
+    module.insert("capitalize".to_string(), Value::BuiltinFunction("capitalize".to_string()));
+    module.insert("title_case".to_string(), Value::BuiltinFunction("title_case".to_string()));
+
+    // Trimming variants
+    module.insert("trim_left".to_string(), Value::BuiltinFunction("trim_left".to_string()));
+    module.insert("trim_right".to_string(), Value::BuiltinFunction("trim_right".to_string()));
+
+    // Padding
+    module.insert("pad_left".to_string(), Value::BuiltinFunction("pad_left".to_string()));
+    module.insert("pad_right".to_string(), Value::BuiltinFunction("pad_right".to_string()));
+    module.insert("pad_center".to_string(), Value::BuiltinFunction("pad_center".to_string()));
+
+    // Search and test (NOT in CorLib)
+    module.insert("starts_with".to_string(), Value::BuiltinFunction("starts_with".to_string()));
+    module.insert("ends_with".to_string(), Value::BuiltinFunction("ends_with".to_string()));
+    module.insert("contains_str".to_string(), Value::BuiltinFunction("contains_str".to_string()));
+    module.insert("count".to_string(), Value::BuiltinFunction("count".to_string()));
+    module.insert("find".to_string(), Value::BuiltinFunction("find".to_string()));
+
+    // Manipulation variants
+    module.insert("replace_all".to_string(), Value::BuiltinFunction("replace_all".to_string()));
+    module.insert("replace_first".to_string(), Value::BuiltinFunction("replace_first".to_string()));
+    module.insert("remove".to_string(), Value::BuiltinFunction("remove".to_string()));
+    module.insert("repeat".to_string(), Value::BuiltinFunction("repeat".to_string()));
+    module.insert("reverse_str".to_string(), Value::BuiltinFunction("reverse_str".to_string()));
+
+    // Extraction
+    module.insert("left".to_string(), Value::BuiltinFunction("left".to_string()));
+    module.insert("right".to_string(), Value::BuiltinFunction("right".to_string()));
+    module.insert("truncate".to_string(), Value::BuiltinFunction("truncate".to_string()));
+
+    // Analysis
+    module.insert("is_empty".to_string(), Value::BuiltinFunction("is_empty".to_string()));
+    module.insert("is_numeric".to_string(), Value::BuiltinFunction("is_numeric".to_string()));
+    module.insert("is_alpha".to_string(), Value::BuiltinFunction("is_alpha".to_string()));
+    module.insert("is_alphanumeric".to_string(), Value::BuiltinFunction("is_alphanumeric".to_string()));
+    module.insert("word_count".to_string(), Value::BuiltinFunction("word_count".to_string()));
+    module.insert("sentence_count".to_string(), Value::BuiltinFunction("sentence_count".to_string()));
+    module.insert("paragraph_count".to_string(), Value::BuiltinFunction("paragraph_count".to_string()));
+    module.insert("lines".to_string(), Value::BuiltinFunction("lines".to_string()));
+
+    // Conversion utilities
+    module.insert("extract_numbers".to_string(), Value::BuiltinFunction("extract_numbers".to_string()));
+    module.insert("to_char_codes".to_string(), Value::BuiltinFunction("to_char_codes".to_string()));
+    module.insert("from_char_codes".to_string(), Value::BuiltinFunction("from_char_codes".to_string()));
+
+    // Formatting
+    module.insert("format".to_string(), Value::BuiltinFunction("format".to_string()));
+    module.insert("escape".to_string(), Value::BuiltinFunction("escape".to_string()));
+    module.insert("unescape".to_string(), Value::BuiltinFunction("unescape".to_string()));
+    module.insert("wrap_text".to_string(), Value::BuiltinFunction("wrap_text".to_string()));
+
+    module
+}
+
+/// Get array module functions (import "array")
+/// Advanced array functions NOT in CorLib - written in Ject
+pub fn get_array_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+
+    // Aggregation (NOT in CorLib)
+    module.insert("any".to_string(), Value::BuiltinFunction("any".to_string()));
+    module.insert("all".to_string(), Value::BuiltinFunction("all".to_string()));
+    module.insert("average".to_string(), Value::BuiltinFunction("average".to_string()));
+    module.insert("median".to_string(), Value::BuiltinFunction("median".to_string()));
+
+    // Search variants (NOT in CorLib)
+    module.insert("find".to_string(), Value::BuiltinFunction("find".to_string()));
+    module.insert("count".to_string(), Value::BuiltinFunction("count".to_string()));
+
+    // Slicing variants
+    module.insert("slice".to_string(), Value::BuiltinFunction("slice".to_string()));
+    module.insert("take".to_string(), Value::BuiltinFunction("take".to_string()));
+    module.insert("drop".to_string(), Value::BuiltinFunction("drop".to_string()));
+    module.insert("initial".to_string(), Value::BuiltinFunction("initial".to_string()));
+    module.insert("rest".to_string(), Value::BuiltinFunction("rest".to_string()));
+
+    // Combination (NOT in CorLib)
+    module.insert("concat".to_string(), Value::BuiltinFunction("concat".to_string()));
+    module.insert("zip".to_string(), Value::BuiltinFunction("zip".to_string()));
+    module.insert("union".to_string(), Value::BuiltinFunction("union".to_string()));
+    module.insert("intersection".to_string(), Value::BuiltinFunction("intersection".to_string()));
+    module.insert("difference".to_string(), Value::BuiltinFunction("difference".to_string()));
+
+    // Transformation (NOT in CorLib)
+    module.insert("flatten".to_string(), Value::BuiltinFunction("flatten".to_string()));
+    module.insert("chunk".to_string(), Value::BuiltinFunction("chunk".to_string()));
+    module.insert("group_by".to_string(), Value::BuiltinFunction("group_by".to_string()));
+    module.insert("partition".to_string(), Value::BuiltinFunction("partition".to_string()));
+    module.insert("shuffle".to_string(), Value::BuiltinFunction("shuffle".to_string()));
+    module.insert("rotate_left".to_string(), Value::BuiltinFunction("rotate_left".to_string()));
+    module.insert("rotate_right".to_string(), Value::BuiltinFunction("rotate_right".to_string()));
+
+    // Modification
+    module.insert("insert_at".to_string(), Value::BuiltinFunction("insert_at".to_string()));
+    module.insert("remove_at".to_string(), Value::BuiltinFunction("remove_at".to_string()));
+    module.insert("without".to_string(), Value::BuiltinFunction("without".to_string()));
+    module.insert("compact".to_string(), Value::BuiltinFunction("compact".to_string()));
+    module.insert("compact_unique".to_string(), Value::BuiltinFunction("compact_unique".to_string()));
+
+    // Utilities
+    module.insert("enumerate".to_string(), Value::BuiltinFunction("enumerate".to_string()));
+    module.insert("fill".to_string(), Value::BuiltinFunction("fill".to_string()));
+    module.insert("range_arr".to_string(), Value::BuiltinFunction("range_arr".to_string()));
+    module.insert("sample".to_string(), Value::BuiltinFunction("sample".to_string()));
+    module.insert("sort_by".to_string(), Value::BuiltinFunction("sort_by".to_string()));
+    module.insert("to_uarray".to_string(), Value::BuiltinFunction("to_uarray".to_string()));
+    module.insert("to_array".to_string(), Value::BuiltinFunction("to_array".to_string()));
+
+    module
+}
+
+/// Get IO module functions (import "io")
+pub fn get_io_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+    
+    module.insert("read_file".to_string(), Value::BuiltinFunction("read_file".to_string()));
+    module.insert("write_file".to_string(), Value::BuiltinFunction("write_file".to_string()));
+    
+    module
+}
+
+/// Get JSON module functions (import "json")
+pub fn get_json_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+    
+    module.insert("parse_json".to_string(), Value::BuiltinFunction("parse_json".to_string()));
+    module.insert("to_json".to_string(), Value::BuiltinFunction("to_json".to_string()));
+    
+    module
+}
+
+/// Get system module functions (import "system")
+pub fn get_system_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+    
+    module.insert("env".to_string(), Value::BuiltinFunction("env".to_string()));
+    module.insert("exit".to_string(), Value::BuiltinFunction("exit".to_string()));
+    module.insert("now".to_string(), Value::BuiltinFunction("now".to_string()));
+    module.insert("timestamp".to_string(), Value::BuiltinFunction("timestamp".to_string()));
+    module.insert("sleep".to_string(), Value::BuiltinFunction("sleep".to_string()));
+    
+    module
+}
+
+/// Get base conversion module (import "base")
+pub fn get_base_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+    
+    module.insert("to_binary".to_string(), Value::BuiltinFunction("to_binary".to_string()));
+    module.insert("to_octal".to_string(), Value::BuiltinFunction("to_octal".to_string()));
+    module.insert("to_hex".to_string(), Value::BuiltinFunction("to_hex".to_string()));
+    module.insert("from_binary".to_string(), Value::BuiltinFunction("from_binary".to_string()));
+    module.insert("from_octal".to_string(), Value::BuiltinFunction("from_octal".to_string()));
+    module.insert("from_hex".to_string(), Value::BuiltinFunction("from_hex".to_string()));
+    module.insert("base_repr".to_string(), Value::BuiltinFunction("base_repr".to_string()));
+    module.insert("from_base".to_string(), Value::BuiltinFunction("from_base".to_string()));
+    
+    module
+}
+
+/// Get a module by name (for import system)
+/// Returns None for modules that exist as .ject files (they will be loaded from disk)
+/// Only returns Some() for Rust-only modules that don't have .ject equivalents
+pub fn get_module(name: &str) -> Option<HashMap<String, Value>> {
+    match name {
+        // These modules exist as .ject files in stdlib/ - load from disk
+        // "math", "string", "array", "io", "json", "system" - all load from stdlib/*.ject
+
+        // Rust-only modules (no .ject equivalent)
+        "base" => Some(get_base_module()),
+        "numpy" => Some(crate::numpy::create_numpy_module()),
+
+        // All other modules will be loaded from .ject files
+        _ => None,
+    }
+}
+
+/// Create the full StdLib (CorLib + all modules for backward compatibility)
+/// DEPRECATED: New code should use modules via import instead
+/// Note: This only includes CorLib + Rust-only modules (like "base")
+/// Modules that exist as .ject files (math, string, array, etc.) are NOT included here
 pub fn create_stdlib() -> HashMap<String, Value> {
-    let mut stdlib = HashMap::new();
-    
-    // Mathematical functions
-    stdlib.insert("abs".to_string(), Value::BuiltinFunction("abs".to_string()));
-    stdlib.insert("sqrt".to_string(), Value::BuiltinFunction("sqrt".to_string()));
-    stdlib.insert("pow".to_string(), Value::BuiltinFunction("pow".to_string()));
-    stdlib.insert("sin".to_string(), Value::BuiltinFunction("sin".to_string()));
-    stdlib.insert("cos".to_string(), Value::BuiltinFunction("cos".to_string()));
-    stdlib.insert("tan".to_string(), Value::BuiltinFunction("tan".to_string()));
-    stdlib.insert("floor".to_string(), Value::BuiltinFunction("floor".to_string()));
-    stdlib.insert("ceil".to_string(), Value::BuiltinFunction("ceil".to_string()));
-    stdlib.insert("round".to_string(), Value::BuiltinFunction("round".to_string()));
-    stdlib.insert("min".to_string(), Value::BuiltinFunction("min".to_string()));
-    stdlib.insert("max".to_string(), Value::BuiltinFunction("max".to_string()));
-    
-    // Array functions
-    stdlib.insert("len".to_string(), Value::BuiltinFunction("len".to_string()));
-    stdlib.insert("push".to_string(), Value::BuiltinFunction("push".to_string()));
-    stdlib.insert("pop".to_string(), Value::BuiltinFunction("pop".to_string()));
-    stdlib.insert("map".to_string(), Value::BuiltinFunction("map".to_string()));
-    stdlib.insert("filter".to_string(), Value::BuiltinFunction("filter".to_string()));
-    stdlib.insert("reduce".to_string(), Value::BuiltinFunction("reduce".to_string()));
-    stdlib.insert("sum".to_string(), Value::BuiltinFunction("sum".to_string()));
-    
-    // String functions
-    stdlib.insert("upper".to_string(), Value::BuiltinFunction("upper".to_string()));
-    stdlib.insert("lower".to_string(), Value::BuiltinFunction("lower".to_string()));
-    stdlib.insert("trim".to_string(), Value::BuiltinFunction("trim".to_string()));
-    stdlib.insert("split".to_string(), Value::BuiltinFunction("split".to_string()));
-    stdlib.insert("join".to_string(), Value::BuiltinFunction("join".to_string()));
-    stdlib.insert("replace".to_string(), Value::BuiltinFunction("replace".to_string()));
-    
-    // Utility functions
-    stdlib.insert("type_of".to_string(), Value::BuiltinFunction("type_of".to_string()));
-    stdlib.insert("range".to_string(), Value::BuiltinFunction("range".to_string()));
-    
-    // Random function
+    let mut stdlib = create_corlib();
+
+    // Only include Rust-only modules (no .ject equivalent)
+    // "base" module has no .ject file, so include it
+    stdlib.extend(get_base_module());
+
+    // Random (utility) - keep for backward compatibility
     stdlib.insert("random".to_string(), Value::BuiltinFunction("random".to_string()));
-    
-    // Constants
-    stdlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
-    stdlib.insert("E".to_string(), Value::Float(std::f64::consts::E));
-    
-    // File I/O functions
-    stdlib.insert("read_file".to_string(), Value::BuiltinFunction("read_file".to_string()));
-    stdlib.insert("write_file".to_string(), Value::BuiltinFunction("write_file".to_string()));
-    
-    // JSON functions
-    stdlib.insert("parse_json".to_string(), Value::BuiltinFunction("parse_json".to_string()));
-    stdlib.insert("to_json".to_string(), Value::BuiltinFunction("to_json".to_string()));
-    
-    // String indexing/slicing functions
-    stdlib.insert("char_at".to_string(), Value::BuiltinFunction("char_at".to_string()));
-    stdlib.insert("substring".to_string(), Value::BuiltinFunction("substring".to_string()));
-    
-    // Enhanced array functions
-    stdlib.insert("sort".to_string(), Value::BuiltinFunction("sort".to_string()));
-    stdlib.insert("reverse".to_string(), Value::BuiltinFunction("reverse".to_string()));
-    stdlib.insert("unique".to_string(), Value::BuiltinFunction("unique".to_string()));
-    stdlib.insert("contains".to_string(), Value::BuiltinFunction("contains".to_string()));
-    stdlib.insert("index_of".to_string(), Value::BuiltinFunction("index_of".to_string()));
-    stdlib.insert("slice".to_string(), Value::BuiltinFunction("slice".to_string()));
-    stdlib.insert("find".to_string(), Value::BuiltinFunction("find".to_string()));
-    
-    // Enhanced string functions
-    stdlib.insert("starts_with".to_string(), Value::BuiltinFunction("starts_with".to_string()));
-    stdlib.insert("ends_with".to_string(), Value::BuiltinFunction("ends_with".to_string()));
-    stdlib.insert("pad_left".to_string(), Value::BuiltinFunction("pad_left".to_string()));
-    stdlib.insert("pad_right".to_string(), Value::BuiltinFunction("pad_right".to_string()));
-    stdlib.insert("repeat".to_string(), Value::BuiltinFunction("repeat".to_string()));
-    stdlib.insert("reverse_str".to_string(), Value::BuiltinFunction("reverse_str".to_string()));
-    stdlib.insert("contains_str".to_string(), Value::BuiltinFunction("contains_str".to_string()));
-    
-    // Base conversion functions
-    stdlib.insert("to_binary".to_string(), Value::BuiltinFunction("to_binary".to_string()));
-    stdlib.insert("to_octal".to_string(), Value::BuiltinFunction("to_octal".to_string()));
-    stdlib.insert("to_hex".to_string(), Value::BuiltinFunction("to_hex".to_string()));
-    stdlib.insert("from_binary".to_string(), Value::BuiltinFunction("from_binary".to_string()));
-    stdlib.insert("from_octal".to_string(), Value::BuiltinFunction("from_octal".to_string()));
-    stdlib.insert("from_hex".to_string(), Value::BuiltinFunction("from_hex".to_string()));
-    stdlib.insert("base_repr".to_string(), Value::BuiltinFunction("base_repr".to_string()));
-    stdlib.insert("from_base".to_string(), Value::BuiltinFunction("from_base".to_string()));
-    
-    // Enhanced math functions
-    stdlib.insert("log".to_string(), Value::BuiltinFunction("log".to_string()));
-    stdlib.insert("log10".to_string(), Value::BuiltinFunction("log10".to_string()));
-    stdlib.insert("exp".to_string(), Value::BuiltinFunction("exp".to_string()));
-    stdlib.insert("degrees".to_string(), Value::BuiltinFunction("degrees".to_string()));
-    stdlib.insert("radians".to_string(), Value::BuiltinFunction("radians".to_string()));
-    stdlib.insert("clamp".to_string(), Value::BuiltinFunction("clamp".to_string()));
-    
-    // Date/time functions
-    stdlib.insert("now".to_string(), Value::BuiltinFunction("now".to_string()));
-    stdlib.insert("timestamp".to_string(), Value::BuiltinFunction("timestamp".to_string()));
-    stdlib.insert("sleep".to_string(), Value::BuiltinFunction("sleep".to_string()));
-    
-    // Environment/system functions
-    stdlib.insert("env".to_string(), Value::BuiltinFunction("env".to_string()));
-    stdlib.insert("exit".to_string(), Value::BuiltinFunction("exit".to_string()));
-    
-    // More array functions
-    stdlib.insert("first".to_string(), Value::BuiltinFunction("first".to_string()));
-    stdlib.insert("last".to_string(), Value::BuiltinFunction("last".to_string()));
-    stdlib.insert("take".to_string(), Value::BuiltinFunction("take".to_string()));
-    stdlib.insert("drop".to_string(), Value::BuiltinFunction("drop".to_string()));
-    stdlib.insert("concat".to_string(), Value::BuiltinFunction("concat".to_string()));
-    stdlib.insert("flatten".to_string(), Value::BuiltinFunction("flatten".to_string()));
-    stdlib.insert("zip".to_string(), Value::BuiltinFunction("zip".to_string()));
-    stdlib.insert("enumerate".to_string(), Value::BuiltinFunction("enumerate".to_string()));
-    stdlib.insert("any".to_string(), Value::BuiltinFunction("any".to_string()));
-    stdlib.insert("all".to_string(), Value::BuiltinFunction("all".to_string()));
-    
-    // More string functions
-    stdlib.insert("capitalize".to_string(), Value::BuiltinFunction("capitalize".to_string()));
-    stdlib.insert("title_case".to_string(), Value::BuiltinFunction("title_case".to_string()));
-    stdlib.insert("count".to_string(), Value::BuiltinFunction("count".to_string()));
-    stdlib.insert("is_empty".to_string(), Value::BuiltinFunction("is_empty".to_string()));
-    stdlib.insert("is_numeric".to_string(), Value::BuiltinFunction("is_numeric".to_string()));
-    stdlib.insert("is_alpha".to_string(), Value::BuiltinFunction("is_alpha".to_string()));
-    stdlib.insert("lines".to_string(), Value::BuiltinFunction("lines".to_string()));
-    
-    // Type conversion functions
-    stdlib.insert("to_int".to_string(), Value::BuiltinFunction("to_int".to_string()));
-    stdlib.insert("to_float".to_string(), Value::BuiltinFunction("to_float".to_string()));
-    stdlib.insert("to_string".to_string(), Value::BuiltinFunction("to_string".to_string()));
-    stdlib.insert("to_bool".to_string(), Value::BuiltinFunction("to_bool".to_string()));
-    
-    // More math functions
-    stdlib.insert("sign".to_string(), Value::BuiltinFunction("sign".to_string()));
-    stdlib.insert("gcd".to_string(), Value::BuiltinFunction("gcd".to_string()));
-    stdlib.insert("lcm".to_string(), Value::BuiltinFunction("lcm".to_string()));
-    stdlib.insert("factorial".to_string(), Value::BuiltinFunction("factorial".to_string()));
-    stdlib.insert("is_prime".to_string(), Value::BuiltinFunction("is_prime".to_string()));
-    stdlib.insert("random_int".to_string(), Value::BuiltinFunction("random_int".to_string()));
-    stdlib.insert("random_float".to_string(), Value::BuiltinFunction("random_float".to_string()));
-    
-    // Input/output functions
-    stdlib.insert("input".to_string(), Value::BuiltinFunction("input".to_string()));
-    stdlib.insert("println".to_string(), Value::BuiltinFunction("println".to_string()));
-    
-    // System functions
-    stdlib.insert("exec".to_string(), Value::BuiltinFunction("exec".to_string()));
-    stdlib.insert("file_exists".to_string(), Value::BuiltinFunction("file_exists".to_string()));
-    stdlib.insert("is_file".to_string(), Value::BuiltinFunction("is_file".to_string()));
-    stdlib.insert("is_dir".to_string(), Value::BuiltinFunction("is_dir".to_string()));
-    stdlib.insert("list_dir".to_string(), Value::BuiltinFunction("list_dir".to_string()));
-    stdlib.insert("mkdir".to_string(), Value::BuiltinFunction("mkdir".to_string()));
-    stdlib.insert("remove_file".to_string(), Value::BuiltinFunction("remove_file".to_string()));
-    
-    // Testing functions
-    stdlib.insert("assert".to_string(), Value::BuiltinFunction("assert".to_string()));
-    
-    // Type inspection
-    stdlib.insert("type".to_string(), Value::BuiltinFunction("type".to_string()));
-    
-    // Collection functions
-    stdlib.insert("collection".to_string(), Value::BuiltinFunction("collection".to_string()));
-    stdlib.insert("add_to".to_string(), Value::BuiltinFunction("add_to".to_string()));
-    stdlib.insert("remove_from".to_string(), Value::BuiltinFunction("remove_from".to_string()));
-    stdlib.insert("has".to_string(), Value::BuiltinFunction("has".to_string()));
-    stdlib.insert("union".to_string(), Value::BuiltinFunction("union".to_string()));
-    stdlib.insert("intersect".to_string(), Value::BuiltinFunction("intersect".to_string()));
-    stdlib.insert("difference".to_string(), Value::BuiltinFunction("difference".to_string()));
-    stdlib.insert("size".to_string(), Value::BuiltinFunction("size".to_string()));
-    stdlib.insert("is_subset".to_string(), Value::BuiltinFunction("is_subset".to_string()));
-    stdlib.insert("is_superset".to_string(), Value::BuiltinFunction("is_superset".to_string()));
-    stdlib.insert("clear_collection".to_string(), Value::BuiltinFunction("clear_collection".to_string()));
-    stdlib.insert("to_array".to_string(), Value::BuiltinFunction("to_array".to_string()));
-    
-    // String functions - fix naming to match usage
-    stdlib.insert("uppercase".to_string(), Value::BuiltinFunction("uppercase".to_string()));
-    stdlib.insert("lowercase".to_string(), Value::BuiltinFunction("lowercase".to_string()));
-    
+
     stdlib
 }
 
@@ -195,12 +342,6 @@ match name {
                     new_arr.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     Ok(Value::Array(new_arr))
                 }
-                Value::StructInstance { .. } | Value::StructDefinition { .. } => Err(RuntimeError {
-                    message: "sort() requires an array, not a struct".to_string(),
-                }),
-                Value::StructInstance { .. } | Value::StructDefinition { .. } => Err(RuntimeError {
-                    message: "sort() requires an array, not a struct".to_string(),
-                }),
                 _ => Err(RuntimeError {
                     message: "sort() requires an array".to_string(),
                 }),
@@ -372,8 +513,22 @@ match name {
                 });
             }
             match &args[0] {
-                Value::Integer(n) => Ok(Value::Float((*n as f64).sqrt())),
-                Value::Float(f) => Ok(Value::Float(f.sqrt())),
+                Value::Integer(n) => {
+                    if *n < 0 {
+                        return Err(RuntimeError {
+                            message: "sqrt() of negative number is undefined".to_string(),
+                        });
+                    }
+                    Ok(Value::Float((*n as f64).sqrt()))
+                }
+                Value::Float(f) => {
+                    if *f < 0.0 {
+                        return Err(RuntimeError {
+                            message: "sqrt() of negative number is undefined".to_string(),
+                        });
+                    }
+                    Ok(Value::Float(f.sqrt()))
+                }
                 _ => Err(RuntimeError {
                     message: "sqrt() requires a number".to_string(),
                 }),
@@ -387,15 +542,51 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Integer(base), Value::Integer(exp)) => {
+                    // Check for 0^0
+                    if *base == 0 && *exp == 0 {
+                        return Err(RuntimeError {
+                            message: "pow(): 0^0 is undefined".to_string(),
+                        });
+                    }
                     Ok(Value::Float((*base as f64).powf(*exp as f64)))
                 }
                 (Value::Float(base), Value::Integer(exp)) => {
+                    // Check for 0^0
+                    if *base == 0.0 && *exp == 0 {
+                        return Err(RuntimeError {
+                            message: "pow(): 0^0 is undefined".to_string(),
+                        });
+                    }
                     Ok(Value::Float(base.powf(*exp as f64)))
                 }
                 (Value::Integer(base), Value::Float(exp)) => {
+                    // Check for 0^0
+                    if *base == 0 && *exp == 0.0 {
+                        return Err(RuntimeError {
+                            message: "pow(): 0^0 is undefined".to_string(),
+                        });
+                    }
+                    // Check for negative base with non-integer exponent
+                    if *base < 0 && exp.fract() != 0.0 {
+                        return Err(RuntimeError {
+                            message: "pow(): negative base with non-integer exponent is undefined".to_string(),
+                        });
+                    }
                     Ok(Value::Float((*base as f64).powf(*exp)))
                 }
                 (Value::Float(base), Value::Float(exp)) => {
+                    // Check for 0^0
+                    if *base == 0.0 && *exp == 0.0 {
+                        return Err(RuntimeError {
+                            message: "pow(): 0^0 is undefined".to_string(),
+                        });
+                    }
+                    // Check for negative base with non-integer exponent
+                    if *base < 0.0 && exp.fract() != 0.0 {
+                        return Err(RuntimeError {
+                            message: "pow(): negative base with non-integer exponent is undefined".to_string(),
+                        });
+                    }
                     Ok(Value::Float(base.powf(*exp)))
                 }
                 _ => Err(RuntimeError {
@@ -628,6 +819,49 @@ match name {
                 }),
             }
         },
+        "map" => {
+            // map is implemented specially in the interpreter to support lambdas
+            // This is a fallback that just returns the array
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "map() takes exactly 2 arguments (array, function)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => Ok(Value::Array(arr.clone())),
+                _ => Err(RuntimeError {
+                    message: "map() requires an array".to_string(),
+                }),
+            }
+        },
+        "filter" => {
+            // filter is implemented specially in the interpreter to support lambdas
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "filter() takes exactly 2 arguments (array, function)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => Ok(Value::Array(arr.clone())),
+                _ => Err(RuntimeError {
+                    message: "filter() requires an array".to_string(),
+                }),
+            }
+        },
+        "reduce" => {
+            // reduce is implemented specially in the interpreter to support lambdas
+            if args.len() != 3 {
+                return Err(RuntimeError {
+                    message: "reduce() takes exactly 3 arguments (array, function, initial)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(_arr) => Ok(args[2].clone()),
+                _ => Err(RuntimeError {
+                    message: "reduce() requires an array".to_string(),
+                }),
+            }
+        },
         "upper" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -676,7 +910,12 @@ match name {
 
             match (&args[0], &args[1]) {
                 (Value::String(s), Value::String(delim)) => {
-                    let parts: Vec<_> = s.split(delim.as_str()).map(|part| Value::String(part.to_string())).collect();
+                    let parts: Vec<_> = if delim.is_empty() {
+                        // Split into individual characters
+                        s.chars().map(|c| Value::String(c.to_string())).collect()
+                    } else {
+                        s.split(delim.as_str()).map(|part| Value::String(part.to_string())).collect()
+                    };
                     Ok(Value::Array(parts))
                 }
                 _ => Err(RuntimeError {
@@ -715,6 +954,28 @@ match name {
                 }
                 _ => Err(RuntimeError {
                     message: "replace() requires three string arguments".to_string(),
+                }),
+            }
+        },
+        "repeat" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "repeat() takes exactly 2 arguments (string and count)".to_string(),
+                });
+            }
+
+            match (&args[0], &args[1]) {
+                (Value::String(s), Value::Integer(n)) => {
+                    if *n < 0 {
+                        return Err(RuntimeError {
+                            message: "repeat() count cannot be negative".to_string(),
+                        });
+                    }
+                    let repeated = s.repeat(*n as usize);
+                    Ok(Value::String(repeated))
+                }
+                _ => Err(RuntimeError {
+                    message: "repeat() requires a string and an integer".to_string(),
                 }),
             }
         },
@@ -1059,6 +1320,35 @@ match name {
                 }
                 _ => Err(RuntimeError {
                     message: "unique() requires an array".to_string(),
+                }),
+            }
+        },
+        "to_uarray" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "to_uarray() takes exactly 1 argument (array)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Array(arr) => {
+                    // Convert array to unique array (deduplicate)
+                    let mut seen = std::collections::HashSet::new();
+                    let mut unique = Vec::new();
+                    for item in arr {
+                        let key = item.to_string();
+                        if !seen.contains(&key) {
+                            seen.insert(key);
+                            unique.push(item.clone());
+                        }
+                    }
+                    Ok(Value::UniqueArray(unique))
+                }
+                Value::UniqueArray(uarr) => {
+                    // Already a unique array, return copy
+                    Ok(Value::UniqueArray(uarr.clone()))
+                }
+                _ => Err(RuntimeError {
+                    message: "to_uarray() requires an array".to_string(),
                 }),
             }
         },
@@ -1472,15 +1762,24 @@ match name {
             match &args[0] {
                 Value::Integer(n) => Ok(Value::Integer(*n)),
                 Value::Float(f) => Ok(Value::Integer(*f as i64)),
-                Value::String(s) => match s.parse::<i64>() {
-                    Ok(n) => Ok(Value::Integer(n)),
-                    Err(_) => Err(RuntimeError {
-                        message: "Cannot convert string to integer".to_string(),
-                    }),
+                Value::String(s) => {
+                    // Trim whitespace and try parsing
+                    let trimmed = s.trim();
+                    // Try parsing as integer first
+                    if let Ok(n) = trimmed.parse::<i64>() {
+                        Ok(Value::Integer(n))
+                    } else if let Ok(f) = trimmed.parse::<f64>() {
+                        // If it's a float string, floor it
+                        Ok(Value::Integer(f.floor() as i64))
+                    } else {
+                        Err(RuntimeError {
+                            message: format!("Cannot convert '{}' to integer", s),
+                        })
+                    }
                 },
                 Value::Bool(b) => Ok(Value::Integer(if *b { 1 } else { 0 })),
                 _ => Err(RuntimeError {
-                    message: "Cannot convert to integer".to_string(),
+                    message: format!("Cannot convert {} to integer", args[0].type_name()),
                 }),
             }
         },
@@ -1493,14 +1792,18 @@ match name {
             match &args[0] {
                 Value::Integer(n) => Ok(Value::Float(*n as f64)),
                 Value::Float(f) => Ok(Value::Float(*f)),
-                Value::String(s) => match s.parse::<f64>() {
-                    Ok(f) => Ok(Value::Float(f)),
-                    Err(_) => Err(RuntimeError {
-                        message: "Cannot convert string to float".to_string(),
-                    }),
+                Value::String(s) => {
+                    // Trim whitespace and try parsing
+                    let trimmed = s.trim();
+                    match trimmed.parse::<f64>() {
+                        Ok(f) => Ok(Value::Float(f)),
+                        Err(_) => Err(RuntimeError {
+                            message: format!("Cannot convert '{}' to float", s),
+                        }),
+                    }
                 },
                 _ => Err(RuntimeError {
-                    message: "Cannot convert to float".to_string(),
+                    message: format!("Cannot convert {} to float", args[0].type_name()),
                 }),
             }
         },
@@ -1752,26 +2055,6 @@ match name {
                 }),
             }
         },
-        "repeat" => {
-            if args.len() != 2 {
-                return Err(RuntimeError {
-                    message: "repeat() takes exactly 2 arguments (string, count)".to_string(),
-                });
-            }
-            match (&args[0], &args[1]) {
-                (Value::String(s), Value::Integer(count)) => {
-                    if *count < 0 {
-                        return Err(RuntimeError {
-                            message: "repeat() count must be non-negative".to_string(),
-                        });
-                    }
-                    Ok(Value::String(s.repeat(*count as usize)))
-                }
-                _ => Err(RuntimeError {
-                    message: "repeat() requires a string and an integer count".to_string(),
-                }),
-            }
-        },
         "reverse_str" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -2013,6 +2296,15 @@ match name {
                     let values: Vec<Value> = items.into_iter().map(Value::String).collect();
                     Ok(Value::Array(values))
                 }
+                Value::UniqueArray(uarr) => {
+                    // Convert unique array to regular array
+                    if args.len() == 2 {
+                        return Err(RuntimeError {
+                            message: "to_array() delimiter parameter only works with strings".to_string(),
+                        });
+                    }
+                    Ok(Value::Array(uarr.clone()))
+                }
                 Value::String(s) => {
                     if args.len() == 2 {
                         // to_array(string, delimiter) - split by delimiter
@@ -2039,7 +2331,7 @@ match name {
                     }
                 }
                 _ => Err(RuntimeError {
-                    message: "to_array() requires a collection or string".to_string(),
+                    message: "to_array() requires a collection, unique array, or string".to_string(),
                 }),
             }
         },
@@ -2114,15 +2406,7 @@ match name {
             };
             std::process::exit(code);
         },
-        
-        "println" => {
-            for arg in args {
-                print!("{}", arg);
-            }
-            println!();
-            Ok(Value::Nil)
-        },
-        
+
         _ => Err(RuntimeError {
             message: format!("Unknown builtin function: {}", name),
         }),
@@ -2193,7 +2477,16 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
         }
         Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         Value::Array(arr) => {
-            let json_array: Result<Vec<serde_json::Value>, RuntimeError> = 
+            let json_array: Result<Vec<serde_json::Value>, RuntimeError> =
+                arr.iter().map(ject_value_to_json).collect();
+            match json_array {
+                Ok(json_arr) => Ok(serde_json::Value::Array(json_arr)),
+                Err(e) => Err(e),
+            }
+        }
+        Value::UniqueArray(arr) => {
+            // UniqueArray converts to regular JSON array
+            let json_array: Result<Vec<serde_json::Value>, RuntimeError> =
                 arr.iter().map(ject_value_to_json).collect();
             match json_array {
                 Ok(json_arr) => Ok(serde_json::Value::Array(json_arr)),
@@ -2224,6 +2517,21 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
             json_obj.insert("_type".to_string(), serde_json::Value::String("error".to_string()));
             json_obj.insert("message".to_string(), serde_json::Value::String(msg.clone()));
             Ok(serde_json::Value::Object(json_obj))
+        }
+        Value::NdArray(arr) => {
+            // Convert ndarray to JSON array
+            let data = match arr {
+                crate::numpy::NdArray::F64(a) => a.iter().map(|&x| {
+                    serde_json::Number::from_f64(x).unwrap_or(serde_json::Number::from(0))
+                }).collect::<Vec<_>>(),
+                crate::numpy::NdArray::I64(a) => a.iter().map(|&x| {
+                    serde_json::Number::from(x)
+                }).collect::<Vec<_>>(),
+                crate::numpy::NdArray::Bool(a) => a.iter().map(|&x| {
+                    serde_json::Number::from(if x { 1 } else { 0 })
+                }).collect::<Vec<_>>(),
+            };
+            Ok(serde_json::Value::Array(data.into_iter().map(serde_json::Value::Number).collect()))
         }
     }
 }

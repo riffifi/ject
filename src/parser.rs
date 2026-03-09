@@ -40,14 +40,14 @@ impl Parser {
         let mut statements = Vec::new();
         
         while !self.is_at_end() {
-            // Skip newlines at the top level
-            if self.match_token(&Token::Newline) {
+            // Skip newlines and semicolons at the top level
+            if self.match_token(&Token::Newline) || self.match_token(&Token::Semicolon) {
                 continue;
             }
-            
+
             statements.push(self.statement()?);
         }
-        
+
         Ok(statements)
     }
     
@@ -60,17 +60,97 @@ impl Parser {
             Token::For => self.for_statement(),
             Token::Return => self.return_statement(),
             Token::Throw => self.throw_statement(),
+            Token::Break => self.break_statement(),
+            Token::Continue => self.continue_statement(),
             Token::Print => self.print_statement(),
             Token::Import => self.import_statement(),
             Token::Export => self.export_statement(),
             Token::Struct => self.struct_statement(),
             Token::Try => self.try_statement(),
             Token::Identifier(_) => {
-                // Check if this is an assignment
-                if self.peek_ahead(1).map(|t| matches!(t, Token::Equal)).unwrap_or(false) {
-                    self.assignment_statement()
+                // Parse expression first (could be identifier, index, or field access)
+                let expr = self.expression()?;
+
+                // Check for compound assignment operators (+=, -=, etc.)
+                let compound_op = if self.match_token(&Token::PlusEqual) {
+                    Some(crate::ast::BinaryOp::Add)
+                } else if self.match_token(&Token::MinusEqual) {
+                    Some(crate::ast::BinaryOp::Subtract)
+                } else if self.match_token(&Token::StarEqual) {
+                    Some(crate::ast::BinaryOp::Multiply)
+                } else if self.match_token(&Token::SlashEqual) {
+                    Some(crate::ast::BinaryOp::Divide)
+                } else if self.match_token(&Token::PercentEqual) {
+                    Some(crate::ast::BinaryOp::Modulo)
                 } else {
-                    Ok(Stmt::Expression(self.expression()?))
+                    None
+                };
+
+                if compound_op.is_some() || self.match_token(&Token::Equal) {
+                    // It's an assignment (regular or compound) - parse the value
+                    let value = self.expression()?;
+
+                    // Convert the expression to an assignment target
+                    let target = match expr {
+                        Expr::Identifier(name) => crate::ast::AssignTarget::Identifier(name),
+                        Expr::Index { object, index } => {
+                            if let Expr::Identifier(obj_name) = *object {
+                                crate::ast::AssignTarget::Index { object: obj_name, index }
+                            } else {
+                                return Err(self.error("Left side of index assignment must be a variable (e.g., arr[i] = x)".to_string()));
+                            }
+                        }
+                        Expr::StructAccess { object, field } => {
+                            if let Expr::Identifier(obj_name) = *object {
+                                crate::ast::AssignTarget::Field { object: obj_name, field }
+                            } else {
+                                return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
+                            }
+                        }
+                        Expr::Member { object, property } => {
+                            if let Expr::Identifier(obj_name) = *object {
+                                crate::ast::AssignTarget::Field { object: obj_name, field: property }
+                            } else {
+                                return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
+                            }
+                        }
+                        _ => {
+                            return Err(self.error("Invalid assignment target.".to_string()));
+                        }
+                    };
+
+                    // For compound assignment, wrap the value in a binary expression
+                    let final_value = if let Some(op) = compound_op {
+                        // Create: target = target op value
+                        // For example: x += 5 becomes x = x + 5
+                        let target_expr = match &target {
+                            crate::ast::AssignTarget::Identifier(name) => Expr::Identifier(name.clone()),
+                            crate::ast::AssignTarget::Index { object, index } => {
+                                Expr::Index {
+                                    object: Box::new(Expr::Identifier(object.clone())),
+                                    index: index.clone(),
+                                }
+                            }
+                            crate::ast::AssignTarget::Field { object, field } => {
+                                Expr::StructAccess {
+                                    object: Box::new(Expr::Identifier(object.clone())),
+                                    field: field.clone(),
+                                }
+                            }
+                        };
+                        Expr::Binary {
+                            left: Box::new(target_expr),
+                            operator: op,
+                            right: Box::new(value),
+                        }
+                    } else {
+                        value
+                    };
+
+                    Ok(Stmt::Assign { target, value: final_value })
+                } else {
+                    // Just an expression statement
+                    Ok(Stmt::Expression(expr))
                 }
             },
             _ => Ok(Stmt::Expression(self.expression()?)),
@@ -336,8 +416,45 @@ impl Parser {
     
     fn print_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Print, "Expected 'print'")?;
-        let expr = self.expression()?;
-        Ok(Stmt::Print(expr))
+        
+        let mut values = Vec::new();
+        let mut sep = None;
+        let mut end = None;
+        
+        // Parse values and keyword arguments
+        'args: while !self.check(&Token::Newline) && !self.check(&Token::End) && !self.is_at_end() {
+            // Check for keyword argument at current position
+            if let Token::Identifier(name) = self.peek() {
+                if (name == "sep" || name == "end") && 
+                   self.peek_ahead(1).map(|t| matches!(t, Token::Colon)).unwrap_or(false) {
+                    // This is a keyword argument
+                    let kw_name = name;
+                    self.advance(); // consume identifier
+                    self.advance(); // consume ':'
+                    let value = self.expression()?;
+                    if kw_name == "sep" {
+                        sep = Some(value);
+                    } else {
+                        end = Some(value);
+                    }
+                    // Check for more arguments
+                    if self.match_token(&Token::Comma) {
+                        continue 'args;
+                    }
+                    break 'args;
+                }
+            }
+            
+            // Regular value expression
+            values.push(self.expression()?);
+            
+            // Check for more arguments
+            if !self.match_token(&Token::Comma) {
+                break;
+            }
+        }
+        
+        Ok(Stmt::Print { values, sep, end })
     }
     
     fn throw_statement(&mut self) -> ParseResult<Stmt> {
@@ -345,20 +462,60 @@ impl Parser {
         let error_expr = self.expression()?;
         Ok(Stmt::Throw(error_expr))
     }
-    
+
+    fn break_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Break, "Expected 'break'")?;
+        Ok(Stmt::Break)
+    }
+
+    fn continue_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Continue, "Expected 'continue'")?;
+        Ok(Stmt::Continue)
+    }
+
     fn assignment_statement(&mut self) -> ParseResult<Stmt> {
-        let name = if let Token::Identifier(name) = self.advance() {
-            name
-        } else {
-            return Err(self.error("Expected identifier in assignment".to_string()));
-        };
+        // Parse the left side as an expression first
+        let expr = self.expression()?;
         
         self.consume(Token::Equal, "Expected '=' in assignment")?;
         let value = self.expression()?;
         
-        Ok(Stmt::Assign { name, value })
+        // Convert the expression to an assignment target
+        // For index/field assignment, the object must be a simple identifier
+        let target = match expr {
+            Expr::Identifier(name) => crate::ast::AssignTarget::Identifier(name),
+            Expr::Index { object, index } => {
+                // Object must be a simple identifier
+                if let Expr::Identifier(obj_name) = *object {
+                    crate::ast::AssignTarget::Index { object: obj_name, index }
+                } else {
+                    return Err(self.error("Left side of index assignment must be a variable (e.g., arr[i] = x)".to_string()));
+                }
+            }
+            Expr::StructAccess { object, field } => {
+                if let Expr::Identifier(obj_name) = *object {
+                    crate::ast::AssignTarget::Field { object: obj_name, field }
+                } else {
+                    return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
+                }
+            }
+            Expr::Member { object, property } => {
+                if let Expr::Identifier(obj_name) = *object {
+                    crate::ast::AssignTarget::Field { object: obj_name, field: property }
+                } else {
+                    return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
+                }
+            }
+            _ => {
+                return Err(self.error(format!(
+                    "Invalid assignment target. Can only assign to variables, array indices, or object fields."
+                )));
+            }
+        };
+
+        Ok(Stmt::Assign { target, value })
     }
-    
+
     fn import_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Import, "Expected 'import'")?;
         
@@ -802,8 +959,24 @@ impl Parser {
         
         Ok(expr)
     }
-    
+
     fn unary(&mut self) -> ParseResult<Expr> {
+        // Check for prefix ++ or --
+        if self.match_token(&Token::PlusPlus) {
+            let operand = self.unary()?;
+            return Ok(Expr::Increment {
+                target: Box::new(operand),
+                prefix: true,
+            });
+        }
+        if self.match_token(&Token::MinusMinus) {
+            let operand = self.unary()?;
+            return Ok(Expr::Decrement {
+                target: Box::new(operand),
+                prefix: true,
+            });
+        }
+        
         if let Some(op) = self.match_unary_op() {
             let operand = self.unary()?;
             return Ok(Expr::Unary {
@@ -811,23 +984,19 @@ impl Parser {
                 operand: Box::new(operand),
             });
         }
-        
+
         self.call()
     }
-    
+
     fn call(&mut self) -> ParseResult<Expr> {
         let mut expr = self.primary()?;
-        
+
         loop {
             if self.match_token(&Token::LeftParen) {
                 expr = self.finish_call(expr)?;
             } else if self.match_token(&Token::LeftBracket) {
-                let index = self.expression()?;
-                self.consume(Token::RightBracket, "Expected ']' after array index")?;
-                expr = Expr::Index {
-                    object: Box::new(expr),
-                    index: Box::new(index),
-                };
+                // Check if this is a slice or simple index
+                expr = self.parse_index_or_slice(expr)?;
             } else if self.match_token(&Token::Dot) {
                 if let Token::Identifier(property) = self.advance() {
                     // Check if this is a struct access or module member access
@@ -844,10 +1013,204 @@ impl Parser {
                 break;
             }
         }
-        
+
+        // Check for postfix ++ or --
+        if self.match_token(&Token::PlusPlus) {
+            return Ok(Expr::Increment {
+                target: Box::new(expr),
+                prefix: false,
+            });
+        }
+        if self.match_token(&Token::MinusMinus) {
+            return Ok(Expr::Decrement {
+                target: Box::new(expr),
+                prefix: false,
+            });
+        }
+
         Ok(expr)
     }
-    
+
+    fn parse_index_or_slice(&mut self, object: Expr) -> ParseResult<Expr> {
+        // Check what's inside the brackets
+        // Could be: simple index, range (..), or slice with named params (from:/to:/step:)
+        
+        // Check for empty brackets []
+        if self.check(&Token::RightBracket) {
+            self.advance(); // consume ]
+            return Err(self.error("Empty brackets are not allowed. Use array methods instead.".to_string()));
+        }
+        
+        // Save current position to look ahead
+        let start_pos = self.current;
+        
+        // Try to parse as named slice syntax: from:X to:Y step:Z
+        let mut from_expr = None;
+        let mut to_expr = None;
+        let mut step_expr = None;
+        let mut is_named_slice = false;
+        
+        // Check for "from" keyword
+        if self.check(&Token::From) {
+            is_named_slice = true;
+            self.advance(); // consume 'from'
+            if self.match_token(&Token::Colon) {
+                from_expr = Some(Box::new(self.expression()?));
+                // Skip whitespace/newlines
+                while self.match_token(&Token::Newline) {}
+            } else {
+                return Err(self.error("Expected ':' after 'from' in slice".to_string()));
+            }
+        }
+        
+        // Check for "to" keyword
+        if self.check(&Token::To) {
+            is_named_slice = true;
+            self.advance(); // consume 'to'
+            if self.match_token(&Token::Colon) {
+                to_expr = Some(Box::new(self.expression()?));
+                // Skip whitespace/newlines
+                while self.match_token(&Token::Newline) {}
+            } else {
+                return Err(self.error("Expected ':' after 'to' in slice".to_string()));
+            }
+        }
+        
+        // Check for "step" keyword
+        if let Token::Identifier(s) = self.peek().clone() {
+            if s == "step" {
+                is_named_slice = true;
+                self.advance(); // consume 'step'
+                if self.match_token(&Token::Colon) {
+                    step_expr = Some(Box::new(self.expression()?));
+                    // Skip whitespace/newlines
+                    while self.match_token(&Token::Newline) {}
+                } else {
+                    return Err(self.error("Expected ':' after 'step' in slice".to_string()));
+                }
+            }
+        }
+        
+        // If we parsed any named parameters, this is a named slice
+        if is_named_slice {
+            self.consume(Token::RightBracket, "Expected ']' after slice")?;
+            return Ok(Expr::Slice {
+                object: Box::new(object),
+                from: from_expr,
+                to: to_expr,
+                step: step_expr,
+            });
+        }
+        
+        // Not a named slice, try range syntax: start..end:step or Python-style start:stop:step
+        // Reset position
+        self.current = start_pos;
+
+        // Check for Python-style slice: start:stop:step (using colons)
+        // This handles: [:], [start:], [:stop], [start:stop], [start:stop:step], [::step]
+        // We need to look ahead to see if there's a colon BEFORE any ..
+        
+        // First, let's see what tokens are inside the brackets
+        let mut pos = self.current;
+        let mut found_dotdot = false;
+        let mut found_colon_before_dotdot = false;
+        let mut found_any_colon = false;
+        
+        while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket) {
+            if matches!(self.tokens[pos].0, Token::DotDot) {
+                found_dotdot = true;
+            }
+            if matches!(self.tokens[pos].0, Token::Colon) {
+                found_any_colon = true;
+                if !found_dotdot {
+                    found_colon_before_dotdot = true;
+                }
+            }
+            pos += 1;
+        }
+        
+        // Also check if we're currently at a colon (for cases like [:3] or [5:])
+        let at_colon_now = self.check(&Token::Colon);
+
+        // Use Python-style slice parsing ONLY if we found a colon BEFORE any ..
+        // If colon comes after .., let the range expression handle it
+        if found_colon_before_dotdot || at_colon_now {
+            // Python-style slice with colons
+            // Format: [start:stop:step] where any part can be omitted
+            
+            let mut start_val = None;
+            let mut stop_val = None;
+            let mut step_val = None;
+            
+            // Parse first part (before first colon or before closing bracket)
+            if !self.check(&Token::Colon) && !self.check(&Token::RightBracket) {
+                // There's a value before the first colon
+                start_val = Some(Box::new(self.expression()?));
+            }
+            
+            // Expect first colon
+            if !self.match_token(&Token::Colon) {
+                // No colon found, this shouldn't happen if we got here
+                return Err(self.error("Expected ':' in slice".to_string()));
+            }
+            
+            // Parse second part (between first and second colon, or after second colon)
+            if !self.check(&Token::Colon) && !self.check(&Token::RightBracket) {
+                // There's a value here - but is it stop or step?
+                let val = self.expression()?;
+                
+                if self.check(&Token::Colon) {
+                    // There's another colon, so this is the stop value
+                    stop_val = Some(Box::new(val));
+                } else if start_val.is_some() {
+                    // No more colons, and we have a start - this is stop in [start:stop]
+                    stop_val = Some(Box::new(val));
+                } else {
+                    // No more colons, and no start - this is stop in [:stop]
+                    stop_val = Some(Box::new(val));
+                }
+            }
+            
+            // Check for second colon (for step)
+            if self.match_token(&Token::Colon) {
+                // Parse step value
+                if !self.check(&Token::RightBracket) {
+                    step_val = Some(Box::new(self.expression()?));
+                }
+            }
+            
+            self.consume(Token::RightBracket, "Expected ']' after slice")?;
+            
+            return Ok(Expr::Slice {
+                object: Box::new(object),
+                from: start_val,
+                to: stop_val,
+                step: step_val,
+            });
+        }
+
+        // Check for range syntax: start..end:step
+        let expr = self.expression()?;
+
+        // Check if this is a range expression
+        if let Expr::Range { start, end, step } = expr {
+            self.consume(Token::RightBracket, "Expected ']' after slice")?;
+            return Ok(Expr::Slice {
+                object: Box::new(object),
+                from: Some(start),
+                to: Some(end),
+                step,
+            });
+        }
+
+        // Simple index
+        self.consume(Token::RightBracket, "Expected ']' after array index")?;
+        Ok(Expr::Index {
+            object: Box::new(object),
+            index: Box::new(expr),
+        })
+    }
+
     fn finish_call(&mut self, callee: Expr) -> ParseResult<Expr> {
         let mut args = Vec::new();
         
@@ -913,8 +1276,60 @@ impl Parser {
                 Ok(expr)
             }
             Token::LeftBracket => {
-                let mut elements = Vec::new();
+                // Check if this is a list comprehension: [expr for var in iterable]
+                // Look ahead to see if we have 'for' keyword after first expression
+                let mut pos = self.current;
+                let mut found_for = false;
                 
+                // Skip first expression
+                while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket | Token::Newline) {
+                    if matches!(self.tokens[pos].0, Token::For) {
+                        found_for = true;
+                        break;
+                    }
+                    pos += 1;
+                }
+                
+                if found_for {
+                    // Parse list comprehension
+                    let expr = self.expression()?;
+                    
+                    // Expect 'for' keyword
+                    self.consume(Token::For, "Expected 'for' in list comprehension")?;
+                    
+                    // Expect variable name
+                    let var = if let Token::Identifier(name) = self.advance() {
+                        name
+                    } else {
+                        return Err(self.error("Expected variable name after 'for'".to_string()));
+                    };
+                    
+                    // Expect 'in' keyword
+                    self.consume(Token::In, "Expected 'in' after variable in list comprehension")?;
+                    
+                    // Parse iterable
+                    let iterable = self.expression()?;
+                    
+                    // Optional 'if' condition
+                    let condition = if self.match_token(&Token::If) {
+                        Some(Box::new(self.expression()?))
+                    } else {
+                        None
+                    };
+                    
+                    self.consume(Token::RightBracket, "Expected ']' after list comprehension")?;
+                    
+                    return Ok(Expr::ListComprehension {
+                        expr: Box::new(expr),
+                        var,
+                        iterable: Box::new(iterable),
+                        condition,
+                    });
+                }
+                
+                // Regular array
+                let mut elements = Vec::new();
+
                 if !self.check(&Token::RightBracket) {
                     loop {
                         elements.push(self.expression()?);
@@ -923,9 +1338,31 @@ impl Parser {
                         }
                     }
                 }
-                
+
                 self.consume(Token::RightBracket, "Expected ']' after array elements")?;
                 Ok(Expr::Array(elements))
+            },
+            Token::LeftBracePipe => {
+                let mut elements = Vec::new();
+
+                if !self.check(&Token::RightPipeBrace) && !self.check(&Token::RightBrace) {
+                    loop {
+                        elements.push(self.expression()?);
+                        if !self.match_token(&Token::Comma) {
+                            break;
+                        }
+                    }
+                }
+
+                // Accept both |} and } as terminators (}| for consistency, } for empty {|})
+                if self.check(&Token::RightPipeBrace) {
+                    self.advance();
+                } else if self.check(&Token::RightBrace) {
+                    self.advance();
+                } else {
+                    return Err(self.error("Expected '|}' after unique array elements".to_string()));
+                }
+                Ok(Expr::UniqueArray(elements))
             }
             Token::LeftBrace => {
                 let mut pairs = Vec::new();

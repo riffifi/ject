@@ -1,0 +1,316 @@
+# NumPy Module for Ject
+# High-performance numerical computing with Rust backend
+# 
+# Usage:
+#   import "numpy"
+#   let arr = np.array([1, 2, 3, 4, 5])
+#   print np.sum(arr)
+
+# Re-export all numpy functions with shorter names
+import "numpy" as np
+
+# Convenience wrappers for common operations
+export fn array(data)
+    return np.array(data)
+end
+
+export fn zeros(n)
+    return np.zeros(n)
+end
+
+export fn ones(n)
+    return np.ones(n)
+end
+
+export fn arange(start, stop, step)
+    if step == nil then
+        if stop == nil then
+            return np.arange(0, start, 1)
+        else
+            return np.arange(0, stop, 1)
+        end
+    else
+        return np.arange(start, stop, step)
+    end
+end
+
+export fn linspace(start, stop, num)
+    if num == nil then
+        return np.linspace(start, stop, 50)
+    else
+        return np.linspace(start, stop, num)
+    end
+end
+
+export fn eye(n, m)
+    if m == nil then
+        return np.eye(n)
+    else
+        return np.eye(n, m)
+    end
+end
+
+export fn identity(n)
+    return np.identity(n)
+end
+
+# Properties
+export fn shape(arr)
+    return np.shape(arr)
+end
+
+export fn ndim(arr)
+    return np.ndim(arr)
+end
+
+export fn size(arr)
+    return np.size(arr)
+end
+
+# Manipulation
+export fn reshape(arr, new_shape)
+    return np.reshape(arr, new_shape)
+end
+
+export fn flatten(arr)
+    return np.flatten(arr)
+end
+
+export fn transpose(arr)
+    return np.transpose(arr)
+end
+
+export fn concatenate(arrays)
+    return np.concatenate(arrays)
+end
+
+export fn stack(arrays)
+    return np.stack(arrays)
+end
+
+# Math operations
+export fn sqrt(arr)
+    return np.sqrt(arr)
+end
+
+export fn exp(arr)
+    return np.exp(arr)
+end
+
+export fn log(arr)
+    return np.log(arr)
+end
+
+export fn log10(arr)
+    return np.log10(arr)
+end
+
+export fn abs(arr)
+    return np.abs(arr)
+end
+
+export fn ceil(arr)
+    return np.ceil(arr)
+end
+
+export fn floor(arr)
+    return np.floor(arr)
+end
+
+export fn round(arr)
+    return np.round(arr)
+end
+
+export fn clip(arr, min_val, max_val)
+    return np.clip(arr, min_val, max_val)
+end
+
+# Trig functions
+export fn sin(arr)
+    return np.sin(arr)
+end
+
+export fn cos(arr)
+    return np.cos(arr)
+end
+
+export fn tan(arr)
+    return np.tan(arr)
+end
+
+export fn arcsin(arr)
+    return np.arcsin(arr)
+end
+
+export fn arccos(arr)
+    return np.arccos(arr)
+end
+
+export fn arctan(arr)
+    return np.arctan(arr)
+end
+
+export fn arctan2(y, x)
+    return np.arctan2(y, x)
+end
+
+export fn degrees(arr)
+    return np.degrees(arr)
+end
+
+export fn radians(arr)
+    return np.radians(arr)
+end
+
+# Hyperbolic functions
+export fn sinh(arr)
+    return np.sinh(arr)
+end
+
+export fn cosh(arr)
+    return np.cosh(arr)
+end
+
+export fn tanh(arr)
+    return np.tanh(arr)
+end
+
+# Reduction operations
+export fn sum(arr)
+    return np.sum(arr)
+end
+
+export fn mean(arr)
+    return np.mean(arr)
+end
+
+export fn std(arr)
+    return np.std(arr)
+end
+
+export fn var(arr)
+    return np.var(arr)
+end
+
+export fn min(arr)
+    return np.min(arr)
+end
+
+export fn max(arr)
+    return np.max(arr)
+end
+
+export fn argmin(arr)
+    return np.argmin(arr)
+end
+
+export fn argmax(arr)
+    return np.argmax(arr)
+end
+
+export fn cumsum(arr)
+    return np.cumsum(arr)
+end
+
+export fn any(arr)
+    return np.any(arr)
+end
+
+export fn all(arr)
+    return np.all(arr)
+end
+
+# Linear algebra
+export fn dot(a, b)
+    return np.dot(a, b)
+end
+
+export fn inner(a, b)
+    return np.inner(a, b)
+end
+
+export fn outer(a, b)
+    return np.outer(a, b)
+end
+
+export fn matmul(a, b)
+    return np.matmul(a, b)
+end
+
+export fn trace(arr)
+    return np.trace(arr)
+end
+
+export fn diag(arr)
+    return np.diag(arr)
+end
+
+# Sorting
+export fn sort(arr)
+    return np.sort(arr)
+end
+
+export fn argsort(arr)
+    return np.argsort(arr)
+end
+
+export fn where_cond(condition, x, y)
+    return np.where(condition, x, y)
+end
+
+# Set operations
+export fn unique(arr)
+    return np.unique(arr)
+end
+
+# Logical operations
+export fn logical_and(a, b)
+    return np.logical_and(a, b)
+end
+
+export fn logical_or(a, b)
+    return np.logical_or(a, b)
+end
+
+export fn logical_not(arr)
+    return np.logical_not(arr)
+end
+
+export fn greater(a, b)
+    return np.greater(a, b)
+end
+
+export fn less(a, b)
+    return np.less(a, b)
+end
+
+export fn equal(a, b)
+    return np.equal(a, b)
+end
+
+export fn not_equal(a, b)
+    return np.not_equal(a, b)
+end
+
+# Random
+export fn random()
+    return np.random()
+end
+
+export fn rand(...)
+    return np.rand(...)
+end
+
+export fn randint(low, high, size)
+    if size == nil then
+        return np.randint(low, high, 1)
+    else
+        return np.randint(low, high, size)
+    end
+end
+
+# Constants
+export PI = np.PI
+export E = np.E
+export INF = np.inf
+export NAN = np.nan

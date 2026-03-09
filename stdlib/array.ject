@@ -1,93 +1,33 @@
-# Array Standard Library Module
-# Professional, production-ready array manipulation functions
+# Array Utilities Standard Library Module
+# Advanced array manipulation functions written in pure Ject
+# Note: CorLib already provides: len, push, pop, map, filter, reduce, sum, sort, reverse, unique, contains, index_of, slice, first, last
 
-# Get array length (uses builtin for efficiency)
-export fn len(arr)
-    return len(arr)
+# Aggregation
+export fn average(arr)
+    if len(arr) == 0 then
+        return 0
+    end
+    return sum(arr) / len(arr)
 end
 
-# Array manipulation (use builtins for efficiency)
-export fn push(arr, item)
-    return push(arr, item)
-end
-
-export fn pop(arr)
-    return pop(arr)
-end
-
-export fn map(arr, func)
-    return map(arr, func)
-end
-
-export fn filter(arr, func)
-    return filter(arr, func)
-end
-
-export fn reduce(arr, func, initial)
-    return reduce(arr, func, initial)
-end
-
-export fn sum(arr)
-    return sum(arr)
-end
-
-export fn sort(arr)
-    return sort(arr)
-end
-
-export fn reverse(arr)
-    return reverse(arr)
-end
-
-export fn unique(arr)
-    return unique(arr)
-end
-
-export fn contains(arr, item)
-    return contains(arr, item)
-end
-
-export fn index_of(arr, item)
-    return index_of(arr, item)
-end
-
-export fn slice(arr, start, end)
-    return slice(arr, start, end)
-end
-
-export fn find(arr, func)
-    return find(arr, func)
-end
-
-export fn range(start, end)
-    return range(start, end)
-end
-
-# Get first element
-export fn first(arr)
-    if len(arr) > 0 then
-        return arr[0]
-    else
+export fn median(arr)
+    if len(arr) == 0 then
         return nil
+    end
+    let sorted_arr = sort(arr)
+    let length = len(sorted_arr)
+    if length % 2 == 0 then
+        return (sorted_arr[length / 2 - 1] + sorted_arr[length / 2]) / 2.0
+    else
+        return sorted_arr[to_int(length / 2)]
     end
 end
 
-# Get last element
-export fn last(arr)
-    let length = len(arr)
-    if length > 0 then
-        return arr[length - 1]
-    else
-        return nil
-    end
-end
-
-# Take first n elements
+# Slicing variants
 export fn take(arr, n)
     if n <= 0 then
         return []
     end
-    
     let result = []
     let i = 0
     while i < n and i < len(arr) do
@@ -97,12 +37,10 @@ export fn take(arr, n)
     return result
 end
 
-# Drop first n elements
 export fn drop(arr, n)
     if n <= 0 then
         return arr
     end
-    
     let result = []
     let i = n
     while i < len(arr) do
@@ -112,45 +50,29 @@ export fn drop(arr, n)
     return result
 end
 
-# Concatenate arrays
+export fn initial(arr)
+    if len(arr) <= 1 then
+        return []
+    end
+    return slice(arr, 0, len(arr) - 1)
+end
+
+export fn rest(arr)
+    if len(arr) <= 1 then
+        return []
+    end
+    return slice(arr, 1, len(arr))
+end
+
+# Combination
 export fn concat(arr1, arr2)
-    let result = []
-    let i = 0
-    while i < len(arr1) do
-        result = push(result, arr1[i])
-        i = i + 1
-    end
-    
-    i = 0
-    while i < len(arr2) do
-        result = push(result, arr2[i])
-        i = i + 1
+    let result = arr1
+    for item in arr2 do
+        result = push(result, item)
     end
     return result
 end
 
-# Flatten nested arrays
-export fn flatten(arr)
-    let result = []
-    let i = 0
-    while i < len(arr) do
-        let item = arr[i]
-        if type_of(item) == "array" then
-            let flattened = flatten(item)
-            let j = 0
-            while j < len(flattened) do
-                result = push(result, flattened[j])
-                j = j + 1
-            end
-        else
-            result = push(result, item)
-        end
-        i = i + 1
-    end
-    return result
-end
-
-# Zip two arrays into pairs
 export fn zip(arr1, arr2)
     let result = []
     let min_len = min(len(arr1), len(arr2))
@@ -162,7 +84,182 @@ export fn zip(arr1, arr2)
     return result
 end
 
-# Enumerate array with indices
+export fn union(arr1, arr2)
+    let result = arr1
+    for item in arr2 do
+        let found = false
+        for r in result do
+            if r == item then
+                found = true
+            end
+        end
+        if found == false then
+            result = push(result, item)
+        end
+    end
+    return result
+end
+
+export fn intersection(arr1, arr2)
+    let result = []
+    for item in arr1 do
+        let found = false
+        for a2 in arr2 do
+            if a2 == item then
+                found = true
+            end
+        end
+        let in_result = false
+        for r in result do
+            if r == item then
+                in_result = true
+            end
+        end
+        if found and in_result == false then
+            result = push(result, item)
+        end
+    end
+    return result
+end
+
+export fn difference(arr1, arr2)
+    let result = []
+    for item in arr1 do
+        let found = false
+        for a2 in arr2 do
+            if a2 == item then
+                found = true
+            end
+        end
+        if found == false then
+            result = push(result, item)
+        end
+    end
+    return result
+end
+
+# Transformation
+export fn flatten(arr)
+    let result = []
+    for item in arr do
+        if type_of(item) == "array" then
+            let flattened = flatten(item)
+            for f in flattened do
+                result = push(result, f)
+            end
+        else
+            result = push(result, item)
+        end
+    end
+    return result
+end
+
+export fn chunk(arr, sz)
+    if sz <= 0 then
+        return []
+    end
+    let result = []
+    let i = 0
+    while i < len(arr) do
+        let chunk_arr = []
+        let j = 0
+        while j < sz and i + j < len(arr) do
+            chunk_arr = push(chunk_arr, arr[i + j])
+            j = j + 1
+        end
+        result = push(result, chunk_arr)
+        i = i + sz
+    end
+    return result
+end
+
+export fn shuffle(arr)
+    let result = arr
+    let i = len(result) - 1
+    while i > 0 do
+        let j = random_int(0, i + 1)
+        let temp = result[i]
+        result[i] = result[j]
+        result[j] = temp
+        i = i - 1
+    end
+    return result
+end
+
+export fn rotate_left(arr, n)
+    if len(arr) == 0 then
+        return arr
+    end
+    let actual_n = n % len(arr)
+    if actual_n == 0 then
+        return arr
+    end
+    return concat(drop(arr, actual_n), take(arr, actual_n))
+end
+
+export fn rotate_right(arr, n)
+    if len(arr) == 0 then
+        return arr
+    end
+    let actual_n = n % len(arr)
+    if actual_n == 0 then
+        return arr
+    end
+    return concat(take(arr, len(arr) - actual_n), drop(arr, len(arr) - actual_n))
+end
+
+# Modification
+export fn insert_at(arr, idx, item)
+    if idx < 0 then
+        idx = 0
+    end
+    if idx > len(arr) then
+        idx = len(arr)
+    end
+    let result = []
+    let i = 0
+    while i < idx do
+        result = push(result, arr[i])
+        i = i + 1
+    end
+    result = push(result, item)
+    while i < len(arr) do
+        result = push(result, arr[i])
+        i = i + 1
+    end
+    return result
+end
+
+export fn remove_at(arr, idx)
+    if idx < 0 or idx >= len(arr) then
+        return arr
+    end
+    let result = []
+    let i = 0
+    while i < len(arr) do
+        if i == idx then
+            # Skip this element
+        else
+            result = push(result, arr[i])
+        end
+        i = i + 1
+    end
+    return result
+end
+
+export fn compact(arr)
+    let result = []
+    for item in arr do
+        if item != nil then
+            if item != false then
+                result = push(result, item)
+            end
+        end
+    end
+    return result
+end
+
+# Utilities
 export fn enumerate(arr)
     let result = []
     let i = 0
@@ -173,142 +270,67 @@ export fn enumerate(arr)
     return result
 end
 
-# Check if any element matches predicate
-export fn any(arr, func)
+export fn fill_arr(cnt, value)
+    let result = []
     let i = 0
-    while i < len(arr) do
-        if func(arr[i]) then
-            return true
-        end
-        i = i + 1
-    end
-    return false
-end
-
-# Check if all elements match predicate
-export fn all(arr, func)
-    let i = 0
-    while i < len(arr) do
-        if not func(arr[i]) then
-            return false
-        end
-        i = i + 1
-    end
-    return true
-end
-
-# Count elements matching predicate
-export fn count(arr, func)
-    let result = 0
-    let i = 0
-    while i < len(arr) do
-        if func(arr[i]) then
-            result = result + 1
-        end
+    while i < cnt do
+        result = push(result, value)
         i = i + 1
     end
     return result
 end
 
-# Get array average
-export fn average(arr)
-    if len(arr) == 0 then
-        return 0
+export fn range_arr(st, en, incr)
+    if incr == nil then
+        incr = 1
     end
-    return sum(arr) / len(arr)
+    let result = []
+    let i = st
+    if incr > 0 then
+        while i < en do
+            result = push(result, i)
+            i = i + incr
+        end
+    else
+        while i > en do
+            result = push(result, i)
+            i = i + incr
+        end
+    end
+    return result
 end
 
-# Get array median
-export fn median(arr)
+export fn sample(arr)
     if len(arr) == 0 then
         return nil
     end
-    
-    let sorted_arr = sort(arr)
-    let length = len(sorted_arr)
-    
-    if length % 2 == 0 then
-        return (sorted_arr[length / 2 - 1] + sorted_arr[length / 2]) / 2.0
-    else
-        return sorted_arr[length / 2]
-    end
+    let idx = random_int(0, len(arr))
+    return arr[idx]
 end
 
-# Remove element at index
-export fn remove_at(arr, index)
-    if index < 0 or index >= len(arr) then
-        return arr
-    end
-    
-    let result = []
-    let i = 0
-    while i < len(arr) do
-        if i != index then
-            result = push(result, arr[i])
-        end
-        i = i + 1
-    end
-    return result
+export fn to_uarray(arr)
+    return to_uarray(arr)
 end
 
-# Insert element at index
-export fn insert_at(arr, index, item)
-    if index < 0 then
-        index = 0
-    end
-    if index > len(arr) then
-        index = len(arr)
-    end
-    
-    let result = []
-    let i = 0
-    while i < index do
-        result = push(result, arr[i])
-        i = i + 1
-    end
-    
-    result = push(result, item)
-    
-    while i < len(arr) do
-        result = push(result, arr[i])
-        i = i + 1
-    end
-    return result
+export fn to_array(uarr)
+    return to_array(uarr)
 end
 
-# Chunk array into groups of size n
-export fn chunk(arr, size)
-    if size <= 0 then
-        return []
-    end
-    
-    let result = []
+export fn sort_by(arr, key_func)
+    let result = arr
+    let n = len(result)
     let i = 0
-    while i < len(arr) do
-        let chunk_arr = []
+    while i < n - 1 do
         let j = 0
-        while j < size and i + j < len(arr) do
-            chunk_arr = push(chunk_arr, arr[i + j])
+        while j < n - i - 1 do
+            if key_func(result[j]) > key_func(result[j + 1]) then
+                let temp = result[j]
+                result[j] = result[j + 1]
+                result[j + 1] = temp
+            end
             j = j + 1
         end
-        result = push(result, chunk_arr)
-        i = i + size
-    end
-    return result
-end
-
-# Group array by key function
-export fn group_by(arr, key_func)
-    let groups = {}
-    let i = 0
-    while i < len(arr) do
-        let key = key_func(arr[i])
-        let key_str = to_string(key)
-        if not contains_str(to_string(groups), key_str) then
-            groups[key_str] = []
-        end
-        groups[key_str] = push(groups[key_str], arr[i])
         i = i + 1
     end
-    return groups
+    return result
 end

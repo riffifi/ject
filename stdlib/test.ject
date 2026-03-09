@@ -1,0 +1,6 @@
+# Simple test module
+export fn test()
+    return "Hello from test module!"
+end
+
+export VALUE = 42

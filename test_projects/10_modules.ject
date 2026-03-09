@@ -1,0 +1,32 @@
+# Module System Test
+# Testing: imports, exports, module organization
+
+# MISSING: Cannot test imports without stdlib modules
+# import "math"
+# print PI
+# print sqrt(16)
+
+# import {RED, GREEN} from "colors"
+# print RED
+
+# import "utils" as u
+# print u.format_date(...)
+
+print "=== Module System Limitations ==="
+print "Cannot fully test without:"
+print "  - Standard library modules"
+print "  - Module file structure"
+print "  - Export/import mechanism"
+
+# What we need:
+# 1. stdlib/math.ject with math constants/functions
+# 2. stdlib/colors.ject with color codes
+# 3. stdlib/utils.ject with utility functions
+# 4. stdlib/io.ject with file I/O
+# 5. stdlib/json.ject with JSON parsing
+
+print "\n=== Current Builtin Functions ==="
+print "Math: abs, sqrt, pow, sin, cos, tan, floor, ceil, round, min, max"
+print "Array: len, push, pop, map, filter, reduce, sum, sort, reverse"
+print "String: upper, lower, trim, split, join, replace"
+print "Other: type_of, range, random, read_file, write_file"

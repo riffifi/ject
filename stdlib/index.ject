@@ -1,9 +1,79 @@
+# Ject Standard Library
+
+The Ject standard library has a two-tier structure:
+
+## CorLib (Core Library - Always Available)
+
+These essential functions are always available without import:
+
+- type_of(val) - Get type name
+- len(collection) - Get length
+- range(start, end) - Create range array
+- push(arr, item) - Add to array
+- pop(arr) - Remove from array
+- map(arr, fn) - Transform array
+- filter(arr, fn) - Filter array
+- reduce(arr, fn, initial) - Reduce array
+- input(prompt) - Read user input
+
+## Standard Library Modules (Require Import)
+
+### Math Module
+```ject
 import "math"
-import "array"
+# or
+import {sqrt, PI} from "math"
+```
+Provides: abs, sqrt, pow, sin, cos, tan, floor, ceil, round, min, max, log, exp, clamp, degrees, radians, PI, E
+
+### String Module
+```ject
 import "string"
-import "util"
+```
+Provides: upper, lower, capitalize, title_case, trim, pad_left, pad_right, starts_with, ends_with, contains_str, replace, repeat, split, join, substring, char_at, reverse_str, count
+
+### Array Module
+```ject
+import "array"
+```
+Provides: sum, any, all, sort, reverse, contains, index_of, find, unique, to_uarray, slice, take, drop, first, last, concat, zip, enumerate, flatten
+
+### IO Module
+```ject
 import "io"
+```
+Provides: read_file, write_file
+
+### JSON Module
+```ject
 import "json"
-import "datetime"
-import "collections"
+```
+Provides: parse_json, to_json
+
+### System Module
+```ject
 import "system"
+```
+Provides: env, exit, now, timestamp, sleep
+
+### Base Conversion Module
+```ject
+import "base"
+```
+Provides: to_binary, to_octal, to_hex, from_binary, from_octal, from_hex, base_repr, from_base
+
+## Usage Example
+
+```ject
+# CorLib functions work without import
+let n = input("Enter number: ")
+print type_of(n)
+
+# Module functions require import
+import "math"
+print sqrt(16)
+
+# Or selective import
+import {upper, trim} from "string"
+print upper("hello")
+```

@@ -1,0 +1,40 @@
+# Dictionary/HashMap Test
+# Testing: dictionary operations
+
+print "=== Dictionary Test ==="
+
+# Create dictionary
+let person = {
+    name: "Alice",
+    age: 30,
+    city: "New York"
+}
+
+print "Person: " + person
+print "Name: " + person.name
+print "Age: " + person.age
+
+# MISSING: Dictionary key assignment
+# person.age = 31       # Update existing key
+# person.email = "alice@example.com"  # Add new key
+
+# MISSING: Check if key exists
+# if has_key(person, "email") then ...
+
+# MISSING: Delete key
+# delete(person, "city")
+
+print "\n--- Dictionary as Map ---"
+# Using dictionary for lookup
+let scores = {
+    alice: 95,
+    bob: 87,
+    charlie: 92
+}
+
+print "Alice's score: " + scores.alice
+print "Bob's score: " + scores.bob
+
+# MISSING: Dynamic key access
+# let name = "alice"
+# print scores[name]  # Would need bracket notation for variables

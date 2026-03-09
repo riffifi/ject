@@ -73,7 +73,10 @@ pub enum Token {
     Catch,
     Throw,
     Error,
-    
+    Break,
+    Continue,
+    To,
+
     // Operators
     Plus,
     Minus,
@@ -91,6 +94,17 @@ pub enum Token {
     Or,
     Bang,
     
+    // Compound Assignment Operators
+    PlusEqual,      // +=
+    MinusEqual,     // -=
+    StarEqual,      // *=
+    SlashEqual,     // /=
+    PercentEqual,   // %=
+    
+    // Increment/Decrement
+    PlusPlus,       // ++
+    MinusMinus,     // --
+
     // Delimiters
     LeftParen,
     RightParen,
@@ -98,13 +112,16 @@ pub enum Token {
     RightBracket,
     LeftBrace,
     RightBrace,
+    LeftBracePipe,   // {|
+    RightPipeBrace,  // |}
     Comma,
     Dot,
     DotDot,
     Colon,
+    Semicolon,
     Arrow,
     DoubleArrow,
-    
+
     // Special
     Newline,
     Eof,
@@ -188,25 +205,31 @@ impl Lexer {
         // Skip #*
         self.advance();
         self.advance();
-        
-while let Some(ch) = self.current_char {
-    if ch == '*' && self.peek() == Some('#') {
-        // Found *#, skip both and exit
-        self.advance();
-        self.advance();
-        return;
-    }
-    self.advance();
-}
 
-// If we reach here, the comment was never closed
-// Instead of panicking, we'll just continue (effectively treating as EOF)
+        let start_line = self.line;
+        let start_column = self.column - 2;
+
+        while let Some(ch) = self.current_char {
+            if ch == '*' && self.peek() == Some('#') {
+                // Found *#, skip both and exit
+                self.advance();
+                self.advance();
+                return;
+            }
+            self.advance();
+        }
+
+        // If we reach here, the comment was never closed - this is an error
+        panic!(
+            "Error at line {}: Unclosed multiline comment starting at line {}, column {}",
+            self.line, start_line, start_column
+        );
     }
     
     fn read_number(&mut self) -> Token {
         let mut number = String::new();
         let mut is_float = false;
-        
+
         while let Some(ch) = self.current_char {
             if ch.is_ascii_digit() {
                 number.push(ch);
@@ -216,11 +239,36 @@ while let Some(ch) = self.current_char {
                 is_float = true;
                 number.push(ch);
                 self.advance();
+            } else if ch == 'e' || ch == 'E' {
+                // Scientific notation: 1e10, 1.5e-3, 2E+5, etc.
+                if !number.is_empty() && number != "-" && number != "+" {
+                    number.push(ch);
+                    self.advance();
+                    // Check for optional sign
+                    if let Some(sign) = self.current_char {
+                        if sign == '+' || sign == '-' {
+                            number.push(sign);
+                            self.advance();
+                        }
+                    }
+                    // Read exponent digits
+                    while let Some(digit) = self.current_char {
+                        if digit.is_ascii_digit() {
+                            number.push(digit);
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    // Scientific notation always produces a float
+                    is_float = true;
+                }
+                break;
             } else {
                 break;
             }
         }
-        
+
         if is_float {
             Token::Float(number.parse().unwrap_or(0.0))
         } else {
@@ -421,6 +469,9 @@ while let Some(ch) = self.current_char {
             "catch" => Token::Catch,
             "throw" => Token::Throw,
             "error" => Token::Error,
+            "break" => Token::Break,
+            "continue" => Token::Continue,
+            "to" => Token::To,
             _ => Token::Identifier(identifier),
         }
     }
@@ -446,31 +497,6 @@ while let Some(ch) = self.current_char {
                     }
                     continue;
                 }
-                Some('+') => {
-                    self.advance();
-                    return LocatedToken::new(Token::Plus, start_pos);
-                }
-                Some('-') => {
-                    if self.peek() == Some('>') {
-                        self.advance();
-                        self.advance();
-                        return LocatedToken::new(Token::Arrow, start_pos);
-                    }
-                    self.advance();
-                    return LocatedToken::new(Token::Minus, start_pos);
-                }
-                Some('*') => {
-                    self.advance();
-                    return LocatedToken::new(Token::Star, start_pos);
-                }
-                Some('/') => {
-                    self.advance();
-                    return LocatedToken::new(Token::Slash, start_pos);
-                }
-                Some('%') => {
-                    self.advance();
-                    return LocatedToken::new(Token::Percent, start_pos);
-                }
                 Some('=') => {
                     if self.peek() == Some('=') {
                         self.advance();
@@ -479,6 +505,66 @@ while let Some(ch) = self.current_char {
                     }
                     self.advance();
                     return LocatedToken::new(Token::Equal, start_pos);
+                }
+                Some('+') => {
+                    if self.peek() == Some('+') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::PlusPlus, start_pos);
+                    }
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::PlusEqual, start_pos);
+                    }
+                    self.advance();
+                    return LocatedToken::new(Token::Plus, start_pos);
+                }
+                Some('-') => {
+                    if self.peek() == Some('-') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::MinusMinus, start_pos);
+                    }
+                    if self.peek() == Some('>') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::Arrow, start_pos);
+                    }
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::MinusEqual, start_pos);
+                    }
+                    self.advance();
+                    return LocatedToken::new(Token::Minus, start_pos);
+                }
+                Some('*') => {
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::StarEqual, start_pos);
+                    }
+                    self.advance();
+                    return LocatedToken::new(Token::Star, start_pos);
+                }
+                Some('/') => {
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::SlashEqual, start_pos);
+                    }
+                    self.advance();
+                    return LocatedToken::new(Token::Slash, start_pos);
+                }
+                Some('%') => {
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        self.advance();
+                        return LocatedToken::new(Token::PercentEqual, start_pos);
+                    }
+                    self.advance();
+                    return LocatedToken::new(Token::Percent, start_pos);
                 }
                 Some('!') => {
                     if self.peek() == Some('=') {
@@ -523,15 +609,35 @@ while let Some(ch) = self.current_char {
                 }
                 Some('{') => {
                     self.advance();
+                    // Check for {| (unique array/set)
+                    if self.current_char == Some('|') {
+                        self.advance();
+                        return LocatedToken::new(Token::LeftBracePipe, start_pos);
+                    }
                     return LocatedToken::new(Token::LeftBrace, start_pos);
                 }
                 Some('}') => {
                     self.advance();
                     return LocatedToken::new(Token::RightBrace, start_pos);
                 }
+                Some('|') => {
+                    self.advance();
+                    // Check for |} (end of unique array)
+                    if self.current_char == Some('}') {
+                        self.advance();
+                        return LocatedToken::new(Token::RightPipeBrace, start_pos);
+                    }
+                    // Single | could be used for other purposes in the future
+                    // For now, treat as unexpected or skip
+                    continue;
+                }
                 Some(',') => {
                     self.advance();
                     return LocatedToken::new(Token::Comma, start_pos);
+                }
+                Some(';') => {
+                    self.advance();
+                    return LocatedToken::new(Token::Semicolon, start_pos);
                 }
                 Some('.') => {
                     if self.peek() == Some('.') {
@@ -554,6 +660,11 @@ while let Some(ch) = self.current_char {
                 }
                 Some(ch) if ch.is_alphabetic() || ch == '_' => {
                     return LocatedToken::new(self.read_identifier(), start_pos);
+                }
+                Some('`') => {
+                    // Skip backticks (used in documentation)
+                    self.advance();
+                    continue;
                 }
                 Some(ch) => {
                     println!("Unexpected character: {}", ch);

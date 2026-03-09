@@ -1,0 +1,44 @@
+# Error Handling Test
+# Testing: try/catch, error propagation
+
+print "=== Error Handling Test ==="
+
+fn risky_operation(value)
+    if value < 0 then
+        throw "Negative value not allowed: " + value
+    end
+    return sqrt(value)
+end
+
+# Test try/catch
+print "Testing try/catch..."
+
+try
+    let result = risky_operation(-5)
+    print "Result: " + result
+catch err
+    print "Caught error: " + err
+end
+
+try
+    let result = risky_operation(25)
+    print "Result: " + result
+catch err
+    print "Caught error: " + err
+end
+
+print "\n=== Nested Error Handling ==="
+# MISSING: Error types/patterns
+# Would be nice to match on error types:
+# try
+#     ...
+# catch FileNotFound => ...
+# catch PermissionDenied => ...
+# catch _ => ...
+
+print "\n=== Assertion Test ==="
+# assert() works but stops program
+# MISSING: Test framework / test blocks
+# test "addition works" {
+#     assert(1 + 1 == 2)
+# }

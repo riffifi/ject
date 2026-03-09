@@ -181,7 +181,7 @@ export fn primes_up_to(n)
 
     let is_prime_arr = []
     for i in 0..(n + 1) do
-        is_prime_arr = push(is_prime_arr, true)
+        push(is_prime_arr, true)
     end
 
     is_prime_arr[0] = false
@@ -202,7 +202,7 @@ export fn primes_up_to(n)
     let primes = []
     for i in 2..(n + 1) do
         if is_prime_arr[i] then
-            primes = push(primes, i)
+            push(primes, i)
         end
     end
 

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use crate::ast::{Stmt, Parameter};
+use crate::numpy::NdArray;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -10,6 +11,7 @@ pub enum Value {
     Bool(bool),
     Nil,
     Array(Vec<Value>),
+    UniqueArray(Vec<Value>),  // Unique array (set-like)
     Dictionary(std::collections::HashMap<String, Value>),
     Collection(std::collections::HashSet<String>),
     Function {
@@ -24,6 +26,7 @@ pub enum Value {
     Lambda {
         params: Vec<String>,
         body: crate::ast::LambdaBody,
+        closure_env: Environment,
     },
     ModuleObject(std::collections::HashMap<String, Value>),
     BuiltinFunction(String),
@@ -35,6 +38,7 @@ pub enum Value {
         name: String,
         fields: Vec<String>,
     },
+    NdArray(NdArray),
     Error(String),
 }
 
@@ -43,7 +47,7 @@ impl fmt::Display for Value {
         match self {
             Value::Integer(n) => write!(f, "{}", n),
             Value::Float(n) => write!(f, "{}", n),
-            Value::String(s) => write!(f, "{}", s),
+            Value::String(s) => write!(f, "\"{}\"", s),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Nil => write!(f, "nil"),
             Value::Array(elements) => {
@@ -54,11 +58,19 @@ impl fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::UniqueArray(elements) => {
+                write!(f, "{{|")?;
+                for (i, elem) in elements.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", elem)?;
+                }
+                write!(f, "|}}")
+            }
             Value::Dictionary(map) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in map.iter().enumerate() {
                     if i > 0 { write!(f, ", ")?; }
-                    write!(f, "{}: {}", key, value)?;
+                    write!(f, "\"{}\": {}", key, value)?;
                 }
                 write!(f, "}}")
             }
@@ -121,6 +133,30 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
+            Value::NdArray(arr) => {
+                write!(f, "array(")?;
+                match arr {
+                    crate::numpy::NdArray::F64(a) => {
+                        for (i, val) in a.iter().enumerate() {
+                            if i > 0 { write!(f, ", ")?; }
+                            write!(f, "{}", val)?;
+                        }
+                    }
+                    crate::numpy::NdArray::I64(a) => {
+                        for (i, val) in a.iter().enumerate() {
+                            if i > 0 { write!(f, ", ")?; }
+                            write!(f, "{}", val)?;
+                        }
+                    }
+                    crate::numpy::NdArray::Bool(a) => {
+                        for (i, val) in a.iter().enumerate() {
+                            if i > 0 { write!(f, ", ")?; }
+                            write!(f, "{}", val)?;
+                        }
+                    }
+                }
+                write!(f, ")")
+            }
             Value::Error(msg) => write!(f, "error: {}", msg),
         }
     }
@@ -154,16 +190,18 @@ impl PartialOrd for Value {
                     Value::Float(_) => 3,
                     Value::String(_) => 4,
                     Value::Array(_) => 5,
-                    Value::Dictionary(_) => 6,
-                    Value::Collection(_) => 7,
-                    Value::Function { .. } => 8,
-                    Value::ModuleFunction { .. } => 9,
-                    Value::Lambda { .. } => 10,
-                    Value::ModuleObject(_) => 11,
-                    Value::BuiltinFunction(_) => 12,
-                    Value::StructInstance { .. } => 13,
-                    Value::StructDefinition { .. } => 14,
-                    Value::Error(_) => 15,
+                    Value::UniqueArray(_) => 6,
+                    Value::Dictionary(_) => 7,
+                    Value::Collection(_) => 8,
+                    Value::Function { .. } => 9,
+                    Value::ModuleFunction { .. } => 10,
+                    Value::Lambda { .. } => 11,
+                    Value::ModuleObject(_) => 12,
+                    Value::BuiltinFunction(_) => 13,
+                    Value::StructInstance { .. } => 14,
+                    Value::StructDefinition { .. } => 15,
+                    Value::Error(_) => 16,
+                    Value::NdArray(_) => 17,
                 };
                 type_order(a).partial_cmp(&type_order(b))
             }
@@ -188,12 +226,13 @@ impl Value {
     
     pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Integer(_) => "number",
-            Value::Float(_) => "number",
+            Value::Integer(_) => "int",
+            Value::Float(_) => "float",
             Value::String(_) => "string",
             Value::Bool(_) => "boolean",
             Value::Nil => "nil",
             Value::Array(_) => "array",
+            Value::UniqueArray(_) => "unique_array",
             Value::Dictionary(_) => "dictionary",
             Value::Collection(_) => "collection",
             Value::Function { .. } => "function",
@@ -203,7 +242,17 @@ impl Value {
             Value::BuiltinFunction(_) => "builtin",
             Value::StructInstance { .. } => "struct",
             Value::StructDefinition { .. } => "struct_definition",
+            Value::NdArray(_) => "ndarray",
             Value::Error(_) => "error",
+        }
+    }
+
+    /// Display value for print() - strings without quotes at top level
+    /// But strings inside collections keep their quotes (via to_string())
+    pub fn display(&self) -> String {
+        match self {
+            Value::String(s) => s.clone(),  // No quotes for bare strings in print
+            _ => self.to_string(),  // Use Display (with quotes) for everything else
         }
     }
 }

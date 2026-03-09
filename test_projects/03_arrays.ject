@@ -1,0 +1,44 @@
+# Array Manipulation Test
+# Testing: array assignment, mutation, methods
+
+print "=== Array Manipulation Test ==="
+
+# Create arrays
+let numbers = [1, 2, 3, 4, 5]
+print "Original: " + numbers
+
+# MISSING: Array element assignment
+# numbers[0] = 10      # Should change first element
+# numbers[-1] = 100    # Should change last element (negative indexing)
+# print "After modification: " + numbers
+
+# Workaround using push/pop (cumbersome)
+let first = numbers[0]
+print "First element: " + first
+
+# MISSING: Compound assignment
+# numbers[0] += 5      # Should add 5 to first element
+
+# Test array methods
+let doubled = map(numbers, lambda(n) -> n * 2)
+print "Doubled: " + doubled
+
+let evens = filter(numbers, lambda(n) -> n % 2 == 0)
+print "Evens: " + evens
+
+let sum = reduce(numbers, lambda(acc, n) -> acc + n, 0)
+print "Sum: " + sum
+
+# MISSING: In-place modification
+# Would be nice to have:
+# numbers.push(6)      # Currently returns new array
+# numbers.pop()        # Currently returns value, not modified array
+
+print "\n--- Matrix Test ---"
+# 2D array (single line for now - parser limitation)
+let matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+
+print "Matrix[1][1] = " + matrix[1][1]
+
+# MISSING: 2D array assignment
+# matrix[1][1] = 99    # Should modify center element

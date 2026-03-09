@@ -1,487 +1,244 @@
 # Ject
 
-**Ject** is a scripting/programming language. Currently my 'pet' project so to speak. I'm trying my best
+> **A modern, expressive scripting language built in Rust**
 
-## Quick Start
-
-### Installation
-
-```bash
-git clone <this-repo>
-cd ject
-cargo build --release
-./target/release/ject
-```
-
-### Your First Ject Program
+Ject combines the simplicity of Python with elegant syntax inspired by Ruby and Crystal. Built for readability, performance, and developer happiness.
 
 ```ject
 # Hello, World!
 print "Hello, World!"
 
-# Variables are simple
-let name = "Ject"
-let version = 1.0
-let is_awesome = true
-
-# Functions are beautiful
+# Functions
 fn greet(name)
     print "Hello, " + name + "!"
 end
 
 greet("World")
 
-# Arrays and loops
+# Arrays with beautiful slicing
 let numbers = [1, 2, 3, 4, 5]
-let sum = 0
+print numbers[from:1 to:4]    # [2, 3, 4]
+print numbers[::2]            # [1, 3, 5]
 
-for num in numbers do
-    sum = sum + num
+# Ranges
+for i in 1..6 do
+    print "Count: " + i
+end
+```
+
+---
+
+## Quick Start
+
+### Installation
+
+```bash
+git clone <repository-url>
+cd ject
+cargo build --release
+./target/release/ject
+```
+
+### Your First Program
+
+Create `hello.ject`:
+
+```ject
+print "Hello, World!"
+
+let name = "Ject"
+print "Welcome to " + name
+```
+
+Run it:
+
+```bash
+./target/release/ject hello.ject
+```
+
+---
+
+## Why Ject?
+
+###  Clean Syntax
+
+```ject
+# Native elseif (not awkward 'elif')
+if score >= 90
+    print "A"
+elseif score >= 80
+    print "B"
+else
+    print "C"
 end
 
-print "Sum: " + sum  # Sum: 15
+# Explicit blocks - no indentation fragility
+if condition
+    if nested
+        do_something()
+    end
+end
 ```
-NOTICE that unlike Python or C-Based languages, Ject has Ruby or Crystal-like syntax that relies on end-based blocks instead of indentation or brackets!
 
-## Language Guide
+### 🚀 Rich Standard Library
+
+```ject
+# No 'import math' needed
+print sqrt(16)      # 4
+print sin(PI / 2)   # 1
+print abs(-42)      # 42
+```
+
+###  Three Slicing Syntaxes (Better Than Python!)
+
+```ject
+let arr = [0, 1, 2, 3, 4, 5]
+
+# Named parameters (most readable)
+arr[from:1 to:4]        # [1, 2, 3]
+arr[from:0 to:5 step:2] # [0, 2, 4]
+
+# Range syntax (concise)
+arr[1..4]               # [1, 2, 3]
+arr[0..5:2]             # [0, 2, 4]
+
+# Python-style (familiar)
+arr[1:4]                # [1, 2, 3]
+arr[::2]                # [0, 2, 4]
+```
+
+### 🧩 Beautiful Lambdas
+
+```ject
+let square = fn(x) -> x * x
+print square(5)  # 25
+
+let numbers = [1, 2, 3, 4, 5]
+let doubled = map(numbers, fn(n) -> n * 2)
+```
+
+---
+
+## Features
+
+- - Dynamic typing with clean syntax
+- - First-class functions and closures
+- - Lambda expressions
+- - **Three slicing syntaxes** for arrays and strings
+- - **Unique arrays** `{| |}` with auto-deduplication
+- - Range expressions (`1..6`, `1..10:2`)
+- - Module system with selective imports
+- - Struct definitions
+- - Try/catch error handling
+- - String interpolation
+- - Negative indexing
+- - Built-in standard library
+- - REPL with history
+
+---
+
+## Documentation
+
+ **Full documentation:** See [DOCUMENTATION.md](DOCUMENTATION.md)
+
+The documentation includes:
+- Complete language reference
+- Standard library guide
+- Best practices
+- Comparison with other languages
+- Quick reference card
+
+---
+
+## Language Overview
 
 ### Variables
 
-Variables in Ject are declared with `let` and are dynamically typed:
-
 ```ject
-# You declare them with 'let'
-
-let name = "Alice"
-let age = 30
-let height = 5.8
-let is_student = false
-let empty = nil
-
-# But after that you can rewrite them without using the 'let' keyword
-name = "Walter White"
-age = 50
-height = 5.11
-is_student = false
-empty = "not so empty anymore!"
+let name = "Alice"  # Declare
+name = "Bob"        # Reassign
 ```
 
 ### Functions
 
-Functions are first-class citizens in Ject (that means they can be treated like any other value):
-
 ```ject
-# Simple function
-fn say_hello()
-    print "Hello!"
-end
-
-# Function with parameters
 fn add(a, b)
     return a + b
 end
 
-# Functions can return values
-fn fibonacci(n)
-    if n <= 1 then
-        return n
-    else
-        return fibonacci(n - 1) + fibonacci(n - 2)
-    end
+# Default parameters
+fn greet(name, greeting = "Hello")
+    print greeting + ", " + name
 end
-
-let result = fibonacci(10)
-print result  # 55
-```
-
-### Lambda Functions
-
-Ject supports beautiful lambda expressions for anonymous functions:
-
-```ject
-# Basic lambda with single expression
-let square = lambda(x) -> x * x
-print square(5)  # 25
-
-# Lambda with multiple parameters
-let add = lambda(a, b) -> a + b
-print add(10, 5)  # 15
-
-# Lambda with no parameters
-let get_pi = lambda() -> 3.14159
-print get_pi()  # 3.14159
-
-# Using lambdas with arrays
-let numbers = [1, 2, 3, 4, 5]
-let double = lambda(n) -> n * 2
-
-for num in numbers do
-    print double(num)
-end
-# Output: 2, 4, 6, 8, 10
-
-# Lambdas for quick calculations
-let distance = lambda(x1, y1, x2, y2) -> ((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
-print distance(0, 0, 3, 4)  # 25 (distance squared)
-
-# Assignment and reassignment
-let operation = lambda(x) -> x + 1
-print operation(5)  # 6
-
-operation = lambda(x) -> x * x
-print operation(5)  # 25
-```
-
-However, for more complex lambdas you would have to use a slightly different syntax
-```ject
-let test = lambda(x) -> {
-    for i in 0..x do print "test" end
-}
-test(5)
 ```
 
 ### Control Flow
 
 ```ject
-let score = 85
-
-# You can use either elseif
-if score >= 95
-    print "A+ Excellent!"
-elseif score >= 90
-    print "A grade!"
-elseif score >= 80
-    print "B grade!"
-elseif score >= 70
-    print "C grade!"
-else
-    print "Keep trying!"
-end
-
-# OR, if you prefer spaces more, else if, no judgement!
-if temperature < 0
-    print "Freezing!"
-else if temperature < 30
-    print "Nice weather"
-else
-    print "Getting warm!"
-end
-
-# While loops
-let counter = 0
-while counter < 5 do
-    print "Count: " + counter
-    counter = counter + 1
-end
-
-# For loops with range function (python-like)
-for i in range(1, 6) do
-    print "Number: " + i
-end
-
-# Or more Rust-like start..stop with addition of step -- start..stop:step
-for i in 1..6 do
-    print "Number: " + i
-end
-
-# Ranges with steps
-for i in 2..10:2 do
-    print "Even: " + i
-end
-
-# For loops with arrays
-let fruits = ["apple", "banana", "cherry"]
-for fruit in fruits do
-    print "I love " + fruit
-end
-```
-
-### Range Syntax
-
-```ject
-# Basic ranges
-let numbers = 1..5        # [1, 2, 3, 4]
-let sequence = 0..10      # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-
-# Ranges with steps using colon syntax
-let odds = 1..10:2        # [1, 3, 5, 7, 9]
-let evens = 2..10:2       # [2, 4, 6, 8]
-let fives = 0..20:5       # [0, 5, 10, 15]
-
-# Reverse ranges
-let countdown = 10..0:-1  # [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
-let down_by_twos = 10..0:-2  # [10, 8, 6, 4, 2]
-
-# Perfect for loops, btw, you have my word for it
-for i in 1..6 do
-    print "Count: " + i
-end
-
-for i in 5..0:-1 do
-    print "Countdown: " + i
-end
-
-# Compare with traditional range() function
-print range(1, 6)    # [1, 2, 3, 4, 5]
-print 1..6           # [1, 2, 3, 4, 5] - same result, but looks doper and faster to write!!!
-```
-
-### Arrays
-
-Arrays in Ject are dynamic and easy to use:
-
-```ject
-# Create arrays
-let empty_array = []
-let numbers = [1, 2, 3, 4, 5]
-let mixed = [1, "hello", true, 3.14]
-
-# Access elements
-print numbers[0]  # 1
-print numbers[2]  # 3
-
-# Arrays in loops
-for item in mixed do
-    print item
-end
-```
-
-### Operators
-
-Ject supports all the operators you expect:
-
-```ject
-# Arithmetic
-let sum = 10 + 5      # 15
-let diff = 10 - 5     # 5
-let product = 10 * 5  # 50
-let quotient = 10 / 5 # 2.0
-let remainder = 10 % 3 # 1
-
-# Comparison
-let equal = 5 == 5        # true
-let not_equal = 5 != 3    # true
-let greater = 10 > 5      # true
-let less_equal = 5 <= 10  # true
-
-# Logical
-let and_result = true and false  # false
-let or_result = true or false    # true
-let not_result = !true           # false
-```
-
-### Module System
-
-Ject supports a clean module system with import/export functionality:
-
-```ject
-# Selective imports - import specific functions/values
-import {RED, GREEN, colorize} from "colors"
-print colorize("Hello!", RED)
-
-# Module aliases - import whole modules with custom names
-import "ascii_art" as art
-print art.banner("Welcome!")
-
-# Full imports - import all exports directly
-import "game_utils"
-let dice_roll = roll_dice(6)
-
-# Import from stdlib
-import "math"
-print "PI = " + PI
-```
-
-### Structs
-
-Ject supports struct definitions for creating custom data types:
-
-```ject
-# Define a struct
-struct Point {
-    x, y
-}
-
-struct Person {
-    name,
-    age,
-    email
-}
-
-# Create struct instances
-let p1 = new Point { x: 10, y: 20 }
-let p2 = new Point { x: 30, y: 40 }
-
-# Access fields
-print "Point: " + p1.x + ", " + p1.y
-
-# Create a person
-let person = new Person {
-    name: "Alice",
-    age: 30,
-    email: "alice@example.com"
-}
-
-print "Name: " + person.name
-print "Age: " + person.age
-```
-
-### Standard Library
-
-Ject comes with a standart library (does not require import, UNLIKE SOME LANGUAGES. I'M LOOKING AT YOU C++):
-
-```ject
-# Mathematical functions
-let absolute = abs(-42)        # 42
-let square_root = sqrt(16)     # 4
-let power = pow(2, 8)          # 256
-let rounded = round(3.14159)   # 3
-
-# Trigonometric functions
-let sine = sin(PI / 2)         # 1
-let cosine = cos(0)            # 1
-let tangent = tan(PI / 4)      # 1
-
-# Array functions
-let data = [1, 5, 3, 9, 2]
-let length = len(data)         # 5
-let total = sum(data)          # 20
-let maximum = max(1, 5, 3, 9, 2)  # 9
-let minimum = min(1, 5, 3, 9, 2)  # 1
-let sequence = range(1, 6)     # [1, 2, 3, 4, 5]
-
-# String functions  
-let text = "  Hello World  "
-let upper_case = upper(text)   # "  HELLO WORLD  "
-let lower_case = lower(text)   # "  hello world  "
-let trimmed = trim(text)       # "Hello World"
-
-# Advanced string operations
-let csv = "apple,banana,cherry"
-let fruits = split(csv, ",")   # ["apple", "banana", "cherry"]
-let joined = join(fruits, " | ")  # "apple | banana | cherry"
-let fixed = replace("Hello Python", "Python", "Ject")  # "Hello Ject"
-
-# Utility functions
-let data_type = type_of(42)    # "integer"
-print "Value: " + data_type
-
-# Mathematical constants
-print "PI = " + PI            # 3.141592653589793
-print "E = " + E              # 2.718281828459045
-```
-
-## Why Choose Ject Over Python?
-
-Ject improves upon Python's design with several key advantages:
-
-### Cleaner Conditional Logic
-```ject
-# Ject - Native elseif keyword
-if score >= 95
-    print "A+"
-elseif score >= 90  
-    print "A"
-elseif score >= 80
-    print "B"
-else
-    print "Below B"
-end
-```
-
-```python
-# Python - Awkward elif keyword
-if score >= 95:
-    print("A+")
-elif score >= 90:  # elif feels inconsistent
-    print("A")
-elif score >= 80:
-    print("B")
-else:
-    print("Below B")
-```
-
-### Explicit Block Endings
-```ject
-# Ject - Clear block boundaries with 'end'
 if condition
-    do_something()
-    if nested_condition
-        do_nested_thing()
-    end
+    # ...
+elseif other
+    # ...
+else
+    # ...
+end
+
+while condition do
+    # ...
+end
+
+for item in array do
+    # ...
 end
 ```
 
-```python
-# Python - Indentation-dependent (fragile)
-if condition:
-    do_something()
-    if nested_condition:
-        do_nested_thing()  # Easy to mess up indentation
-```
+### Collections
 
-### Built-in Mathematical Functions
 ```ject
-# Ject - Rich math stdlib included
-let result = sqrt(pow(abs(-16), 2))
-let angle = sin(PI / 4)
+let arr = [1, 2, 3]
+let dict = {name: "Alice", age: 30}
+let tags = {|"rust", "python", "ject"|}  # Unique array (auto-deduplicates!)
+
+# Access
+print arr[0]        # 1
+print arr[-1]       # 3 (last)
+print dict["name"]  # "Alice"
+print tags          # {|"rust", "python", "ject"|}
 ```
 
-```python
-# Python - Need to import math module
-import math
-result = math.sqrt(math.pow(abs(-16), 2))
-angle = math.sin(math.pi / 4)
-```
-
-## Design Philosophy
-
-Ject was designed with these principles in mind:
-
-1. **Simplicity First** - Clean, uncomplicated syntax without unnecessary complexity
-2. **Readable Code** - Code should be easy to read and understand
-3. **Fast Development** - Quick iteration and minimal boilerplate
-4. **Performance Matters** - Built in Rust for speed and memory safety
-5. **Enjoyable Syntax** - Pleasant to write and maintain
-
-## Architecture
-
-- **Lexer** - Tokenizes source code with Unicode support
-- **Parser** - Recursive descent parser building a clean AST
-- **Interpreter** - Tree-walking interpreter with proper scoping
-- **Value System** - Dynamic typing with efficient representations
-- **Environment** - Lexical scoping with nested environments
+---
 
 ## Roadmap
 
-- [x] **Native elseif keyword** - Clean conditional chains
-- [x] **Rich standard library** - Math, arrays, strings, utilities
-- [x] **Comprehensive examples** - Real-world data analysis demos
-- [x] **Range syntax** - Python-inspired `start..end:step` notation
-- [x] **Enhanced REPL** - Arrow key navigation, command history, and line editing
-- [x] **Lambda functions** - Anonymous function expressions
-- [x] **Module system** - Import/export functionality
-- [x] **Struct system** - Define and use custom data structures
-- [x] **Enhanced linter** - Better error messages with suggestions and colored diagnostics
-- [x] **Standard library in Ject** - Proper stdlib folder structure with Ject modules
-- [x] **Extended standard library** - File I/O, HTTP, JSON, etc. (via builtin functions)
-- [ ] **Package manager** - Easy dependency management
-- [ ] **Advanced REPL features** - Syntax highlighting, autocomplete
-- [ ] **Compiled mode** - Optional compilation for production use
-- [ ] **VSCode extension** - Syntax highlighting and language support
-- [ ] **Error handling** - Try/catch or similar error handling mechanism
-- [ ] **Generics/Templates** - Type parameters for functions and structs
+- [x] Core language features
+- [x] Rich standard library
+- [x] Range syntax with steps
+- [x] Enhanced REPL with history
+- [x] Lambda functions
+- [x] Module system
+- [x] Struct system
+- [x] **Advanced slicing** (named, range, Python-style)
+- [ ] Package manager
+- [ ] VSCode extension
+- [ ] Advanced error handling
+- [ ] Performance optimizations
+
+---
 
 ## Inspiration
 
-Ject draws inspiration from:
-- **Crystal** - Elegant syntax and performance focus
-- **Ruby** - Expressiveness and readability
+Ject draws from:
+- **Crystal** - Elegant syntax
+- **Ruby** - Expressiveness
 - **Python** - User-friendly design
 - **Rust** - Safety and performance
 
 ---
 
-**Made with passion and dedication**
+## License
 
-*Hope you enjoy it!*
+MIT License
+
+---
+
+**Made with ❤️ in Rust**

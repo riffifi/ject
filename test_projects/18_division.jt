@@ -1,0 +1,5 @@
+let first = to_int(input("First: "))
+let second = to_int(input("Second: "))
+
+# Using semicolons for multiple statements
+if second != 0; print first / second; print first % second else; print "no 0, please" end

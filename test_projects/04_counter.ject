@@ -1,0 +1,45 @@
+# Counter and State Test
+# Testing: increment/decrement, compound assignment
+
+print "=== Counter Test ==="
+
+let counter = 0
+
+# Simulate counting (MISSING: ++ operator)
+# counter++  or  ++counter  would be nicer than:
+counter = counter + 1
+counter = counter + 1
+counter = counter + 1
+print "Counter after 3 increments: " + counter
+
+# MISSING: compound assignment operators
+# counter += 5   # Add 5
+# counter -= 2   # Subtract 2
+# counter *= 3   # Multiply by 3
+# counter /= 2   # Divide by 2
+
+# Workarounds:
+counter = counter + 5
+print "After +5: " + counter
+
+counter = counter - 2
+print "After -2: " + counter
+
+counter = counter * 3
+print "After *3: " + counter
+
+counter = counter / 2
+print "After /2: " + counter
+
+print "\n=== String Builder Test ==="
+# Building strings (MISSING: += for strings)
+let message = "Hello"
+# message += " "  # Would be nice
+# message += "World"
+# message += "!"
+
+# Workaround:
+message = message + " "
+message = message + "World"
+message = message + "!"
+print message

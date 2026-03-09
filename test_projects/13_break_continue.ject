@@ -1,0 +1,58 @@
+# Test Break and Continue Statements
+print "=== Break and Continue Test ==="
+
+# Test break in for loop
+print "\n--- Break in For Loop ---"
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+for n in numbers do
+    if n == 5 then
+        print "Found 5, breaking!"
+        break
+    end
+    print "Number: " + n
+end
+
+# Test continue in for loop
+print "\n--- Continue in For Loop ---"
+for n in numbers do
+    if n % 2 == 0 then
+        continue  # Skip even numbers
+    end
+    print "Odd: " + n
+end
+
+# Test break in while loop
+print "\n--- Break in While Loop ---"
+let i = 0
+while i < 10 do
+    i += 1
+    if i == 5 then
+        print "Reached 5, breaking!"
+        break
+    end
+    print "i = " + i
+end
+
+# Test continue in while loop
+print "\n--- Continue in While Loop ---"
+let j = 0
+while j < 5 do
+    j += 1
+    if j == 3 then
+        continue  # Skip 3
+    end
+    print "j = " + j
+end
+
+# Test nested loops with break
+print "\n--- Nested Loops with Break ---"
+for row in 1..4 do
+    for col in 1..4 do
+        if col == 3 then
+            break  # Break inner loop
+        end
+        print "row=" + row + ", col=" + col
+    end
+end
+
+print "\n=== All break/continue tests passed! ==="

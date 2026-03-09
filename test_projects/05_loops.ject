@@ -1,0 +1,40 @@
+# Loop Control Test
+# Testing: break, continue, loop control
+
+print "=== Loop Control Test ==="
+
+# MISSING: break and continue statements
+
+# Simulating a search with early exit
+let numbers = [3, 7, 1, 9, 4, 6]
+let target = 9
+let found_index = -1
+
+# Without break, we can't exit early
+for num in numbers do
+    # Would use: if num == target then break
+    # For now, just print all
+    print "Checking: " + num
+end
+
+print "\n=== Skip Even Numbers Test ==="
+# Without continue, we need nested if
+for i in 1..10 do
+    # Would use: if i % 2 == 0 then continue
+    # For now, use nested if
+    if i % 2 != 0 then
+        print "Odd: " + i
+    end
+end
+
+print "\n=== Nested Loop Test ==="
+# Multiplication table (partial)
+for i in 1..4 do
+    let row = ""
+    for j in 1..4 do
+        let product = i * j
+        # Would be nice to have string interpolation or format
+        row = row + product + " "
+    end
+    print row
+end

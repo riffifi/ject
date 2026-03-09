@@ -1,0 +1,51 @@
+# Data Structures Test
+# Testing: implementing common data structures
+
+print "=== Stack Implementation ==="
+
+# Stack using array
+let stack = []
+
+# MISSING: push returns new array, need reassignment
+# stack.push(1)  # Doesn't modify in place
+stack = [1]
+stack = [stack, 2]  # Wrong way, just showing the issue
+stack = [1, 2]
+stack = [1, 2, 3]
+
+print "Stack: " + stack
+
+# Pop operation
+# let top = stack.pop()  # Returns value but doesn't modify stack
+# stack = without_last(stack)  # Would need this
+
+print "\n=== Queue Implementation ==="
+# Queue is hard without efficient shift/unshift
+let queue = [1, 2, 3, 4, 5]
+print "Queue: " + queue
+
+# MISSING: shift (remove first element)
+# let first = queue.shift()
+
+print "\n=== Linked List Simulation ==="
+# Using dictionaries to simulate nodes
+let node1 = {value: 1, next: nil}
+let node2 = {value: 2, next: nil}
+let node3 = {value: 3, next: nil}
+
+# Link them
+# MISSING: Cannot modify node1.next
+# node1.next = node2
+
+print "Node 1: " + node1
+print "Node 2: " + node2
+
+print "\n=== Set Operations ==="
+# MISSING: Native set type
+# let unique = set([1, 2, 2, 3, 3, 3])
+# print unique  # Should be {1, 2, 3}
+
+# Workaround with array
+let with_dups = [1, 2, 2, 3, 3, 3]
+let unique_vals = unique(with_dups)
+print "Unique: " + unique_vals

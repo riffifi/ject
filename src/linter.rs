@@ -69,11 +69,37 @@ impl Linter {
     }
     
     fn add_builtin_functions(&mut self) {
-        // Mathematical constants (these are variables, not functions)
-        self.declare_variable("PI".to_string());
-        self.declare_variable("E".to_string());
+        // ========== CorLib Functions (always available) ==========
         
-        // Mathematical functions
+        // Type inspection & conversion
+        self.functions.insert("type_of".to_string());
+        self.functions.insert("to_int".to_string());
+        self.functions.insert("to_float".to_string());
+        self.functions.insert("to_string".to_string());
+        self.functions.insert("to_bool".to_string());
+
+        // Collection primitives
+        self.functions.insert("len".to_string());
+        self.functions.insert("range".to_string());
+        self.functions.insert("push".to_string());
+        self.functions.insert("pop".to_string());
+
+        // Array primitives
+        self.functions.insert("sum".to_string());
+        self.functions.insert("contains".to_string());
+        self.functions.insert("index_of".to_string());
+        self.functions.insert("first".to_string());
+        self.functions.insert("last".to_string());
+        self.functions.insert("sort".to_string());
+        self.functions.insert("reverse".to_string());
+        self.functions.insert("unique".to_string());
+
+        // Higher-order functions
+        self.functions.insert("map".to_string());
+        self.functions.insert("filter".to_string());
+        self.functions.insert("reduce".to_string());
+
+        // Math primitives
         self.functions.insert("abs".to_string());
         self.functions.insert("sqrt".to_string());
         self.functions.insert("pow".to_string());
@@ -85,60 +111,144 @@ impl Linter {
         self.functions.insert("round".to_string());
         self.functions.insert("min".to_string());
         self.functions.insert("max".to_string());
-        
-        // Array functions
-        self.functions.insert("len".to_string());
-        self.functions.insert("push".to_string());
-        self.functions.insert("pop".to_string());
-        self.functions.insert("map".to_string());
-        self.functions.insert("filter".to_string());
-        self.functions.insert("reduce".to_string());
-        self.functions.insert("sum".to_string());
-        
-        // String functions
+        self.functions.insert("random".to_string());
+
+        // String primitives
         self.functions.insert("upper".to_string());
         self.functions.insert("lower".to_string());
         self.functions.insert("trim".to_string());
         self.functions.insert("split".to_string());
         self.functions.insert("join".to_string());
         self.functions.insert("replace".to_string());
-        
-        // Utility functions
-        self.functions.insert("type_of".to_string());
-        self.functions.insert("range".to_string());
-        self.functions.insert("random".to_string());
-        
-        // File I/O functions
-        self.functions.insert("read_file".to_string());
-        self.functions.insert("write_file".to_string());
-        
-        // JSON functions
-        self.functions.insert("parse_json".to_string());
-        self.functions.insert("to_json".to_string());
-        
-        // String indexing/slicing functions
         self.functions.insert("char_at".to_string());
         self.functions.insert("substring".to_string());
+        self.functions.insert("repeat".to_string());
+
+        // I/O primitives
+        self.functions.insert("input".to_string());
+        self.functions.insert("print".to_string());
+        self.functions.insert("read_file".to_string());
+        self.functions.insert("write_file".to_string());
+
+        // Testing
+        self.functions.insert("assert".to_string());
+
+        // Constants (variables, not functions)
+        self.declare_variable("PI".to_string());
+        self.declare_variable("E".to_string());
+
+        // ========== Module Functions (available via import) ==========
         
-        // Enhanced array functions
-        self.functions.insert("sort".to_string());
-        self.functions.insert("reverse".to_string());
-        self.functions.insert("unique".to_string());
-        self.functions.insert("contains".to_string());
-        self.functions.insert("index_of".to_string());
-        self.functions.insert("slice".to_string());
-        self.functions.insert("find".to_string());
-        
-        // Enhanced string functions
-        self.functions.insert("starts_with".to_string());
-        self.functions.insert("ends_with".to_string());
+        // Math module (import "math")
+        self.functions.insert("log".to_string());
+        self.functions.insert("log10".to_string());
+        self.functions.insert("exp".to_string());
+        self.functions.insert("log2".to_string());
+        self.functions.insert("ln".to_string());
+        self.functions.insert("degrees".to_string());
+        self.functions.insert("radians".to_string());
+        self.functions.insert("deg_to_rad".to_string());
+        self.functions.insert("rad_to_deg".to_string());
+        self.functions.insert("clamp".to_string());
+        self.functions.insert("sign".to_string());
+        self.functions.insert("gcd".to_string());
+        self.functions.insert("lcm".to_string());
+        self.functions.insert("asin".to_string());
+        self.functions.insert("acos".to_string());
+        self.functions.insert("atan".to_string());
+        self.functions.insert("atan2".to_string());
+        self.functions.insert("sinh".to_string());
+        self.functions.insert("cosh".to_string());
+        self.functions.insert("tanh".to_string());
+        self.functions.insert("round_to".to_string());
+
+        // String module (import "string")
+        self.functions.insert("capitalize".to_string());
+        self.functions.insert("title_case".to_string());
+        self.functions.insert("trim_left".to_string());
+        self.functions.insert("trim_right".to_string());
         self.functions.insert("pad_left".to_string());
         self.functions.insert("pad_right".to_string());
+        self.functions.insert("pad_center".to_string());
+        self.functions.insert("starts_with".to_string());
+        self.functions.insert("ends_with".to_string());
+        self.functions.insert("contains_str".to_string());
+        self.functions.insert("count".to_string());
+        self.functions.insert("find".to_string());
+        self.functions.insert("replace_all".to_string());
+        self.functions.insert("replace_first".to_string());
+        self.functions.insert("remove".to_string());
         self.functions.insert("repeat".to_string());
         self.functions.insert("reverse_str".to_string());
-        self.functions.insert("contains_str".to_string());
-        
-        // Base conversion functions
+        self.functions.insert("left".to_string());
+        self.functions.insert("right".to_string());
+        self.functions.insert("truncate".to_string());
+        self.functions.insert("is_empty".to_string());
+        self.functions.insert("is_numeric".to_string());
+        self.functions.insert("is_alpha".to_string());
+        self.functions.insert("is_alphanumeric".to_string());
+        self.functions.insert("word_count".to_string());
+        self.functions.insert("sentence_count".to_string());
+        self.functions.insert("paragraph_count".to_string());
+        self.functions.insert("lines".to_string());
+        self.functions.insert("extract_numbers".to_string());
+        self.functions.insert("to_char_codes".to_string());
+        self.functions.insert("from_char_codes".to_string());
+        self.functions.insert("format".to_string());
+        self.functions.insert("escape".to_string());
+        self.functions.insert("unescape".to_string());
+        self.functions.insert("wrap_text".to_string());
+
+        // Array module (import "array")
+        self.functions.insert("any".to_string());
+        self.functions.insert("all".to_string());
+        self.functions.insert("average".to_string());
+        self.functions.insert("median".to_string());
+        self.functions.insert("slice".to_string());
+        self.functions.insert("take".to_string());
+        self.functions.insert("drop".to_string());
+        self.functions.insert("initial".to_string());
+        self.functions.insert("rest".to_string());
+        self.functions.insert("concat".to_string());
+        self.functions.insert("zip".to_string());
+        self.functions.insert("union".to_string());
+        self.functions.insert("intersection".to_string());
+        self.functions.insert("difference".to_string());
+        self.functions.insert("flatten".to_string());
+        self.functions.insert("chunk".to_string());
+        self.functions.insert("group_by".to_string());
+        self.functions.insert("partition".to_string());
+        self.functions.insert("shuffle".to_string());
+        self.functions.insert("rotate_left".to_string());
+        self.functions.insert("rotate_right".to_string());
+        self.functions.insert("insert_at".to_string());
+        self.functions.insert("remove_at".to_string());
+        self.functions.insert("without".to_string());
+        self.functions.insert("compact".to_string());
+        self.functions.insert("compact_unique".to_string());
+        self.functions.insert("enumerate".to_string());
+        self.functions.insert("fill".to_string());
+        self.functions.insert("range_arr".to_string());
+        self.functions.insert("sample".to_string());
+        self.functions.insert("sort_by".to_string());
+        self.functions.insert("to_uarray".to_string());
+        self.functions.insert("to_array".to_string());
+
+        // IO module (import "io")
+        // read_file, write_file already in CorLib
+
+        // JSON module (import "json")
+        self.functions.insert("parse_json".to_string());
+        self.functions.insert("to_json".to_string());
+
+        // System module (import "system")
+        self.functions.insert("env".to_string());
+        self.functions.insert("exit".to_string());
+        self.functions.insert("now".to_string());
+        self.functions.insert("timestamp".to_string());
+        self.functions.insert("sleep".to_string());
+
+        // Base module (import "base")
         self.functions.insert("to_binary".to_string());
         self.functions.insert("to_octal".to_string());
         self.functions.insert("to_hex".to_string());
@@ -147,65 +257,13 @@ impl Linter {
         self.functions.insert("from_hex".to_string());
         self.functions.insert("base_repr".to_string());
         self.functions.insert("from_base".to_string());
-        
-        // Enhanced math functions
-        self.functions.insert("log".to_string());
-        self.functions.insert("log10".to_string());
-        self.functions.insert("exp".to_string());
-        self.functions.insert("degrees".to_string());
-        self.functions.insert("radians".to_string());
-        self.functions.insert("clamp".to_string());
-        
-        // Date/time functions
-        self.functions.insert("now".to_string());
-        self.functions.insert("timestamp".to_string());
-        self.functions.insert("sleep".to_string());
-        
-        // Environment/system functions
-        self.functions.insert("env".to_string());
-        self.functions.insert("exit".to_string());
-        
-        // More array functions
-        self.functions.insert("first".to_string());
-        self.functions.insert("last".to_string());
-        self.functions.insert("take".to_string());
-        self.functions.insert("drop".to_string());
-        self.functions.insert("concat".to_string());
-        self.functions.insert("flatten".to_string());
-        self.functions.insert("zip".to_string());
-        self.functions.insert("enumerate".to_string());
-        self.functions.insert("any".to_string());
-        self.functions.insert("all".to_string());
-        
-        // More string functions
-        self.functions.insert("capitalize".to_string());
-        self.functions.insert("title_case".to_string());
-        self.functions.insert("count".to_string());
-        self.functions.insert("is_empty".to_string());
-        self.functions.insert("is_numeric".to_string());
-        self.functions.insert("is_alpha".to_string());
-        self.functions.insert("lines".to_string());
-        
-        // Type conversion functions
-        self.functions.insert("to_int".to_string());
-        self.functions.insert("to_float".to_string());
-        self.functions.insert("to_string".to_string());
-        self.functions.insert("to_bool".to_string());
-        
-        // More math functions
-        self.functions.insert("sign".to_string());
-        self.functions.insert("gcd".to_string());
-        self.functions.insert("lcm".to_string());
-        self.functions.insert("factorial".to_string());
-        self.functions.insert("is_prime".to_string());
+
+        // Additional utility functions
         self.functions.insert("random_int".to_string());
         self.functions.insert("random_float".to_string());
-        
-        // Input/output functions
-        self.functions.insert("input".to_string());
         self.functions.insert("println".to_string());
-        
-        // System functions
+
+        // System utilities
         self.functions.insert("exec".to_string());
         self.functions.insert("file_exists".to_string());
         self.functions.insert("is_file".to_string());
@@ -213,23 +271,17 @@ impl Linter {
         self.functions.insert("list_dir".to_string());
         self.functions.insert("mkdir".to_string());
         self.functions.insert("remove_file".to_string());
-        
-        // Testing functions
-        self.functions.insert("assert".to_string());
-        
+
         // Collection functions
         self.functions.insert("collection".to_string());
         self.functions.insert("add_to".to_string());
         self.functions.insert("remove_from".to_string());
         self.functions.insert("has".to_string());
-        self.functions.insert("union".to_string());
         self.functions.insert("intersect".to_string());
-        self.functions.insert("difference".to_string());
         self.functions.insert("size".to_string());
         self.functions.insert("is_subset".to_string());
         self.functions.insert("is_superset".to_string());
         self.functions.insert("clear_collection".to_string());
-        self.functions.insert("to_array".to_string());
     }
     
     pub fn with_tokens_and_source(mut self, positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>, source: String) -> Self {
@@ -260,10 +312,72 @@ impl Linter {
         // Check for unused variables in all scopes
         for scope in &self.scopes {
             for var in scope.values() {
-                if !var.used && !var.name.starts_with('_') {
+                // Skip warnings for stdlib constants and underscore-prefixed variables
+                let is_stdlib_constant = matches!(var.name.as_str(),
+                    // CorLib constants
+                    "PI" | "E" |
+                    // CorLib functions
+                    "type_of" | "to_int" | "to_float" | "to_string" | "to_bool" |
+                    "len" | "range" | "push" | "pop" |
+                    "sum" | "contains" | "index_of" | "first" | "last" |
+                    "sort" | "reverse" | "unique" |
+                    "map" | "filter" | "reduce" |
+                    "abs" | "sqrt" | "pow" | "sin" | "cos" | "tan" |
+                    "floor" | "ceil" | "round" | "min" | "max" | "random" |
+                    "upper" | "lower" | "trim" | "split" | "join" | "replace" |
+                    "char_at" | "substring" |
+                    "input" | "print" | "read_file" | "write_file" |
+                    "assert" |
+                    // Math module
+                    "log" | "log10" | "exp" | "log2" | "ln" |
+                    "degrees" | "radians" | "deg_to_rad" | "rad_to_deg" |
+                    "clamp" | "sign" | "gcd" | "lcm" |
+                    "asin" | "acos" | "atan" | "atan2" |
+                    "sinh" | "cosh" | "tanh" | "round_to" |
+                    // String module
+                    "capitalize" | "title_case" |
+                    "trim_left" | "trim_right" |
+                    "pad_left" | "pad_right" | "pad_center" |
+                    "starts_with" | "ends_with" | "contains_str" |
+                    "count" | "find" |
+                    "replace_all" | "replace_first" | "remove" |
+                    "repeat" | "reverse_str" |
+                    "left" | "right" | "truncate" |
+                    "is_empty" | "is_numeric" | "is_alpha" | "is_alphanumeric" |
+                    "word_count" | "sentence_count" | "paragraph_count" | "lines" |
+                    "extract_numbers" | "to_char_codes" | "from_char_codes" |
+                    "format" | "escape" | "unescape" | "wrap_text" |
+                    // Array module
+                    "any" | "all" | "average" | "median" |
+                    "slice" | "take" | "drop" | "initial" | "rest" |
+                    "concat" | "zip" | "union" | "intersection" | "difference" |
+                    "flatten" | "chunk" | "group_by" | "partition" |
+                    "shuffle" | "rotate_left" | "rotate_right" |
+                    "insert_at" | "remove_at" | "without" |
+                    "compact" | "compact_unique" |
+                    "enumerate" | "fill" | "range_arr" | "sample" | "sort_by" |
+                    "to_uarray" | "to_array" |
+                    // JSON module
+                    "parse_json" | "to_json" |
+                    // System module
+                    "env" | "exit" | "now" | "timestamp" | "sleep" |
+                    // Base module
+                    "to_binary" | "to_octal" | "to_hex" |
+                    "from_binary" | "from_octal" | "from_hex" |
+                    "base_repr" | "from_base" |
+                    // Additional utilities
+                    "random_int" | "random_float" | "println" |
+                    "exec" | "file_exists" | "is_file" | "is_dir" |
+                    "list_dir" | "mkdir" | "remove_file" |
+                    // Collection functions
+                    "collection" | "add_to" | "remove_from" | "has" |
+                    "intersect" | "size" | "is_subset" | "is_superset" |
+                    "clear_collection");
+
+                if !var.used && !var.name.starts_with('_') && !is_stdlib_constant {
                     self.warnings.push(LintWarning {
                         message: format!("unused variable `{}`", var.name),
-                        position: None, // TODO: We could track declaration positions
+                        position: None,
                     });
                 }
             }
@@ -381,6 +495,12 @@ impl Linter {
     fn declare_variable(&mut self, name: String) {
         if let Some(current_scope) = self.scopes.last_mut() {
             if current_scope.contains_key(&name) {
+                // Don't warn about redeclaration of builtin constants in REPL mode
+                // They may be re-initialized by the interpreter
+                if name == "PI" || name == "E" {
+                    return;  // Silently ignore PI/E redeclaration
+                }
+                
                 let position = self.find_identifier_position(&name);
                 self.warnings.push(LintWarning {
                     message: format!("warning: variable `{}` is already declared in this scope", name),
@@ -422,40 +542,126 @@ impl Linter {
     fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, ()> {
         use std::fs;
         use std::path::Path;
-        
+
+        // Get the directory where the executable is located for resolving stdlib paths
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        // Try to find project root (go up from target/release or target/debug)
+        let project_root = exe_dir.parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| exe_dir.clone());
+
+        // Get current working directory
+        let cwd = std::env::current_dir().unwrap_or_default();
+
         // Determine the module file path (same logic as interpreter)
-        let module_file_path = if module_path.starts_with("./") || module_path.starts_with("../") {
-            // Relative path - resolve relative to current file's directory
-            let path = module_path.trim_start_matches("./");
-            format!("examples/{}.ject", path)
+        let module_file_path = if module_path.starts_with("~/") {
+            // Home directory path
+            if let Ok(home) = std::env::var("HOME") {
+                let path_without_tilde = module_path.trim_start_matches("~/");
+                let path_with_ext = if path_without_tilde.ends_with(".ject") {
+                    path_without_tilde.to_string()
+                } else {
+                    format!("{}.ject", path_without_tilde)
+                };
+                let full_path = std::path::PathBuf::from(home).join(&path_with_ext);
+                if full_path.exists() {
+                    full_path.to_string_lossy().to_string()
+                } else {
+                    return Err(());
+                }
+            } else {
+                return Err(());
+            }
+        } else if module_path.starts_with("/") {
+            // Absolute path
+            let path_with_ext = if module_path.ends_with(".ject") {
+                module_path.to_string()
+            } else {
+                format!("{}.ject", module_path)
+            };
+            let full_path = std::path::PathBuf::from(&path_with_ext);
+            if full_path.exists() {
+                full_path.to_string_lossy().to_string()
+            } else {
+                return Err(());
+            }
+        } else if module_path.starts_with("./") || module_path.starts_with("../") {
+            // Relative path from cwd
+            let path_with_ext = if module_path.ends_with(".ject") {
+                module_path.to_string()
+            } else {
+                format!("{}.ject", module_path)
+            };
+            let full_path = cwd.join(&path_with_ext);
+            if full_path.exists() {
+                full_path.to_string_lossy().to_string()
+            } else {
+                return Err(());
+            }
         } else if module_path.contains("/") {
-            // Absolute path from examples/ directory
-            format!("examples/{}.ject", module_path)
+            // Path relative to project root
+            let path_with_ext = if module_path.ends_with(".ject") {
+                module_path.to_string()
+            } else {
+                format!("{}.ject", module_path)
+            };
+            let full_path = project_root.join(&path_with_ext);
+            if full_path.exists() {
+                full_path.to_string_lossy().to_string()
+            } else {
+                let cwd_path = cwd.join(&path_with_ext);
+                if cwd_path.exists() {
+                    cwd_path.to_string_lossy().to_string()
+                } else {
+                    return Err(());
+                }
+            }
         } else {
-            // Simple module name - look in examples/modules/ directory
-            format!("examples/modules/{}.ject", module_path)
+            // Simple module name - check stdlib directory
+            let module_name = if module_path.ends_with(".ject") {
+                module_path.trim_end_matches(".ject").to_string()
+            } else {
+                module_path.to_string()
+            };
+            
+            let stdlib_path = project_root.join("stdlib").join(format!("{}.ject", module_name));
+            if stdlib_path.exists() {
+                stdlib_path.to_string_lossy().to_string()
+            } else {
+                let cwd_stdlib = cwd.join("stdlib").join(format!("{}.ject", module_name));
+                if cwd_stdlib.exists() {
+                    cwd_stdlib.to_string_lossy().to_string()
+                } else {
+                    return Err(());
+                }
+            }
         };
-        
+
         if !Path::new(&module_file_path).exists() {
             return Err(());
         }
-        
+
         // Read and parse the module file
         let module_content = match fs::read_to_string(&module_file_path) {
             Ok(content) => content,
             Err(_) => return Err(()),
         };
-        
+
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
         let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = crate::parser::Parser::new_simple(tokens);
-        
+
         let statements = match parser.parse() {
             Ok(stmts) => stmts,
             Err(_) => return Err(()),
         };
-        
+
         // Extract export names
         let mut exports = Vec::new();
         for statement in &statements {
@@ -469,7 +675,7 @@ impl Linter {
                 _ => {}
             }
         }
-        
+
         Ok(exports)
     }
     
@@ -530,16 +736,42 @@ impl Linter {
                 // Then declare the variable (Rust-like: can't use variable before declaration)
                 self.declare_variable(name.clone());
             }
-            Stmt::Assign { name, value } => {
+            Stmt::Assign { target, value } => {
                 // Analyze the value expression first
                 self.analyze_expr(value);
-                // Check if variable exists
-                if !self.use_variable(name) {
-                    let position = self.find_identifier_position(name);
-                    self.errors.push(LintError {
-                        message: format!("cannot assign to undeclared variable `{}`", name),
-                        position,
-                    });
+                // Check if variable exists based on target type
+                match target {
+                    crate::ast::AssignTarget::Identifier(name) => {
+                        if !self.use_variable(&name) {
+                            let position = self.find_identifier_position(&name);
+                            self.errors.push(LintError {
+                                message: format!("cannot assign to undeclared variable `{}`", name),
+                                position,
+                            });
+                        }
+                    }
+                    crate::ast::AssignTarget::Index { object, index } => {
+                        // Check if the array variable exists
+                        if !self.use_variable(&object) {
+                            let position = self.find_identifier_position(&object);
+                            self.errors.push(LintError {
+                                message: format!("cannot index into undeclared variable `{}`", object),
+                                position,
+                            });
+                        }
+                        // Analyze the index expression
+                        self.analyze_expr(&index);
+                    }
+                    crate::ast::AssignTarget::Field { object, field: _ } => {
+                        // Check if the object variable exists
+                        if !self.use_variable(&object) {
+                            let position = self.find_identifier_position(&object);
+                            self.errors.push(LintError {
+                                message: format!("cannot assign field on undeclared variable `{}`", object),
+                                position,
+                            });
+                        }
+                    }
                 }
             }
             Stmt::Function { name, params, body } => {
@@ -645,8 +877,12 @@ impl Linter {
                     });
                 }
             }
-            Stmt::Print(expr) => {
-                self.analyze_expr(expr);
+            Stmt::Print { values, sep, end } => {
+                for value in values {
+                    self.analyze_expr(value);
+                }
+                if let Some(s) = sep { self.analyze_expr(s); }
+                if let Some(e) = end { self.analyze_expr(e); }
             }
             Stmt::Expression(expr) => {
                 self.analyze_expr(expr);
@@ -677,10 +913,33 @@ impl Linter {
                 self.declare_variable(name.clone());
             }
             Stmt::ExportFunction { name, params, body } => {
+                // Check for function redeclaration
+                if self.functions.contains(name) {
+                    let position = self.find_identifier_position(name);
+                    self.warnings.push(LintWarning {
+                        message: format!("warning: function `{}` is already defined", name),
+                        position,
+                    });
+                }
+                self.functions.insert(name.clone());
+
+                // Store function signature for validation
+                self.function_signatures.insert(name.clone(), FunctionSignature {
+                    name: name.clone(),
+                    parameters: params.clone(),
+                });
+
                 self.declare_variable(name.clone());
                 self.push_scope();
-                
+
+                let was_in_function = self.in_function;
+                self.in_function = true;
+
                 for param in params {
+                    // Analyze default value first
+                    if let Some(default_expr) = &param.default_value {
+                        self.analyze_expr(default_expr);
+                    }
                     self.declare_variable(param.name.clone());
                 }
 
@@ -688,6 +947,7 @@ impl Linter {
                     self.analyze_statement(stmt);
                 }
 
+                self.in_function = was_in_function;
                 self.pop_scope();
             }
             Stmt::Struct { name, fields: _ } => {
@@ -720,6 +980,12 @@ impl Linter {
             }
             Stmt::Throw(expr) => {
                 self.analyze_expr(expr);
+            }
+            Stmt::Break => {
+                // break is valid inside loops
+            }
+            Stmt::Continue => {
+                // continue is valid inside loops
             }
         }
     }

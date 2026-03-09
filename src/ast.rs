@@ -2,6 +2,22 @@ use std::fmt;
 use crate::lexer::InterpolationPart;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AssignTarget {
+    /// Simple variable: x = value
+    Identifier(String),
+    /// Array/dictionary index: arr[i] = value (object must be identifier)
+    Index {
+        object: String,
+        index: Box<Expr>,
+    },
+    /// Struct/dictionary field: obj.field = value (object must be identifier)
+    Field {
+        object: String,
+        field: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Integer(i64),
     Float(f64),
@@ -19,15 +35,42 @@ pub enum Expr {
         operator: UnaryOp,
         operand: Box<Expr>,
     },
+    Increment {
+        target: Box<Expr>,
+        prefix: bool,  // true for ++x, false for x++
+    },
+    Decrement {
+        target: Box<Expr>,
+        prefix: bool,  // true for --x, false for x--
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Argument>,
     },
     Array(Vec<Expr>),
+    UniqueArray(Vec<Expr>),  // {|1, 2, 3|} - array with unique values only
+    ListComprehension {
+        expr: Box<Expr>,
+        var: String,
+        iterable: Box<Expr>,
+        condition: Option<Box<Expr>>,
+    },
+    Generator {
+        expr: Box<Expr>,
+        var: String,
+        iterable: Box<Expr>,
+        condition: Option<Box<Expr>>,
+    },
     Dictionary(Vec<(String, Expr)>),
     Index {
         object: Box<Expr>,
         index: Box<Expr>,
+    },
+    Slice {
+        object: Box<Expr>,
+        from: Option<Box<Expr>>,
+        to: Option<Box<Expr>>,
+        step: Option<Box<Expr>>,
     },
     Member {
         object: Box<Expr>,
@@ -137,7 +180,7 @@ pub enum Stmt {
         value: Expr,
     },
     Assign {
-        name: String,
+        target: AssignTarget,
         value: Expr,
     },
     Function {
@@ -175,7 +218,11 @@ pub enum Stmt {
         body: Vec<Stmt>,
     },
     Return(Option<Expr>),
-    Print(Expr),
+    Print {
+        values: Vec<Expr>,
+        sep: Option<Expr>,
+        end: Option<Expr>,
+    },
     Struct {
         name: String,
         fields: Vec<String>,
@@ -186,6 +233,8 @@ pub enum Stmt {
         catch_body: Vec<Stmt>,
     },
     Throw(Expr),
+    Break,
+    Continue,
 }
 
 impl fmt::Display for Expr {
@@ -213,6 +262,20 @@ impl fmt::Display for Expr {
             Expr::Unary { operator, operand } => {
                 write!(f, "({}{})", operator, operand)
             }
+            Expr::Increment { target, prefix } => {
+                if *prefix {
+                    write!(f, "++{}", target)
+                } else {
+                    write!(f, "{}++", target)
+                }
+            }
+            Expr::Decrement { target, prefix } => {
+                if *prefix {
+                    write!(f, "--{}", target)
+                } else {
+                    write!(f, "{}--", target)
+                }
+            }
             Expr::Call { callee, args } => {
                 write!(f, "{}(", callee)?;
                 for (i, arg) in args.iter().enumerate() {
@@ -229,6 +292,28 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "]")
             }
+            Expr::UniqueArray(elements) => {
+                write!(f, "{{|")?;
+                for (i, elem) in elements.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", elem)?;
+                }
+                write!(f, "|}}")
+            }
+            Expr::ListComprehension { expr, var, iterable, condition } => {
+                write!(f, "[{} for {} in {}", expr, var, iterable)?;
+                if let Some(cond) = condition {
+                    write!(f, " if {}", cond)?;
+                }
+                write!(f, "]")
+            }
+            Expr::Generator { expr, var, iterable, condition } => {
+                write!(f, "<{} for {} in {}", expr, var, iterable)?;
+                if let Some(cond) = condition {
+                    write!(f, " if {}", cond)?;
+                }
+                write!(f, ">")
+            }
             Expr::Dictionary(pairs) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in pairs.iter().enumerate() {
@@ -239,6 +324,21 @@ impl fmt::Display for Expr {
             }
             Expr::Index { object, index } => {
                 write!(f, "{}[{}]", object, index)
+            }
+            Expr::Slice { object, from, to, step } => {
+                write!(f, "{}[", object)?;
+                let mut parts = Vec::new();
+                if let Some(from_expr) = from {
+                    parts.push(format!("from:{}", from_expr));
+                }
+                if let Some(to_expr) = to {
+                    parts.push(format!("to:{}", to_expr));
+                }
+                if let Some(step_expr) = step {
+                    parts.push(format!("step:{}", step_expr));
+                }
+                write!(f, "{}", parts.join(" "))?;
+                write!(f, "]")
             }
             Expr::Member { object, property } => {
                 write!(f, "{}.{}", object, property)
@@ -350,7 +450,13 @@ impl fmt::Display for Stmt {
         match self {
             Stmt::Expression(expr) => write!(f, "{}", expr),
             Stmt::Let { name, value } => write!(f, "let {} = {}", name, value),
-            Stmt::Assign { name, value } => write!(f, "{} = {}", name, value),
+            Stmt::Assign { target, value } => {
+                match target {
+                    AssignTarget::Identifier(name) => write!(f, "{} = {}", name, value),
+                    AssignTarget::Index { object, index } => write!(f, "{}[{}] = {}", object, index, value),
+                    AssignTarget::Field { object, field } => write!(f, "{}.{} = {}", object, field, value),
+                }
+            }
             Stmt::Function { name, params, .. } => {
                 write!(f, "fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {
@@ -389,7 +495,19 @@ impl fmt::Display for Stmt {
             }
             Stmt::Return(Some(expr)) => write!(f, "return {}", expr),
             Stmt::Return(None) => write!(f, "return"),
-            Stmt::Print(expr) => write!(f, "print {}", expr),
+            Stmt::Print { values, sep, end } => {
+                write!(f, "print(")?;
+                for (i, val) in values.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", val)?;
+                }
+                if sep.is_some() || end.is_some() {
+                    if !values.is_empty() { write!(f, ", ")?; }
+                    if let Some(s) = sep { write!(f, "sep={}, ", s)?; }
+                    if let Some(e) = end { write!(f, "end={}", e)?; }
+                }
+                write!(f, ")")
+            },
             Stmt::Struct { name, fields } => {
                 write!(f, "struct {} {{", name)?;
                 for (i, field) in fields.iter().enumerate() {
@@ -408,6 +526,8 @@ impl fmt::Display for Stmt {
                 Ok(())
             }
             Stmt::Throw(expr) => write!(f, "throw {}", expr),
+            Stmt::Break => write!(f, "break"),
+            Stmt::Continue => write!(f, "continue"),
         }
     }
 }

@@ -1,0 +1,64 @@
+# Test Compound Assignment Operators
+print "=== Compound Assignment Test ==="
+
+# Test +=
+let x = 10
+print "x = " + x
+x += 5
+print "x += 5 -> " + x
+x += 3
+print "x += 3 -> " + x
+
+# Test -=
+let y = 20
+print "\ny = " + y
+y -= 8
+print "y -= 8 -> " + y
+
+# Test *=
+let z = 5
+print "\nz = " + z
+z *= 3
+print "z *= 3 -> " + z
+
+# Test /=
+let w = 100
+print "\nw = " + w
+w /= 4
+print "w /= 4 -> " + w
+
+# Test %=
+let m = 17
+print "\nm = " + m
+m %= 5
+print "m %= 5 -> " + m
+
+# Test with array indices
+print "\n=== Array Compound Assignment ==="
+let arr = [10, 20, 30, 40, 50]
+print "Original: " + arr
+arr[0] += 5
+print "arr[0] += 5 -> " + arr
+arr[-1] *= 2
+print "arr[-1] *= 2 -> " + arr
+
+# Test with dictionary (using bracket notation)
+print "\n=== Dictionary Compound Assignment ==="
+let stats = {health: 100, mana: 50}
+print "Original: " + stats
+# Dictionary field access uses bracket notation
+stats["health"] -= 25
+print "stats[\"health\"] -= 25 -> " + stats
+stats["mana"] *= 2
+print "stats[\"mana\"] *= 2 -> " + stats
+
+# Test string concatenation
+print "\n=== String Compound Assignment ==="
+let msg = "Hello"
+print "msg = \"" + msg + "\""
+msg += " "
+msg += "World"
+msg += "!"
+print "After concatenations: \"" + msg + "\""
+
+print "\n=== All compound assignment tests passed! ==="

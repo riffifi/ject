@@ -1,0 +1,220 @@
+# Ject Feature Demonstration
+# Run with: ./target/release/ject examples.ject
+
+print "=== Ject Feature Demo ===\n"
+
+# ============================================
+# 1. Variables and Basic Types
+# ============================================
+print "--- Variables ---"
+
+let name = "Ject"
+let version = 1.0
+let is_awesome = true
+let nothing = nil
+
+print "Language: " + name
+print "Version: " + version
+print "Awesome: " + is_awesome
+print ""
+
+# ============================================
+# 2. Functions
+# ============================================
+print "--- Functions ---"
+
+fn greet(person, greeting = "Hello")
+    return greeting + ", " + person + "!"
+end
+
+print greet("World")
+print greet("Alice", "Good morning")
+print ""
+
+# ============================================
+# 3. Lambdas
+# ============================================
+print "--- Lambdas ---"
+
+let square = lambda(x) -> x * x
+let add = lambda(a, b) -> a + b
+
+print "square(5) = " + square(5)
+print "add(3, 7) = " + add(3, 7)
+
+# Lambda with array
+let numbers = [1, 2, 3, 4, 5]
+let doubled = map(numbers, lambda(n) -> n * 2)
+print "doubled: " + doubled
+print ""
+
+# ============================================
+# 4. Arrays and Slicing
+# ============================================
+print "--- Arrays & Slicing ---"
+
+let arr = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+print "Original: " + arr
+
+# Named parameter slicing (BEST!)
+print "arr[from:2 to:5]:        " + arr[from:2 to:5]
+print "arr[from:0 to:8 step:2]: " + arr[from:0 to:8 step:2]
+print "arr[from:-5 to:-1]:      " + arr[from:-5 to:-1]
+print "arr[step:3]:             " + arr[step:3]
+
+# Range slicing (concise)
+print "arr[2..6]:               " + arr[2..6]
+print "arr[0..8:2]:             " + arr[0..8:2]
+
+# Python-style slicing (familiar)
+print "arr[:4]:                 " + arr[:4]
+print "arr[6:]:                 " + arr[6:]
+print "arr[1:7:2]:              " + arr[1:7:2]
+print "arr[::-1]:               " + arr[::-1]
+print ""
+
+# ============================================
+# 5. String Slicing
+# ============================================
+print "--- String Slicing ---"
+
+let text = "Hello, World!"
+print "Original: \"" + text + "\""
+
+print "text[from:0 to:5]:  \"" + text[from:0 to:5] + "\""
+print "text[step:2]:       \"" + text[step:2] + "\""
+print "text[::-1]:         \"" + text[::-1] + "\""
+print ""
+
+# ============================================
+# 6. Dictionaries
+# ============================================
+print "--- Dictionaries ---"
+
+let person = {name: "Alice", age: 30, email: "alice@example.com"}
+
+print "person[\"name\"]:  " + person["name"]
+print "person[\"age\"]:   " + person["age"]
+print "Full: " + person
+print ""
+
+# ============================================
+# 7. Control Flow
+# ============================================
+print "--- Control Flow ---"
+
+let score = 85
+
+if score >= 90
+    print "Grade: A"
+elseif score >= 80
+    print "Grade: B (You got this!)"
+elseif score >= 70
+    print "Grade: C"
+else
+    print "Grade: Keep practicing!"
+end
+
+# For loop with range
+print "Counting: "
+for i in 1..6 do
+    print i
+end
+
+# For loop with array
+let fruits = ["apple", "banana", "cherry"]
+print "Fruits: "
+for fruit in fruits do
+    print "  - " + fruit
+end
+print ""
+
+# ============================================
+# 8. Structs
+# ============================================
+print "--- Structs ---"
+
+struct Point {x, y}
+
+let p1 = new Point {x: 10, y: 20}
+let p2 = new Point {x: 30, y: 40}
+
+print "p1: " + p1
+print "p1.x: " + p1.x
+print "p1.y: " + p1.y
+print ""
+
+# ============================================
+# 9. String Interpolation
+# ============================================
+print "--- String Interpolation ---"
+
+let user = "Developer"
+let lines = 42
+
+print "Hello, ${user}!"
+print "You wrote ${lines} lines of code."
+print "That's ${lines * 2} lines with comments!"
+print ""
+
+# ============================================
+# 10. Error Handling
+# ============================================
+print "--- Error Handling ---"
+
+fn safe_divide(a, b)
+    if b == 0 then
+        throw "Division by zero!"
+    end
+    return a / b
+end
+
+try
+    let result = safe_divide(10, 2)
+    print "10 / 2 = " + result
+    
+    result = safe_divide(10, 0)
+catch err
+    print "Caught error: " + err
+end
+print ""
+
+# ============================================
+# 11. Standard Library Functions
+# ============================================
+print "--- Standard Library ---"
+
+# Math
+print "sqrt(144) = " + sqrt(144)
+print "pow(2, 10) = " + pow(2, 10)
+print "abs(-42) = " + abs(-42)
+print "PI = " + PI
+
+# Array
+let nums = [5, 2, 8, 1, 9]
+print "sum([5,2,8,1,9]) = " + sum(nums)
+print "max([5,2,8,1,9]) = " + max(5, 2, 8, 1, 9)
+print "min([5,2,8,1,9]) = " + min(5, 2, 8, 1, 9)
+
+# String
+print "upper('hello') = " + upper("hello")
+print "trim('  hi  ') = " + trim("  hi  ")
+print ""
+
+# ============================================
+# 12. Negative Indexing
+# ============================================
+print "--- Negative Indexing ---"
+
+let data = [10, 20, 30, 40, 50]
+print "data: " + data
+print "data[0]:   " + data[0]
+print "data[-1]:  " + data[-1] + " (last)"
+print "data[-2]:  " + data[-2] + " (second to last)"
+
+let msg = "Hello"
+print "msg[-1]: \"" + msg[-1] + "\" (last char)"
+print ""
+
+# ============================================
+print "=== Demo Complete! ==="

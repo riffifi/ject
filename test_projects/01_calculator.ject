@@ -1,0 +1,38 @@
+# Simple Calculator
+# Testing: basic math, functions, conditionals
+
+fn add(a, b)
+    return a + b
+end
+
+fn subtract(a, b)
+    return a - b
+end
+
+fn multiply(a, b)
+    return a * b
+end
+
+fn divide(a, b)
+    if b == 0 then
+        return "Error: Division by zero"
+    end
+    return a / b
+end
+
+print "=== Simple Calculator ==="
+print "10 + 5 = " + add(10, 5)
+print "10 - 5 = " + subtract(10, 5)
+print "10 * 5 = " + multiply(10, 5)
+print "10 / 5 = " + divide(10, 5)
+print "10 / 0 = " + divide(10, 0)
+
+# Test with user input simulation
+let x = 100
+let y = 25
+
+print "\n--- Variables ---"
+print "x = " + x
+print "y = " + y
+
+print "\nCalculator test complete!"

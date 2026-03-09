@@ -4,13 +4,14 @@ mod ast;
 mod value;
 mod interpreter;
 mod stdlib;
+mod numpy;
 mod error;
 mod linter;
 mod diagnostic;
 
 use lexer::Lexer;
 use parser::Parser;
-use interpreter::Interpreter;
+use interpreter::{Interpreter, get_runtime_suggestion};
 use diagnostic::DiagnosticRenderer;
 use std::{env, fs};
 use rustyline::error::ReadlineError;
@@ -115,7 +116,15 @@ fn execute_source(source: &str, interpreter: &mut Interpreter, filename: Option<
                 match interpreter.interpret(&statements) {
                     Ok(_) => {}
                     Err(error) => {
-                        println!("Runtime Error: {}", error);
+                        // Display runtime error with colors
+                        use colored::*;
+                        eprintln!("{}: {}", "Runtime Error".red().bold(), error.message.bold());
+                        
+                        // Display suggestion if available
+                        let suggestion = get_runtime_suggestion(&error.message);
+                        if !suggestion.is_empty() {
+                            eprintln!("{} {}", "Tip:".blue().bold(), suggestion.trim().bold());
+                        }
                     },
                 }
             } else {
@@ -149,7 +158,7 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
     let mut lexer = Lexer::new(source);
     let located_tokens = lexer.tokenize_with_positions();
     let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> = located_tokens.into_iter().map(|lt| (lt.token, lt.position)).collect();
-    
+
     // Clone positioned tokens for linter before parser consumes them
     let positioned_tokens_for_linter = positioned_tokens.clone();
     let mut parser = Parser::new(positioned_tokens);
@@ -159,21 +168,32 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
             // Use REPL-aware linter that maintains state
             *linter = linter.clone().with_tokens_and_source(positioned_tokens_for_linter, source.to_string());
             let (diagnostics, has_errors) = linter.lint_repl(&statements);
-            
+
             // Create diagnostic renderer for beautiful output
             let renderer = DiagnosticRenderer::new();
-            
-            // Display all diagnostics with colorful formatting
+
+            // In REPL mode, only show errors (not warnings) to reduce noise
+            // Warnings are still collected but not displayed unless verbose mode
             for diagnostic in &diagnostics {
-                renderer.render(diagnostic, None, Some(source));
+                if diagnostic.level == crate::diagnostic::DiagnosticLevel::Error {
+                    renderer.render(diagnostic, None, Some(source));
+                }
             }
-            
+
             // Only run interpreter if no errors were found
             if !has_errors {
                 match interpreter.interpret(&statements) {
                     Ok(_) => {}
                     Err(error) => {
-                        println!("Runtime Error: {}", error);
+                        // Display runtime error with colors
+                        use colored::*;
+                        eprintln!("{}: {}", "Runtime Error".red().bold(), error.message.bold());
+                        
+                        // Display suggestion if available
+                        let suggestion = get_runtime_suggestion(&error.message);
+                        if !suggestion.is_empty() {
+                            eprintln!("{} {}", "Tip:".blue().bold(), suggestion.trim().bold());
+                        }
                     },
                 }
             }
@@ -183,12 +203,12 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
             let renderer = DiagnosticRenderer::new();
             let mut parse_diagnostic = crate::diagnostic::Diagnostic::error(error.message.clone())
                 .with_code("E0002".to_string());
-            
+
             // Use position information if available
             if let (Some(line), Some(column)) = (error.line, error.column) {
                 parse_diagnostic = parse_diagnostic.with_location(line, column);
             }
-            
+
             renderer.render(&parse_diagnostic, None, Some(source));
         },
     }

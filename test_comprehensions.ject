@@ -1,0 +1,29 @@
+# List Comprehensions Demo
+print "=== List Comprehensions ==="
+
+# Basic comprehension
+let squares = [x * x for x in 1..6]
+print "squares (x*x for x in 1..6):"
+print squares
+
+# With filter
+let evens = [x for x in 1..11 if x % 2 == 0]
+print "evens (x for x in 1..11 if x%2==0):"
+print evens
+
+# With transformation AND filter
+let even_squares = [x * x for x in 1..11 if x % 2 == 0]
+print "even_squares:"
+print even_squares
+
+# Type System Demo
+print ""
+print "=== Type System (Fixed!) ==="
+print "type_of(42):"
+print type_of(42)
+print "type_of(3.14):"
+print type_of(3.14)
+print "type_of(1.0):"
+print type_of(1.0)
+print "type_of(0):"
+print type_of(0)
