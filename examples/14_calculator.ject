@@ -28,7 +28,7 @@ let num2 = to_float(num2_str)
 try
     let result = calculate(op, num1, num2)
     print num1 + " " + op + " " + num2 + " = " + result
-catch error
-    print "Error: " + error
+catch err
+    print "Error: " + err
 end
 

@@ -129,9 +129,15 @@ impl Linter {
         self.functions.insert("print".to_string());
         self.functions.insert("read_file".to_string());
         self.functions.insert("write_file".to_string());
+        self.functions.insert("append_file".to_string());
+        self.functions.insert("read_lines".to_string());
 
         // Testing
         self.functions.insert("assert".to_string());
+        self.functions.insert("has_key".to_string());
+        self.functions.insert("delete".to_string());
+        self.functions.insert("keys".to_string());
+        self.functions.insert("values".to_string());
 
         // Constants (variables, not functions)
         self.declare_variable("PI".to_string());
@@ -244,6 +250,8 @@ impl Linter {
         // System module (import "system")
         self.functions.insert("env".to_string());
         self.functions.insert("exit".to_string());
+        self.functions.insert("args".to_string());
+        self.functions.insert("cwd".to_string());
         self.functions.insert("now".to_string());
         self.functions.insert("timestamp".to_string());
         self.functions.insert("sleep".to_string());
@@ -999,7 +1007,7 @@ impl Linter {
                     
                     // Try to find similar variable names for suggestions
                     let suggestions = self.find_similar_variables(name);
-                    let mut message = format!("use of undeclared variable `{}`", name);
+                    let mut message = format!("undefined variable `{}`", name);
                     
                     if !suggestions.is_empty() {
                         if suggestions.len() == 1 {
@@ -1110,6 +1118,17 @@ impl Linter {
                     self.analyze_pattern(&arm.pattern);
                     self.analyze_expr(&arm.body);
                     self.pop_scope();
+                }
+            }
+            Expr::Print { values, sep, end } => {
+                for v in values {
+                    self.analyze_expr(v);
+                }
+                if let Some(sep) = sep {
+                    self.analyze_expr(sep);
+                }
+                if let Some(end) = end {
+                    self.analyze_expr(end);
                 }
             }
             // Literals don't need analysis

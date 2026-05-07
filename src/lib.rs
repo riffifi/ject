@@ -5,6 +5,7 @@ pub mod interpreter;
 pub mod value;
 pub mod stdlib;
 pub mod numpy;
+pub mod gui;
 pub mod error;
 pub mod diagnostic;
 pub mod linter;

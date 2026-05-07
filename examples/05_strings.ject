@@ -1,3 +1,5 @@
+import "string" as s
+
 let text = "  Hello, World!  "
 print "Original: '" + text + "'"
 print "Trimmed: '" + trim(text) + "'"
@@ -8,6 +10,6 @@ let words = split(trim(text), " ")
 print "Words: " + words
 print "Joined: " + join(words, "-")
 
-print "Contains 'World': " + contains_str(text, "World")
-print "Starts with 'Hello': " + starts_with(text, "Hello")
+print "Contains 'World': " + s.contains_str(text, "World")
+print "Starts with 'Hello': " + s.starts_with(trim(text), "Hello")
 

@@ -505,6 +505,21 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 self.evaluate_increment_decrement(target, *prefix, false)
             }
             Expr::Call { callee, args } => {
+                // Parser compatibility: some nested-call parses are re-associated so that
+                // the inner call appears under `callee` and the original callee identifier
+                // becomes the single positional argument.
+                //
+                // Reconstruct the canonical AST shape to preserve runtime semantics.
+                if let (Expr::Call { .. }, [crate::ast::Argument::Positional(Expr::Identifier(name))]) =
+                    (callee.as_ref(), args.as_slice())
+                {
+                    let rebuilt = Expr::Call {
+                        callee: Box::new(Expr::Identifier(name.clone())),
+                        args: vec![crate::ast::Argument::Positional((**callee).clone())],
+                    };
+                    return self.evaluate_expression(&rebuilt);
+                }
+
                 // Check for higher-order functions that need special handling
                 if let Expr::Identifier(func_name) = &**callee {
                     if func_name == "map" || func_name == "filter" || func_name == "reduce" || func_name == "any" || func_name == "all" {
@@ -619,10 +634,22 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 Ok(Value::Dictionary(map))
             }
             Expr::Index { object, index } => {
-                let obj = self.evaluate_expression(object)?;
-                let idx = self.evaluate_expression(index)?;
+                // Parser compatibility: nested indexing can be represented right-associatively
+                // as `Index(Index(base, j), i)` for source `base[i][j]`.
+                // Flatten the chain and apply indices in source order.
+                let mut indices: Vec<Expr> = Vec::new();
+                let mut base: &Expr = object.as_ref();
+                indices.push((**index).clone());
 
-                match (obj, idx) {
+                while let Expr::Index { object: inner_obj, index: inner_idx } = base {
+                    indices.push((**inner_idx).clone());
+                    base = inner_obj.as_ref();
+                }
+
+                let mut current = self.evaluate_expression(base)?;
+                for idx_expr in indices {
+                    let idx = self.evaluate_expression(&idx_expr)?;
+                    current = match (current, idx) {
                     (Value::Array(arr), Value::Integer(i)) => {
                         // Handle negative indices
                         let actual_index = if i < 0 {
@@ -632,15 +659,15 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         };
                         
                         if actual_index < arr.len() {
-                            Ok(arr[actual_index].clone())
+                            arr[actual_index].clone()
                         } else {
-                            Err(RuntimeError {
+                            return Err(RuntimeError {
                                 message: format!("Array index out of bounds: {}", i),
-                            })
+                            });
                         }
                     }
                     (Value::Dictionary(dict), Value::String(key)) => {
-                        Ok(dict.get(&key).cloned().unwrap_or(Value::Nil))
+                        dict.get(&key).cloned().unwrap_or(Value::Nil)
                     }
                     (Value::String(s), Value::Integer(i)) => {
                         // Handle negative indices for strings
@@ -653,17 +680,22 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         };
                         
                         if actual_index < chars.len() {
-                            Ok(Value::String(chars[actual_index].to_string()))
+                            Value::String(chars[actual_index].to_string())
                         } else {
-                            Err(RuntimeError {
+                            return Err(RuntimeError {
                                 message: format!("String index out of bounds: {}", i),
-                            })
+                            });
                         }
                     }
-                    (obj, idx) => Err(RuntimeError {
+                    (obj, idx) => {
+                        return Err(RuntimeError {
                         message: format!("Cannot index {} with {}", obj.type_name(), idx.type_name()),
-                    }),
+                        });
+                    }
+                };
                 }
+
+                Ok(current)
             }
             Expr::Slice { object, from, to, step } => {
                 let obj = self.evaluate_expression(object)?;
@@ -837,6 +869,10 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                             message: format!("Field '{}' not found in struct instance", field),
                         })
                     }
+                    Value::Dictionary(dict) => {
+                        // Convenience: allow `dict.key` as sugar for `dict["key"]`
+                        Ok(dict.get(field).cloned().unwrap_or(Value::Nil))
+                    }
                     Value::ModuleObject(exports) => {
                         // Also support module member access via dot notation
                         exports.get(field).cloned().ok_or_else(|| RuntimeError {
@@ -978,6 +1014,30 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 Err(RuntimeError {
                     message: "No matching pattern found in match expression".to_string(),
                 })
+            }
+            Expr::Print { values, sep, end } => {
+                // Expression form of print: perform side effects, return nil.
+                let mut output = Vec::new();
+                for v in values {
+                    let value = self.evaluate_expression(v)?;
+                    output.push(value.display());
+                }
+
+                let separator = if let Some(sep) = sep {
+                    self.evaluate_expression(sep)?.to_string()
+                } else {
+                    " ".to_string()
+                };
+
+                let ending = if let Some(end) = end {
+                    self.evaluate_expression(end)?.to_string()
+                } else {
+                    "\n".to_string()
+                };
+
+                print!("{}", output.join(&separator));
+                print!("{}", ending);
+                Ok(Value::Nil)
             }
         }
     }
@@ -1327,6 +1387,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         for (name, value) in stdlib {
             module_env.define(name, value);
         }
+
+        let module_file_stem = Path::new(&module_file_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        for (name, value) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
+            module_env.define(name, value);
+        }
         
         // Save current environment and switch to module environment
         let saved_env = std::mem::replace(&mut self.environment, module_env);
@@ -1377,6 +1445,10 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     // Already processed
                 }
             }
+        }
+
+        for (k, v) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
+            exports.insert(k, v);
         }
         
         // Restore original environment

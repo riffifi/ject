@@ -297,8 +297,8 @@ export fn random()
     return np.random()
 end
 
-export fn rand(...)
-    return np.rand(...)
+export fn rand()
+    return np.rand()
 end
 
 export fn randint(low, high, size)

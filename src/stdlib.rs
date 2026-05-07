@@ -74,9 +74,16 @@ pub fn create_corlib() -> HashMap<String, Value> {
     corlib.insert("print".to_string(), Value::BuiltinFunction("print".to_string()));
     corlib.insert("read_file".to_string(), Value::BuiltinFunction("read_file".to_string()));
     corlib.insert("write_file".to_string(), Value::BuiltinFunction("write_file".to_string()));
+    corlib.insert("append_file".to_string(), Value::BuiltinFunction("append_file".to_string()));
+    corlib.insert("read_lines".to_string(), Value::BuiltinFunction("read_lines".to_string()));
+    corlib.insert("file_exists".to_string(), Value::BuiltinFunction("file_exists".to_string()));
 
     // ========== Testing ==========
     corlib.insert("assert".to_string(), Value::BuiltinFunction("assert".to_string()));
+    corlib.insert("has_key".to_string(), Value::BuiltinFunction("has_key".to_string()));
+    corlib.insert("delete".to_string(), Value::BuiltinFunction("delete".to_string()));
+    corlib.insert("keys".to_string(), Value::BuiltinFunction("keys".to_string()));
+    corlib.insert("values".to_string(), Value::BuiltinFunction("values".to_string()));
 
     // ========== Constants ==========
     corlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
@@ -270,6 +277,8 @@ pub fn get_system_module() -> HashMap<String, Value> {
     
     module.insert("env".to_string(), Value::BuiltinFunction("env".to_string()));
     module.insert("exit".to_string(), Value::BuiltinFunction("exit".to_string()));
+    module.insert("args".to_string(), Value::BuiltinFunction("args".to_string()));
+    module.insert("cwd".to_string(), Value::BuiltinFunction("cwd".to_string()));
     module.insert("now".to_string(), Value::BuiltinFunction("now".to_string()));
     module.insert("timestamp".to_string(), Value::BuiltinFunction("timestamp".to_string()));
     module.insert("sleep".to_string(), Value::BuiltinFunction("sleep".to_string()));
@@ -293,6 +302,86 @@ pub fn get_base_module() -> HashMap<String, Value> {
     module
 }
 
+/// Get GUI module (import "gui")
+/// Native desktop UI primitives backed by egui/eframe.
+pub fn get_gui_module() -> HashMap<String, Value> {
+    let mut module = HashMap::new();
+
+    module.insert("window".to_string(), Value::BuiltinFunction("gui_window".to_string()));
+    module.insert("label".to_string(), Value::BuiltinFunction("gui_label".to_string()));
+    module.insert("separator".to_string(), Value::BuiltinFunction("gui_separator".to_string()));
+    module.insert("button".to_string(), Value::BuiltinFunction("gui_button".to_string()));
+    module.insert("input".to_string(), Value::BuiltinFunction("gui_input".to_string()));
+    module.insert("run".to_string(), Value::BuiltinFunction("gui_run".to_string()));
+
+    module
+}
+
+/// Pre-bind Rust builtins for `stdlib/<name>.ject` modules that would otherwise use
+/// `export fn foo() return foo() end`, which recursively calls itself and overflows the stack.
+/// Injected before export functions are registered so remaining Ject exports (e.g. `from_array`)
+/// resolve to these builtins. The same map is merged into the final module exports.
+pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> {
+    match module_stem {
+        "array" => {
+            let m = get_array_module();
+            ["to_uarray", "to_array"]
+                .into_iter()
+                .filter_map(|k| m.get(k).map(|v| (k.to_string(), v.clone())))
+                .collect()
+        }
+        "datetime" => {
+            let m = get_system_module();
+            ["now", "timestamp", "sleep"]
+                .into_iter()
+                .filter_map(|k| m.get(k).map(|v| (k.to_string(), v.clone())))
+                .collect()
+        }
+        "collections" => [
+            "collection",
+            "add_to",
+            "remove_from",
+            "has",
+            "union",
+            "intersect",
+            "difference",
+            "size",
+            "is_subset",
+            "is_superset",
+            "clear_collection",
+            "to_array",
+        ]
+        .into_iter()
+        .map(|k| (k.to_string(), Value::BuiltinFunction(k.to_string())))
+        .collect(),
+        "io" => {
+            let mut h = get_io_module();
+            for k in [
+                "file_exists",
+                "is_file",
+                "is_dir",
+                "append_file",
+                "read_lines",
+            ] {
+                h.insert(k.to_string(), Value::BuiltinFunction(k.to_string()));
+            }
+            for (k, v) in get_json_module() {
+                h.entry(k).or_insert(v);
+            }
+            h
+        }
+        "json" => get_json_module(),
+        "system" => {
+            let mut h = get_system_module();
+            for k in ["input", "exec", "file_exists", "is_file", "is_dir"] {
+                h.insert(k.to_string(), Value::BuiltinFunction(k.to_string()));
+            }
+            h
+        }
+        _ => HashMap::new(),
+    }
+}
+
 /// Get a module by name (for import system)
 /// Returns None for modules that exist as .ject files (they will be loaded from disk)
 /// Only returns Some() for Rust-only modules that don't have .ject equivalents
@@ -306,6 +395,7 @@ pub fn get_module(name: &str) -> Option<HashMap<String, Value>> {
 
         // Rust-only modules (no .ject equivalent)
         "base" => Some(get_base_module()),
+        "gui" => Some(get_gui_module()),
         "numpy" => Some(crate::numpy::create_numpy_module()),
 
         // All other modules will be loaded from .ject files
@@ -332,6 +422,9 @@ pub fn create_stdlib() -> HashMap<String, Value> {
 
 pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
     std::env::set_var("RUST_BACKTRACE", "full");
+    if name.starts_with("gui_") {
+        return crate::gui::call_gui_builtin(name, args);
+    }
 match name {
         // Enhanced array functions
         "sort" => {
@@ -1923,6 +2016,55 @@ match name {
             println!("{}", args[0]);
             Ok(Value::Nil)
         },
+        "append_file" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "append_file() takes exactly 2 arguments (path, content)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::String(path), Value::String(content)) => {
+                    use std::io::Write;
+                    let mut file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .map_err(|e| RuntimeError {
+                            message: format!("append_file() failed to open file: {}", e),
+                        })?;
+                    file.write_all(content.as_bytes())
+                        .map_err(|e| RuntimeError {
+                            message: format!("append_file() failed to write: {}", e),
+                        })?;
+                    Ok(Value::Nil)
+                }
+                _ => Err(RuntimeError {
+                    message: "append_file() requires two strings (path, content)".to_string(),
+                }),
+            }
+        },
+        "read_lines" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "read_lines() takes exactly 1 argument (path)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::String(path) => {
+                    let content = std::fs::read_to_string(path).map_err(|e| RuntimeError {
+                        message: format!("read_lines() failed to read file: {}", e),
+                    })?;
+                    let lines = content
+                        .lines()
+                        .map(|line| Value::String(line.to_string()))
+                        .collect();
+                    Ok(Value::Array(lines))
+                }
+                _ => Err(RuntimeError {
+                    message: "read_lines() requires a string path".to_string(),
+                }),
+            }
+        },
         
         // File system functions
         "file_exists" => {
@@ -1975,6 +2117,75 @@ match name {
                 (Value::String(s), Value::String(sub)) => Ok(Value::Bool(s.contains(sub))),
                 _ => Err(RuntimeError {
                     message: "contains_str() requires two strings".to_string(),
+                }),
+            }
+        },
+        "has_key" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "has_key() takes exactly 2 arguments (dictionary, key)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Dictionary(dict), Value::String(key)) => Ok(Value::Bool(dict.contains_key(key))),
+                _ => Err(RuntimeError {
+                    message: "has_key() requires (dictionary, string)".to_string(),
+                }),
+            }
+        },
+        "delete" => {
+            if args.len() != 2 {
+                return Err(RuntimeError {
+                    message: "delete() takes exactly 2 arguments (dictionary, key)".to_string(),
+                });
+            }
+            match (&args[0], &args[1]) {
+                (Value::Dictionary(dict), Value::String(key)) => {
+                    let mut new_dict = dict.clone();
+                    new_dict.remove(key);
+                    Ok(Value::Dictionary(new_dict))
+                }
+                _ => Err(RuntimeError {
+                    message: "delete() requires (dictionary, string)".to_string(),
+                }),
+            }
+        },
+        "keys" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "keys() takes exactly 1 argument (dictionary)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Dictionary(dict) => {
+                    let mut keys: Vec<String> = dict.keys().cloned().collect();
+                    keys.sort();
+                    Ok(Value::Array(keys.into_iter().map(Value::String).collect()))
+                }
+                _ => Err(RuntimeError {
+                    message: "keys() requires a dictionary".to_string(),
+                }),
+            }
+        },
+        "values" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "values() takes exactly 1 argument (dictionary)".to_string(),
+                });
+            }
+            match &args[0] {
+                Value::Dictionary(dict) => {
+                    // Deterministic order by sorting keys first.
+                    let mut keys: Vec<String> = dict.keys().cloned().collect();
+                    keys.sort();
+                    let vals = keys
+                        .into_iter()
+                        .filter_map(|k| dict.get(&k).cloned())
+                        .collect();
+                    Ok(Value::Array(vals))
+                }
+                _ => Err(RuntimeError {
+                    message: "values() requires a dictionary".to_string(),
                 }),
             }
         },
@@ -2372,6 +2583,16 @@ match name {
                 0
             };
             std::process::exit(code);
+        },
+        "args" => {
+            let argv = std::env::args().skip(1).map(Value::String).collect();
+            Ok(Value::Array(argv))
+        },
+        "cwd" => {
+            let cwd = std::env::current_dir().map_err(|e| RuntimeError {
+                message: format!("cwd() failed: {}", e),
+            })?;
+            Ok(Value::String(cwd.to_string_lossy().to_string()))
         },
 
         _ => Err(RuntimeError {

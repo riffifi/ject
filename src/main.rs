@@ -5,6 +5,7 @@ mod value;
 mod interpreter;
 mod stdlib;
 mod numpy;
+mod gui;
 mod error;
 mod linter;
 mod diagnostic;

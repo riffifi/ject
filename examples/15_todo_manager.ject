@@ -35,7 +35,9 @@ fn complete_todo(id)
     let i = 0
     while i < len(todos) do
         if todos[i].id == id then
-            todos[i].completed = true
+            let item = todos[i]
+            item.completed = true
+            todos[i] = item
             found = true
             break
         end

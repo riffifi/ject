@@ -1,7 +1,7 @@
 let first = to_int(input("First: "))
 let second = to_int(input("Second: "))
 
-if second != 0
+if second != 0 then
     print first / second, first % second
 else
     print "no 0, please"

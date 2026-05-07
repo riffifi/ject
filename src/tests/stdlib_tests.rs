@@ -734,4 +734,55 @@ assert(result == 35, "sum of squares of odd numbers should be 35")
 "#);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_dictionary_helpers() {
+        let result = run(r#"
+let d = {a: 1, b: 2}
+assert(has_key(d, "a") == true, "has_key should find key")
+let d2 = delete(d, "a")
+assert(has_key(d2, "a") == false, "delete should remove key")
+assert(len(keys(d2)) == 1, "keys should return one key")
+assert(len(values(d2)) == 1, "values should return one value")
+"#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_read_lines() {
+        let result = run(r#"
+let path = "/tmp/ject_read_lines_test.txt"
+write_file(path, "a\nb\nc")
+let lines = read_lines(path)
+assert(len(lines) == 3, "read_lines should return 3 lines")
+"#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_append_file() {
+        let result = run(r#"
+let path = "/tmp/ject_append_file_test.txt"
+write_file(path, "hello")
+append_file(path, " world")
+let text = read_file(path)
+assert(text == "hello world", "append_file should append content")
+"#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_inject_system_module_includes_exec() {
+        let m = crate::stdlib::inject_module_file_builtins("system");
+        assert!(m.contains_key("exec"), "missing exec: {:?}", m.keys().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_import_system_alias_exposes_exec() {
+        let result = run(r#"
+import "system" as s
+assert(type_of(s.exec) == "builtin", "module should export exec builtin")
+"#);
+        assert!(result.is_ok(), "{:?}", result);
+    }
 }

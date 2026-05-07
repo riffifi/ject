@@ -1024,4 +1024,15 @@ mod tests {
             panic!("Expected Array expression");
         }
     }
+
+    #[test]
+    fn test_multiline_array_literal() {
+        let stmts = parse("[\n    1,\n    2,\n    3,\n]").unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Expression(Expr::Array(elements)) = &stmts[0] {
+            assert_eq!(elements.len(), 3);
+        } else {
+            panic!("Expected multiline array literal");
+        }
+    }
 }

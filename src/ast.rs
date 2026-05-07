@@ -103,6 +103,12 @@ pub enum Expr {
         elseif_branches: Vec<ConditionalElseIfBranch>,
         else_expr: Option<Box<Expr>>,
     },
+    // Expression form of `print` used in contexts that expect an expression (e.g. match arms).
+    Print {
+        values: Vec<Expr>,
+        sep: Option<Box<Expr>>,
+        end: Option<Box<Expr>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -389,6 +395,21 @@ impl fmt::Display for Expr {
                     write!(f, " else {}", else_expr)?;
                 }
                 write!(f, " end")
+            }
+            Expr::Print { values, sep, end } => {
+                // Mirror statement formatting for readability.
+                write!(f, "print ")?;
+                for (i, val) in values.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", val)?;
+                }
+                if let Some(sep) = sep {
+                    write!(f, " sep:{}", sep)?;
+                }
+                if let Some(end) = end {
+                    write!(f, " end:{}", end)?;
+                }
+                Ok(())
             }
         }
     }

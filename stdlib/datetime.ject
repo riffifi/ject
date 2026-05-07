@@ -1,19 +1,5 @@
 # DateTime Standard Library Module
-# Date and time operations
-
-# Get current timestamp (use builtin)
-export fn now()
-    return now()
-end
-
-export fn timestamp()
-    return timestamp()
-end
-
-# Sleep for seconds (use builtin)
-export fn sleep(seconds)
-    return sleep(seconds)
-end
+# now(), timestamp(), and sleep() are Rust builtins (injected by the runtime).
 
 # Format timestamp as string (simple)
 export fn format_time(timestamp, format_str)
@@ -41,4 +27,3 @@ export fn create_timestamp(year, month, day, hour, minute, second)
     # Would need proper date library
     return timestamp()
 end
-

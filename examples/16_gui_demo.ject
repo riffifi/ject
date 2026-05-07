@@ -1,0 +1,24 @@
+print "Launching Ject GUI demo..."
+
+import {window, label, separator, button, input, run} from "gui"
+
+let app = window("Ject GUI Demo", 560, 380)
+
+label(app, "Welcome to Ject GUI")
+label(app, "Fill the fields and click buttons, then close the window.")
+separator(app)
+
+input(app, "name", "Name:", "")
+input(app, "email", "Email:", "")
+separator(app)
+
+button(app, "save", "Save")
+button(app, "cancel", "Cancel")
+
+let result = run(app)
+
+print "GUI closed."
+print "Buttons:"
+print result["buttons"]
+print "Inputs:"
+print result["inputs"]

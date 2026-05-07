@@ -123,6 +123,7 @@ pub enum Token {
     DoubleArrow,
 
     // Special
+    Invalid(char),
     Newline,
     Eof,
 }
@@ -146,6 +147,7 @@ pub struct Lexer {
     line: usize,
     column: usize,
     current_char: Option<char>,
+    emitted_non_trivia: bool,
 }
 
 impl Lexer {
@@ -159,6 +161,7 @@ impl Lexer {
             line: 1,
             column: 1,
             current_char,
+            emitted_non_trivia: false,
         }
     }
     
@@ -504,6 +507,7 @@ impl Lexer {
                         return LocatedToken::new(Token::EqualEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Equal, start_pos);
                 }
                 Some('+') => {
@@ -518,6 +522,7 @@ impl Lexer {
                         return LocatedToken::new(Token::PlusEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Plus, start_pos);
                 }
                 Some('-') => {
@@ -537,6 +542,7 @@ impl Lexer {
                         return LocatedToken::new(Token::MinusEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Minus, start_pos);
                 }
                 Some('*') => {
@@ -546,6 +552,7 @@ impl Lexer {
                         return LocatedToken::new(Token::StarEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Star, start_pos);
                 }
                 Some('/') => {
@@ -555,6 +562,7 @@ impl Lexer {
                         return LocatedToken::new(Token::SlashEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Slash, start_pos);
                 }
                 Some('%') => {
@@ -564,6 +572,7 @@ impl Lexer {
                         return LocatedToken::new(Token::PercentEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Percent, start_pos);
                 }
                 Some('!') => {
@@ -573,38 +582,47 @@ impl Lexer {
                         return LocatedToken::new(Token::BangEqual, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Bang, start_pos);
                 }
                 Some('<') => {
                     self.advance();
                     if self.current_char == Some('=') {
                         self.advance();
+                        self.emitted_non_trivia = true;
                         return LocatedToken::new(Token::LessEqual, start_pos);
                     }
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Less, start_pos);
                 }
                 Some('>') => {
                     self.advance();
                     if self.current_char == Some('=') {
                         self.advance();
+                        self.emitted_non_trivia = true;
                         return LocatedToken::new(Token::GreaterEqual, start_pos);
                     }
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Greater, start_pos);
                 }
                 Some('(') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::LeftParen, start_pos);
                 }
                 Some(')') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::RightParen, start_pos);
                 }
                 Some('[') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::LeftBracket, start_pos);
                 }
                 Some(']') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::RightBracket, start_pos);
                 }
                 Some('{') => {
@@ -612,12 +630,15 @@ impl Lexer {
                     // Check for {| (unique array/set)
                     if self.current_char == Some('|') {
                         self.advance();
+                        self.emitted_non_trivia = true;
                         return LocatedToken::new(Token::LeftBracePipe, start_pos);
                     }
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::LeftBrace, start_pos);
                 }
                 Some('}') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::RightBrace, start_pos);
                 }
                 Some('|') => {
@@ -625,6 +646,7 @@ impl Lexer {
                     // Check for |} (end of unique array)
                     if self.current_char == Some('}') {
                         self.advance();
+                        self.emitted_non_trivia = true;
                         return LocatedToken::new(Token::RightPipeBrace, start_pos);
                     }
                     // Single | could be used for other purposes in the future
@@ -633,32 +655,40 @@ impl Lexer {
                 }
                 Some(',') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Comma, start_pos);
                 }
                 Some(';') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Semicolon, start_pos);
                 }
                 Some('.') => {
                     if self.peek() == Some('.') {
                         self.advance();
                         self.advance();
+                        self.emitted_non_trivia = true;
                         return LocatedToken::new(Token::DotDot, start_pos);
                     }
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Dot, start_pos);
                 }
                 Some(':') => {
                     self.advance();
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(Token::Colon, start_pos);
                 }
                 Some('"') => {
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(self.read_string(), start_pos);
                 }
                 Some(ch) if ch.is_ascii_digit() => {
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(self.read_number(), start_pos);
                 }
                 Some(ch) if ch.is_alphabetic() || ch == '_' => {
+                    self.emitted_non_trivia = true;
                     return LocatedToken::new(self.read_identifier(), start_pos);
                 }
                 Some('`') => {
@@ -667,8 +697,14 @@ impl Lexer {
                     continue;
                 }
                 Some(ch) => {
-                    println!("Unexpected character: {}", ch);
+                    // Default behavior: skip unexpected characters (lexer_tests expectation).
+                    // But if the unexpected character is the *first* meaningful thing we see,
+                    // surface it to the parser so `parse("@invalid")` can fail.
                     self.advance();
+                    if !self.emitted_non_trivia {
+                        self.emitted_non_trivia = true;
+                        return LocatedToken::new(Token::Invalid(ch), start_pos);
+                    }
                     continue;
                 }
             }

@@ -1,19 +1,8 @@
 # JSON Standard Library Module
-# JSON parsing and encoding
-
-# JSON operations (use builtins - these need Rust)
-export fn parse_json(json_str)
-    return parse_json(json_str)
-end
-
-export fn to_json(value)
-    return to_json(value)
-end
+# parse_json / to_json are Rust builtins (injected).
 
 # Pretty print JSON (simple indentation)
 export fn to_json_pretty(value, indent)
-    # For now, use regular to_json
-    # Full pretty printing would need more complex implementation
     return to_json(value)
 end
 

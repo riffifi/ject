@@ -92,7 +92,7 @@ export fn deep_equal(a, b)
         end
         let i = 0
         while i < len(a) do
-            if not deep_equal(a[i], b[i]) then
+            if !deep_equal(a[i], b[i]) then
                 return false
             end
             i = i + 1
