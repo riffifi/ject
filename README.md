@@ -56,6 +56,19 @@ Run it:
 ./target/release/ject hello.ject
 ```
 
+### VS Code Extension
+
+This repo includes a ready-to-install VS Code extension in [`vscode-ject`](vscode-ject).
+
+```bash
+cd vscode-ject
+npm install
+npm run package
+code --install-extension ject-vscode-0.1.0.vsix
+```
+
+The extension supports `.ject` and `.jt` files with highlighting, snippets, completions, hovers, document symbols, formatting, Ject run/check commands, REPL launch, and a Ject file icon.
+
 ---
 
 ## Why Ject?
@@ -219,7 +232,7 @@ print tags          # {|"rust", "python", "ject"|}
 - [x] Struct system
 - [x] **Advanced slicing** (named, range, Python-style)
 - [ ] Package manager
-- [ ] VSCode extension
+- [x] VS Code extension
 - [ ] Advanced error handling
 - [ ] Performance optimizations
 

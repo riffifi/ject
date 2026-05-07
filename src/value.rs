@@ -226,8 +226,8 @@ impl Value {
     
     pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Integer(_) => "int",
-            Value::Float(_) => "float",
+            Value::Integer(_) => "number",
+            Value::Float(_) => "number",
             Value::String(_) => "string",
             Value::Bool(_) => "boolean",
             Value::Nil => "nil",

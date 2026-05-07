@@ -1,0 +1,176 @@
+{
+  "name": "ject-vscode",
+  "displayName": "Ject",
+  "description": "Helpful VS Code language support for the Ject scripting language.",
+  "version": "0.1.0",
+  "publisher": "ject-lang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Formatters",
+    "Other"
+  ],
+  "keywords": [
+    "ject",
+    "language",
+    "scripting"
+  ],
+  "activationEvents": [
+    "onLanguage:ject",
+    "onCommand:ject.runFile",
+    "onCommand:ject.runSelection",
+    "onCommand:ject.startRepl",
+    "onCommand:ject.buildInterpreter",
+    "onCommand:ject.checkFile",
+    "onCommand:ject.openExamples"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "ject",
+        "aliases": [
+          "Ject",
+          "ject"
+        ],
+        "extensions": [
+          ".ject",
+          ".jt"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./media/ject-file.svg",
+          "dark": "./media/ject-file.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ject",
+        "scopeName": "source.ject",
+        "path": "./syntaxes/ject.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "ject",
+        "path": "./snippets/ject.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "ject-icons",
+        "label": "Ject Icons",
+        "path": "./themes/ject-icon-theme.json"
+      }
+    ],
+    "configuration": {
+      "title": "Ject",
+      "properties": {
+        "ject.executablePath": {
+          "type": "string",
+          "default": "ject",
+          "description": "Path to the Ject executable used by run/check/REPL commands."
+        },
+        "ject.workspaceExecutable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer ./target/debug/ject or ./target/release/ject from the current workspace when available."
+        },
+        "ject.format.indentSize": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Number of spaces inserted by the built-in Ject formatter."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "ject.runFile",
+        "title": "Ject: Run Current File",
+        "category": "Ject",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ject.runSelection",
+        "title": "Ject: Run Selection",
+        "category": "Ject",
+        "icon": "$(run)"
+      },
+      {
+        "command": "ject.startRepl",
+        "title": "Ject: Start REPL",
+        "category": "Ject",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "ject.buildInterpreter",
+        "title": "Ject: Build Interpreter",
+        "category": "Ject",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "ject.checkFile",
+        "title": "Ject: Check Current File",
+        "category": "Ject",
+        "icon": "$(check)"
+      },
+      {
+        "command": "ject.openExamples",
+        "title": "Ject: Open Examples Folder",
+        "category": "Ject",
+        "icon": "$(folder-opened)"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "ject.runFile",
+          "when": "resourceLangId == ject",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "ject.runSelection",
+          "when": "editorLangId == ject && editorHasSelection",
+          "group": "navigation"
+        },
+        {
+          "command": "ject.checkFile",
+          "when": "editorLangId == ject",
+          "group": "1_modification"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "ject.runFile",
+          "when": "resourceExtname == .ject || resourceExtname == .jt",
+          "group": "navigation"
+        }
+      ]
+    },
+    "breakpoints": [
+      {
+        "language": "ject"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^2.15.0",
+    "typescript": "^5.4.5"
+  }
+}

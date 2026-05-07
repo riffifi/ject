@@ -507,7 +507,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             Expr::Call { callee, args } => {
                 // Check for higher-order functions that need special handling
                 if let Expr::Identifier(func_name) = &**callee {
-                    if func_name == "map" || func_name == "filter" || func_name == "reduce" {
+                    if func_name == "map" || func_name == "filter" || func_name == "reduce" || func_name == "any" || func_name == "all" {
                         return self.call_higher_order_function(func_name, args);
                     }
                 }
@@ -1835,6 +1835,92 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     }
                 }
                 Err(RuntimeError { message: "reduce() requires array and lambda".to_string() })
+            }
+            "any" => {
+                if args.len() != 2 {
+                    return Err(RuntimeError { message: "any() takes 2 arguments (array, function)".to_string() });
+                }
+                let array_val = match &args[0] {
+                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
+                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
+                };
+                let func_val = match &args[1] {
+                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
+                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
+                };
+
+                if let Value::Array(arr) = array_val {
+                    if let Value::Lambda { params, body, closure_env } = func_val {
+                        for item in &arr {
+                            let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
+                            self.environment.push_scope();
+                            if !params.is_empty() {
+                                self.environment.define(params[0].clone(), item.clone());
+                            }
+                            let result = match &body {
+                                crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?.is_truthy(),
+                                crate::ast::LambdaBody::Block(ref stmts) => {
+                                    match self.execute_block(&stmts)? {
+                                        ControlFlow::Return(v) => v.is_truthy(),
+                                        ControlFlow::None => false,
+                                        _ => false,
+                                    }
+                                }
+                            };
+                            self.environment.pop_scope();
+                            self.environment = saved_env;
+                            
+                            if result {
+                                return Ok(Value::Bool(true));
+                            }
+                        }
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                Err(RuntimeError { message: "any() requires array and lambda".to_string() })
+            }
+            "all" => {
+                if args.len() != 2 {
+                    return Err(RuntimeError { message: "all() takes 2 arguments (array, function)".to_string() });
+                }
+                let array_val = match &args[0] {
+                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
+                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
+                };
+                let func_val = match &args[1] {
+                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
+                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
+                };
+
+                if let Value::Array(arr) = array_val {
+                    if let Value::Lambda { params, body, closure_env } = func_val {
+                        for item in &arr {
+                            let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
+                            self.environment.push_scope();
+                            if !params.is_empty() {
+                                self.environment.define(params[0].clone(), item.clone());
+                            }
+                            let result = match &body {
+                                crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?.is_truthy(),
+                                crate::ast::LambdaBody::Block(ref stmts) => {
+                                    match self.execute_block(&stmts)? {
+                                        ControlFlow::Return(v) => v.is_truthy(),
+                                        ControlFlow::None => false,
+                                        _ => false,
+                                    }
+                                }
+                            };
+                            self.environment.pop_scope();
+                            self.environment = saved_env;
+                            
+                            if !result {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        return Ok(Value::Bool(true));
+                    }
+                }
+                Err(RuntimeError { message: "all() requires array and lambda".to_string() })
             }
             _ => Err(RuntimeError { message: format!("Unknown function: {}", func_name) })
         }

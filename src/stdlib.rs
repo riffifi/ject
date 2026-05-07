@@ -29,6 +29,7 @@ pub fn create_corlib() -> HashMap<String, Value> {
     corlib.insert("index_of".to_string(), Value::BuiltinFunction("index_of".to_string()));
     corlib.insert("first".to_string(), Value::BuiltinFunction("first".to_string()));
     corlib.insert("last".to_string(), Value::BuiltinFunction("last".to_string()));
+    corlib.insert("slice".to_string(), Value::BuiltinFunction("slice".to_string()));
     corlib.insert("sort".to_string(), Value::BuiltinFunction("sort".to_string()));
     corlib.insert("reverse".to_string(), Value::BuiltinFunction("reverse".to_string()));
     corlib.insert("unique".to_string(), Value::BuiltinFunction("unique".to_string()));
@@ -298,7 +299,10 @@ pub fn get_base_module() -> HashMap<String, Value> {
 pub fn get_module(name: &str) -> Option<HashMap<String, Value>> {
     match name {
         // These modules exist as .ject files in stdlib/ - load from disk
-        // "math", "string", "array", "io", "json", "system" - all load from stdlib/*.ject
+        // "math", "array", "io", "json", "system" - all load from stdlib/*.ject
+
+        // Rust implementations for these modules (faster than loading .ject)
+        "string" => Some(get_string_module()),
 
         // Rust-only modules (no .ject equivalent)
         "base" => Some(get_base_module()),
@@ -932,11 +936,14 @@ match name {
 
             match (&args[0], &args[1]) {
                 (Value::Array(strings), Value::String(delim)) => {
-                    let joined = strings.iter().map(|v| v.to_string()).collect::<Vec<String>>().join(delim);
+                    let joined = strings.iter().map(|v| match v {
+                        Value::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    }).collect::<Vec<String>>().join(delim);
                     Ok(Value::String(joined))
                 }
                 _ => Err(RuntimeError {
-                    message: "join() requires an array of strings and a string delimiter".to_string(),
+                    message: "join() requires an array and a string delimiter".to_string(),
                 }),
             }
         },
@@ -1896,8 +1903,8 @@ match name {
                     let mut hasher = DefaultHasher::new();
                     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
                     let hash = hasher.finish();
-                    let range = max - min;
-                    let result = min + ((hash as i64) % range);
+                    let range = (max - min + 1) as u64;
+                    let result = min + ((hash % range) as i64);
                     Ok(Value::Integer(result))
                 }
                 _ => Err(RuntimeError {
@@ -1958,46 +1965,6 @@ match name {
             }
         },
         
-        "any" => {
-            if args.len() != 1 {
-                return Err(RuntimeError {
-                    message: "any() takes exactly 1 argument (array)".to_string(),
-                });
-            }
-            match &args[0] {
-                Value::Array(arr) => {
-                    for value in arr {
-                        if value.is_truthy() {
-                            return Ok(Value::Bool(true));
-                        }
-                    }
-                    Ok(Value::Bool(false))
-                }
-                _ => Err(RuntimeError {
-                    message: "any() requires an array".to_string(),
-                }),
-            }
-        },
-        "all" => {
-            if args.len() != 1 {
-                return Err(RuntimeError {
-                    message: "all() takes exactly 1 argument (array)".to_string(),
-                });
-            }
-            match &args[0] {
-                Value::Array(arr) => {
-                    for value in arr {
-                        if !value.is_truthy() {
-                            return Ok(Value::Bool(false));
-                        }
-                    }
-                    Ok(Value::Bool(true))
-                }
-                _ => Err(RuntimeError {
-                    message: "all() requires an array".to_string(),
-                }),
-            }
-        },
         "contains_str" => {
             if args.len() != 2 {
                 return Err(RuntimeError {

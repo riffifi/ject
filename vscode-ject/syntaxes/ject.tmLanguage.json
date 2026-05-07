@@ -1,0 +1,200 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ject",
+  "scopeName": "source.ject",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.ject",
+          "begin": "#\\*",
+          "end": "\\*#"
+        },
+        {
+          "name": "comment.line.number-sign.ject",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ject",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.ject",
+              "match": "\\\\(?:[ntr\"\\\\$]|u[0-9A-Fa-f]{4})"
+            },
+            {
+              "name": "meta.interpolation.ject",
+              "begin": "\\$\\{",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.begin.ject"
+                }
+              },
+              "end": "\\}",
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.end.ject"
+                }
+              },
+              "patterns": [
+                {
+                  "include": "$self"
+                }
+              ]
+            },
+            {
+              "name": "variable.other.interpolation.ject",
+              "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ject",
+          "match": "\\b(?:if|elseif|else|while|for|in|return|end|do|then|match|when|try|catch|throw|break|continue)\\b"
+        },
+        {
+          "name": "keyword.declaration.ject",
+          "match": "\\b(?:let|fn|lambda|import|export|from|as|struct|new)\\b"
+        },
+        {
+          "name": "support.function.builtin.ject",
+          "match": "\\b(?:print|type_of|to_int|to_float|to_string|to_bool|len|range|push|pop|sum|contains|index_of|first|last|sort|reverse|unique|map|filter|reduce|abs|sqrt|pow|sin|cos|tan|floor|ceil|round|min|max|random|random_int|upper|lower|trim|split|join|replace|char_at|substring|repeat|input|read_file|write_file|assert|log|log10|exp|log2|ln|degrees|radians|deg_to_rad|rad_to_deg|clamp|sign|gcd|lcm|asin|acos|atan|atan2|sinh|cosh|tanh|round_to|capitalize|title_case|trim_left|trim_right|pad_left|pad_right|pad_center|starts_with|ends_with|contains_str|count|find|replace_all|replace_first|remove|reverse_str|left|right|truncate|is_empty|is_numeric|is_alpha|is_alphanumeric|word_count|sentence_count|paragraph_count|lines|extract_numbers|to_char_codes|from_char_codes|format|escape|unescape|wrap_text|any|all|average|median|slice|take|drop|initial|rest|concat|zip|union|intersection|difference|flatten|chunk|group_by|partition|shuffle|rotate_left|rotate_right|insert_at|remove_at|without|compact|compact_unique|enumerate|fill|range_arr|sample|sort_by|to_uarray|to_array|parse_json|to_json|env|exit|now|timestamp|sleep|to_binary|to_octal|to_hex|from_binary|from_octal|from_hex|base_repr|from_base)\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.ject",
+          "match": "\\b(?:true|false|nil|PI|E)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.ject",
+          "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)\\b|\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.ject",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "meta.function.ject",
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.function.ject"
+            },
+            "2": {
+              "name": "entity.name.function.ject"
+            }
+          }
+        },
+        {
+          "name": "entity.name.function.call.ject",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "meta.struct.ject",
+          "match": "\\b(struct|new)\\s+([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.struct.ject"
+            },
+            "2": {
+              "name": "entity.name.type.struct.ject"
+            }
+          }
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.ject",
+          "match": "\\+=|-=|\\*=|/=|%=|="
+        },
+        {
+          "name": "keyword.operator.comparison.ject",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.arithmetic.ject",
+          "match": "\\+\\+|--|\\+|-|\\*|/|%|\\.\\.|->|=>"
+        },
+        {
+          "name": "keyword.operator.logical.ject",
+          "match": "\\b(?:and|or)\\b|!"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.unique-array.begin.ject",
+          "match": "\\{\\|"
+        },
+        {
+          "name": "punctuation.definition.unique-array.end.ject",
+          "match": "\\|\\}"
+        },
+        {
+          "name": "punctuation.separator.ject",
+          "match": "[,;:]"
+        },
+        {
+          "name": "punctuation.accessor.ject",
+          "match": "\\."
+        }
+      ]
+    }
+  }
+}

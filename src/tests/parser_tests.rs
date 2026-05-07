@@ -121,8 +121,11 @@ mod tests {
     fn test_print_statement() {
         let stmts = parse("print \"Hello\"").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Print(expr) = &stmts[0] {
-            if let Expr::String(s) = expr {
+        if let Stmt::Print { values, sep, end } = &stmts[0] {
+            assert!(sep.is_none());
+            assert!(end.is_none());
+            assert_eq!(values.len(), 1);
+            if let Expr::String(s) = &values[0] {
                 assert_eq!(s, "Hello");
             } else {
                 panic!("Expected String");
@@ -389,7 +392,7 @@ mod tests {
         if let Stmt::If { condition, then_branch, elseif_branches, else_branch } = &stmts[0] {
             assert!(matches!(condition, Expr::Binary { operator: BinaryOp::Greater, .. }));
             assert_eq!(then_branch.len(), 1);
-            assert!(matches!(then_branch[0], Stmt::Print(_)));
+            assert!(matches!(then_branch[0], Stmt::Print { .. }));
             assert!(elseif_branches.is_empty());
             assert!(else_branch.is_none());
         } else {
@@ -406,7 +409,7 @@ mod tests {
             assert!(else_branch.is_some());
             let else_body = else_branch.as_ref().unwrap();
             assert_eq!(else_body.len(), 1);
-            assert!(matches!(else_body[0], Stmt::Print(_)));
+            assert!(matches!(else_body[0], Stmt::Print { .. }));
         } else {
             panic!("Expected If statement");
         }
@@ -445,7 +448,7 @@ mod tests {
             assert_eq!(var, "i");
             assert!(matches!(iterable, Expr::Range { .. }));
             assert_eq!(body.len(), 1);
-            assert!(matches!(body[0], Stmt::Print(_)));
+            assert!(matches!(body[0], Stmt::Print { .. }));
         } else {
             panic!("Expected For statement");
         }
@@ -578,7 +581,7 @@ mod tests {
             assert_eq!(params.len(), 1);
             if let crate::ast::LambdaBody::Block(stmts) = body {
                 assert_eq!(stmts.len(), 1);
-                assert!(matches!(stmts[0], Stmt::Print(_)));
+                assert!(matches!(stmts[0], Stmt::Print { .. }));
             } else {
                 panic!("Expected Lambda block body");
             }

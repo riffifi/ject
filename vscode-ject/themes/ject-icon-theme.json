@@ -1,0 +1,14 @@
+{
+  "iconDefinitions": {
+    "_ject_file": {
+      "iconPath": "../media/ject-file.svg"
+    }
+  },
+  "fileExtensions": {
+    "ject": "_ject_file",
+    "jt": "_ject_file"
+  },
+  "languageIds": {
+    "ject": "_ject_file"
+  }
+}

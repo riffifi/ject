@@ -111,31 +111,31 @@ mod tests {
 
     #[test]
     fn test_sum() {
-        let result = run("assert(sum([1, 2, 3, 4, 5]) == 15, \"sum should be 15\"");
+        let result = run("assert(sum([1, 2, 3, 4, 5]) == 15, \"sum should be 15\")");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_sum_empty_array() {
-        let result = run("assert(sum([]) == 0, \"sum of empty array should be 0\"");
+        let result = run("assert(sum([]) == 0, \"sum of empty array should be 0\")");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_len_array() {
-        let result = run("assert(len([1, 2, 3, 4, 5]) == 5, \"len should be 5\"");
+        let result = run("assert(len([1, 2, 3, 4, 5]) == 5, \"len should be 5\")");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_len_string() {
-        let result = run("assert(len(\"hello\") == 5, \"len should be 5\"");
+        let result = run("assert(len(\"hello\") == 5, \"len should be 5\")");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_len_empty() {
-        let result = run("assert(len(\"\") == 0, \"len should be 0\"");
+        let result = run("assert(len(\"\") == 0, \"len should be 0\")");
         assert!(result.is_ok());
     }
 
@@ -282,7 +282,7 @@ assert(first(arr) == 10, "first should be 10")
     fn test_last() {
         let result = run(r#"
 let arr = [10, 20, 30]
-assert(last(arr) == 30), "last should be 30")
+assert(last(arr) == 30, "last should be 30")
 "#);
         assert!(result.is_ok());
     }
@@ -290,6 +290,7 @@ assert(last(arr) == 30), "last should be 30")
     #[test]
     fn test_concat() {
         let result = run(r#"
+import "array"
 let arr1 = [1, 2, 3]
 let arr2 = [4, 5, 6]
 let result = concat(arr1, arr2)
@@ -302,6 +303,7 @@ assert(result[3] == 4, "fourth element should be 4")
     #[test]
     fn test_flatten() {
         let result = run(r#"
+import "array"
 let nested = [[1, 2], [3, 4], [5, 6]]
 let flat = flatten(nested)
 assert(len(flat) == 6, "length should be 6")
@@ -314,6 +316,7 @@ assert(flat[5] == 6, "last should be 6")
     #[test]
     fn test_enumerate() {
         let result = run(r#"
+import "array"
 let arr = ["a", "b", "c"]
 let enumerated = enumerate(arr)
 assert(len(enumerated) == 3, "length should be 3")
@@ -326,6 +329,7 @@ assert(enumerated[0][1] == "a", "first value should be a")
     #[test]
     fn test_any() {
         let result = run(r#"
+import "array"
 let numbers = [1, 2, 3, 4, 5]
 assert(any(numbers, lambda(n) -> n > 3) == true, "some numbers are > 3")
 assert(any(numbers, lambda(n) -> n > 10) == false, "no numbers are > 10")
@@ -336,6 +340,7 @@ assert(any(numbers, lambda(n) -> n > 10) == false, "no numbers are > 10")
     #[test]
     fn test_all() {
         let result = run(r#"
+import "array"
 let numbers = [2, 4, 6, 8]
 assert(all(numbers, lambda(n) -> n % 2 == 0) == true, "all are even")
 assert(all(numbers, lambda(n) -> n > 5) == false, "not all are > 5")
@@ -403,6 +408,7 @@ assert(fixed == "Hello Ject", "should replace Python with Ject")
     #[test]
     fn test_starts_with() {
         let result = run(r#"
+import "string"
 assert(starts_with("Hello World", "Hello") == true, "should start with Hello")
 assert(starts_with("Hello World", "World") == false, "should not start with World")
 "#);
@@ -412,6 +418,7 @@ assert(starts_with("Hello World", "World") == false, "should not start with Worl
     #[test]
     fn test_ends_with() {
         let result = run(r#"
+import "string"
 assert(ends_with("Hello World", "World") == true, "should end with World")
 assert(ends_with("Hello World", "Hello") == false, "should not end with Hello")
 "#);
@@ -429,6 +436,7 @@ assert(repeat("ab", 3) == "ababab", "should repeat 3 times")
     #[test]
     fn test_reverse_str() {
         let result = run(r#"
+import "string"
 assert(reverse_str("hello") == "olleh", "should reverse string")
 "#);
         assert!(result.is_ok());
@@ -437,6 +445,7 @@ assert(reverse_str("hello") == "olleh", "should reverse string")
     #[test]
     fn test_contains_str() {
         let result = run(r#"
+import "string"
 assert(contains_str("Hello World", "World") == true, "should contain World")
 assert(contains_str("Hello World", "Python") == false, "should not contain Python")
 "#);
@@ -446,6 +455,7 @@ assert(contains_str("Hello World", "Python") == false, "should not contain Pytho
     #[test]
     fn test_char_at() {
         let result = run(r#"
+import "string"
 assert(char_at("hello", 0) == "h", "first char should be h")
 assert(char_at("hello", 4) == "o", "last char should be o")
 "#);
@@ -455,6 +465,7 @@ assert(char_at("hello", 4) == "o", "last char should be o")
     #[test]
     fn test_substring() {
         let result = run(r#"
+import "string"
 assert(substring("hello", 1, 4) == "ell", "should extract substring")
 "#);
         assert!(result.is_ok());
@@ -463,6 +474,7 @@ assert(substring("hello", 1, 4) == "ell", "should extract substring")
     #[test]
     fn test_capitalize() {
         let result = run(r#"
+import "string"
 assert(capitalize("hello") == "Hello", "should capitalize first letter")
 "#);
         assert!(result.is_ok());
@@ -471,6 +483,7 @@ assert(capitalize("hello") == "Hello", "should capitalize first letter")
     #[test]
     fn test_is_empty() {
         let result = run(r#"
+import "string"
 assert(is_empty("") == true, "empty string should be empty")
 assert(is_empty("hello") == false, "non-empty string should not be empty")
 "#);
@@ -480,6 +493,7 @@ assert(is_empty("hello") == false, "non-empty string should not be empty")
     #[test]
     fn test_is_numeric() {
         let result = run(r#"
+import "string"
 assert(is_numeric("123") == true, "numeric string should be numeric")
 assert(is_numeric("abc") == false, "alpha string should not be numeric")
 "#);
@@ -489,6 +503,7 @@ assert(is_numeric("abc") == false, "alpha string should not be numeric")
     #[test]
     fn test_is_alpha() {
         let result = run(r#"
+import "string"
 assert(is_alpha("abc") == true, "alpha string should be alpha")
 assert(is_alpha("123") == false, "numeric string should not be alpha")
 "#);
@@ -540,6 +555,7 @@ assert(to_bool(1) == true, "1 should be true")
     #[test]
     fn test_to_binary() {
         let result = run(r#"
+import "base"
 assert(to_binary(42) == "101010", "42 in binary")
 "#);
         assert!(result.is_ok());
@@ -548,7 +564,8 @@ assert(to_binary(42) == "101010", "42 in binary")
     #[test]
     fn test_from_binary() {
         let result = run(r#"
-assert(from_binary("101010") == 42), "binary to decimal")
+import "base"
+assert(from_binary("101010") == 42, "binary to decimal")
 "#);
         assert!(result.is_ok());
     }
@@ -556,6 +573,7 @@ assert(from_binary("101010") == 42), "binary to decimal")
     #[test]
     fn test_to_hex() {
         let result = run(r#"
+import "base"
 assert(to_hex(255) == "ff", "255 in hex")
 "#);
         assert!(result.is_ok());
@@ -564,7 +582,8 @@ assert(to_hex(255) == "ff", "255 in hex")
     #[test]
     fn test_from_hex() {
         let result = run(r#"
-assert(from_hex("ff") == 255), "hex to decimal")
+import "base"
+assert(from_hex("ff") == 255, "hex to decimal")
 "#);
         assert!(result.is_ok());
     }
@@ -572,6 +591,7 @@ assert(from_hex("ff") == 255), "hex to decimal")
     #[test]
     fn test_to_octal() {
         let result = run(r#"
+import "base"
 assert(to_octal(64) == "100", "64 in octal")
 "#);
         assert!(result.is_ok());
@@ -580,7 +600,8 @@ assert(to_octal(64) == "100", "64 in octal")
     #[test]
     fn test_from_octal() {
         let result = run(r#"
-assert(from_octal("100") == 64), "octal to decimal")
+import "base"
+assert(from_octal("100") == 64, "octal to decimal")
 "#);
         assert!(result.is_ok());
     }
@@ -685,6 +706,7 @@ assert(result == 16.0, "nested functions should work")
     #[test]
     fn test_chained_string_methods() {
         let result = run(r#"
+import "string"
 let text = "  HELLO  "
 let result = lower(trim(text))
 assert(result == "hello", "chained methods should work")
@@ -695,9 +717,10 @@ assert(result == "hello", "chained methods should work")
     #[test]
     fn test_array_of_arrays() {
         let result = run(r#"
+import "array"
 let matrix = [[1, 2], [3, 4], [5, 6]]
 let flat = flatten(matrix)
-assert(sum(flat) == 21), "sum of flattened matrix should be 21")
+assert(sum(flat) == 21, "sum of flattened matrix should be 21")
 "#);
         assert!(result.is_ok());
     }
@@ -707,7 +730,7 @@ assert(sum(flat) == 21), "sum of flattened matrix should be 21")
         let result = run(r#"
 let numbers = [1, 2, 3, 4, 5]
 let result = reduce(map(filter(numbers, lambda(n) -> n % 2 != 0), lambda(n) -> n * n), lambda(a, b) -> a + b, 0)
-assert(result == 35), "sum of squares of odd numbers should be 35")
+assert(result == 35, "sum of squares of odd numbers should be 35")
 "#);
         assert!(result.is_ok());
     }
