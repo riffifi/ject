@@ -33,7 +33,7 @@ end
 ### Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/riffifi/ject.git
 cd ject
 cargo build --release
 ./target/release/ject
