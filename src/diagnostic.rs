@@ -92,11 +92,14 @@ impl DiagnosticRenderer {
         // If we have source code but no location, try to find a reasonable line to highlight
         if let Some(source) = source_code {
             if diag.line.is_none() && diag.source_line.is_none() {
-                // For now, highlight the first non-empty line as a fallback
+                // Highlight the first non-empty, non-comment line as a fallback (skip `# ...` headers)
                 let lines: Vec<&str> = source.lines().collect();
                 if !lines.is_empty() {
                     let first_non_empty = lines.iter().enumerate()
-                        .find(|(_, line)| !line.trim().is_empty())
+                        .find(|(_, line)| {
+                            let t = line.trim_start();
+                            !t.is_empty() && !t.starts_with('#')
+                        })
                         .map(|(i, line)| (i + 1, *line))
                         .unwrap_or((1, lines[0]));
                     

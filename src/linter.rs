@@ -385,7 +385,7 @@ impl Linter {
                 if !var.used && !var.name.starts_with('_') && !is_stdlib_constant {
                     self.warnings.push(LintWarning {
                         message: format!("unused variable `{}`", var.name),
-                        position: None,
+                        position: self.find_identifier_position(&var.name),
                     });
                 }
             }
@@ -491,7 +491,7 @@ impl Linter {
                     if !var.used && !var.name.starts_with('_') {
                         self.warnings.push(LintWarning {
                             message: format!("unused variable `{}`", var.name),
-                            position: None, // TODO: We could track declaration positions
+                            position: self.find_identifier_position(&var.name),
                         });
                     }
                 }
@@ -770,6 +770,21 @@ impl Linter {
                         // Analyze the index expression
                         self.analyze_expr(&index);
                     }
+                    crate::ast::AssignTarget::IndexChain { object, indices } => {
+                        if !self.use_variable(object) {
+                            let position = self.find_identifier_position(object);
+                            self.errors.push(LintError {
+                                message: format!(
+                                    "cannot chain-index assign on undeclared variable `{}`",
+                                    object
+                                ),
+                                position,
+                            });
+                        }
+                        for ix in indices {
+                            self.analyze_expr(ix);
+                        }
+                    }
                     crate::ast::AssignTarget::Field { object, field: _ } => {
                         // Check if the object variable exists
                         if !self.use_variable(&object) {
@@ -1002,7 +1017,8 @@ impl Linter {
         match expr {
             Expr::Identifier(name) => {
                 // Check if it's a function first, then check if it's a variable
-                if !self.functions.contains(name) && !self.use_variable(name) {
+                // Prefer lexical variable bindings over builtins (e.g. param `min` vs `min()`)
+                if !self.use_variable(name) && !self.functions.contains(name) {
                     let position = self.find_identifier_position(name);
                     
                     // Try to find similar variable names for suggestions

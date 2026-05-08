@@ -83,6 +83,20 @@ mod tests {
     }
 
     #[test]
+    fn test_multiline_let_rhs_skips_newlines_after_equals() {
+        let input = "let x =
+if true then 1 else 2 end";
+        let stmts = parse(input).unwrap();
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Let { name, value } = &stmts[0] {
+            assert_eq!(name, "x");
+            assert!(matches!(value, Expr::ConditionalExpr { .. }));
+        } else {
+            panic!("Expected Let statement");
+        }
+    }
+
+    #[test]
     fn test_assignment_statement() {
         let stmts = parse("x = 10").unwrap();
         assert_eq!(stmts.len(), 1);
@@ -1034,5 +1048,25 @@ mod tests {
         } else {
             panic!("Expected multiline array literal");
         }
+    }
+
+    /// Index/slice brackets may span lines (`arr[\n  expr\n]`); regressions broke nebula-style code.
+    #[test]
+    fn test_multiline_subscript_expression() {
+        let stmts = parse(
+            "let pc = [[1],[2]]\nlet style = pc[\nrandom_int(0, len(pc))\n]",
+        )
+        .expect("multiline [...] indexing should parse");
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_njt_file() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("n.jt"),
+        )
+        .expect("read n.jt");
+        let r = parse(&src);
+        assert!(r.is_ok(), "{:?}", r.err());
     }
 }

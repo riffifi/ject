@@ -197,6 +197,10 @@ impl Interpreter {
                             Err(RuntimeError { message: format!("Cannot index into {}", obj.type_name()) })
                         }
                     }
+                    crate::ast::AssignTarget::IndexChain { object, indices } => {
+                        self.assign_index_chain(&object, indices.as_slice(), val)?;
+                        Ok(ControlFlow::None)
+                    }
                     crate::ast::AssignTarget::Field { object, field } => {
                         let obj = self.environment.get(&object)
                             .ok_or_else(|| RuntimeError {
@@ -1710,6 +1714,89 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
             }
         }
+    }
+
+    fn normalize_array_index_cell(i: i64, len: usize) -> Result<usize, RuntimeError> {
+        let actual = if i < 0 { len as i64 + i } else { i };
+        if actual < 0 || actual >= len as i64 {
+            Err(RuntimeError {
+                message: format!("Array index out of bounds: {}", i),
+            })
+        } else {
+            Ok(actual as usize)
+        }
+    }
+
+    fn set_array_at_int_path(
+        mut arr: Vec<Value>,
+        path: &[i64],
+        val: Value,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if path.is_empty() {
+            return Err(RuntimeError {
+                message: "Empty index chain".to_string(),
+            });
+        }
+        if path.len() == 1 {
+            let idx = Self::normalize_array_index_cell(path[0], arr.len())?;
+            arr[idx] = val;
+            return Ok(arr);
+        }
+        let idx = Self::normalize_array_index_cell(path[0], arr.len())?;
+        let inner = match arr.get(idx) {
+            Some(Value::Array(a)) => a.clone(),
+            Some(other) => {
+                return Err(RuntimeError {
+                    message: format!(
+                        "Cannot assign through {}; expected nested array",
+                        other.type_name()
+                    ),
+                })
+            }
+            None => {
+                return Err(RuntimeError {
+                    message: "Array index out of bounds".to_string(),
+                })
+            }
+        };
+        let new_inner = Self::set_array_at_int_path(inner, &path[1..], val)?;
+        arr[idx] = Value::Array(new_inner);
+        Ok(arr)
+    }
+
+    fn assign_index_chain(
+        &mut self,
+        root_name: &str,
+        idx_exprs: &[Expr],
+        val: Value,
+    ) -> RuntimeResult<()> {
+        let mut path_i64 = Vec::with_capacity(idx_exprs.len());
+        for e in idx_exprs {
+            let v = self.evaluate_expression(e)?;
+            match v {
+                Value::Integer(i) => path_i64.push(i),
+                _ => {
+                    return Err(RuntimeError {
+                        message: "Nested index assignment requires integer indices".to_string(),
+                    })
+                }
+            }
+        }
+
+        let obj = self.environment.get(root_name).ok_or_else(|| RuntimeError {
+            message: format!("Undefined variable '{}'", root_name),
+        })?;
+
+        let Value::Array(root_arr) = obj else {
+            return Err(RuntimeError {
+                message: format!("Cannot chain-index assign into {}", obj.type_name()),
+            });
+        };
+
+        let new_root = Self::set_array_at_int_path(root_arr, &path_i64, val)?;
+        self.environment
+            .set(root_name, Value::Array(new_root));
+        Ok(())
     }
 
     fn evaluate_increment_decrement(&mut self, target: &Expr, prefix: bool, is_increment: bool) -> RuntimeResult<Value> {

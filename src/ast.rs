@@ -10,11 +10,78 @@ pub enum AssignTarget {
         object: String,
         index: Box<Expr>,
     },
+    /// Nested indices: `grid[y][x] = v` (root must be an identifier)
+    IndexChain {
+        object: String,
+        indices: Vec<Expr>,
+    },
     /// Struct/dictionary field: obj.field = value (object must be identifier)
     Field {
         object: String,
         field: String,
     },
+}
+
+/// Flatten `grid[y][x]` (parser may swap nested `Index` nodes) into `( "grid", [y, x] )`
+/// in **evaluation order** (same order as `Expr::Index` reads).
+pub fn flatten_index_assignment_lhs(mut expr: Expr) -> Option<(String, Vec<Expr>)> {
+    let mut indices = Vec::new();
+    loop {
+        match expr {
+            Expr::Index { object, index } => {
+                indices.push(*index);
+                expr = *object;
+            }
+            Expr::Identifier(name) => {
+                indices.reverse();
+                return Some((name, indices));
+            }
+            _ => return None,
+        }
+    }
+}
+
+/// Build a nested `Index` expression that evaluates like the original LHS (includes parser swap rule).
+pub fn build_swapped_nested_index_read_expr(root: &str, indices: &[Expr]) -> Expr {
+    debug_assert!(!indices.is_empty());
+    let mut e = Expr::Index {
+        object: Box::new(Expr::Identifier(root.to_string())),
+        index: Box::new(indices[0].clone()),
+    };
+    for idx in indices.iter().skip(1) {
+        e = match e {
+            Expr::Index {
+                object: inner_object,
+                index: inner_index,
+            } => Expr::Index {
+                object: Box::new(Expr::Index {
+                    object: inner_object,
+                    index: Box::new(idx.clone()),
+                }),
+                index: inner_index,
+            },
+            _ => unreachable!("build_swapped_nested_index_read_expr: expected Index"),
+        };
+    }
+    e
+}
+
+/// Expression that reads the current value of an assignment target (for `+=` lowering).
+pub fn assign_target_read_expr(target: &AssignTarget) -> Expr {
+    match target {
+        AssignTarget::Identifier(name) => Expr::Identifier(name.clone()),
+        AssignTarget::Index { object, index } => Expr::Index {
+            object: Box::new(Expr::Identifier(object.clone())),
+            index: index.clone(),
+        },
+        AssignTarget::IndexChain { object, indices } => {
+            build_swapped_nested_index_read_expr(object, indices.as_slice())
+        }
+        AssignTarget::Field { object, field } => Expr::StructAccess {
+            object: Box::new(Expr::Identifier(object.clone())),
+            field: field.clone(),
+        },
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -475,6 +542,13 @@ impl fmt::Display for Stmt {
                 match target {
                     AssignTarget::Identifier(name) => write!(f, "{} = {}", name, value),
                     AssignTarget::Index { object, index } => write!(f, "{}[{}] = {}", object, index, value),
+                    AssignTarget::IndexChain { object, indices } => {
+                        write!(f, "{}", object)?;
+                        for ix in indices {
+                            write!(f, "[{}]", ix)?;
+                        }
+                        write!(f, " = {}", value)
+                    }
                     AssignTarget::Field { object, field } => write!(f, "{}.{} = {}", object, field, value),
                 }
             }

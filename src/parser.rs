@@ -99,56 +99,17 @@ impl Parser {
 
                 if compound_op.is_some() || self.match_token(&Token::Equal) {
                     // It's an assignment (regular or compound) - parse the value
+                    while self.match_token(&Token::Newline) {}
                     let value = self.expression()?;
 
                     // Convert the expression to an assignment target
-                    let target = match expr {
-                        Expr::Identifier(name) => crate::ast::AssignTarget::Identifier(name),
-                        Expr::Index { object, index } => {
-                            if let Expr::Identifier(obj_name) = *object {
-                                crate::ast::AssignTarget::Index { object: obj_name, index }
-                            } else {
-                                return Err(self.error("Left side of index assignment must be a variable (e.g., arr[i] = x)".to_string()));
-                            }
-                        }
-                        Expr::StructAccess { object, field } => {
-                            if let Expr::Identifier(obj_name) = *object {
-                                crate::ast::AssignTarget::Field { object: obj_name, field }
-                            } else {
-                                return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
-                            }
-                        }
-                        Expr::Member { object, property } => {
-                            if let Expr::Identifier(obj_name) = *object {
-                                crate::ast::AssignTarget::Field { object: obj_name, field: property }
-                            } else {
-                                return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
-                            }
-                        }
-                        _ => {
-                            return Err(self.error("Invalid assignment target.".to_string()));
-                        }
-                    };
+                    let target = self.lhs_expr_to_assign_target(expr)?;
 
                     // For compound assignment, wrap the value in a binary expression
                     let final_value = if let Some(op) = compound_op {
                         // Create: target = target op value
                         // For example: x += 5 becomes x = x + 5
-                        let target_expr = match &target {
-                            crate::ast::AssignTarget::Identifier(name) => Expr::Identifier(name.clone()),
-                            crate::ast::AssignTarget::Index { object, index } => {
-                                Expr::Index {
-                                    object: Box::new(Expr::Identifier(object.clone())),
-                                    index: index.clone(),
-                                }
-                            }
-                            crate::ast::AssignTarget::Field { object, field } => {
-                                Expr::StructAccess {
-                                    object: Box::new(Expr::Identifier(object.clone())),
-                                    field: field.clone(),
-                                }
-                            }
-                        };
+                        let target_expr = crate::ast::assign_target_read_expr(&target);
                         Expr::Binary {
                             left: Box::new(target_expr),
                             operator: op,
@@ -178,6 +139,7 @@ impl Parser {
         };
         
         self.consume(Token::Equal, "Expected '=' after variable name")?;
+        while self.match_token(&Token::Newline) {}
         let value = self.expression()?;
         
         Ok(Stmt::Let { name, value })
@@ -484,45 +446,67 @@ impl Parser {
         Ok(Stmt::Continue)
     }
 
+    fn lhs_expr_to_assign_target(&mut self, expr: Expr) -> ParseResult<crate::ast::AssignTarget> {
+        match expr {
+            Expr::Identifier(name) => Ok(crate::ast::AssignTarget::Identifier(name)),
+            Expr::Index { .. } => match crate::ast::flatten_index_assignment_lhs(expr) {
+                Some((obj_name, indices)) if indices.len() == 1 => {
+                    Ok(crate::ast::AssignTarget::Index {
+                        object: obj_name,
+                        index: Box::new(indices.into_iter().next().unwrap()),
+                    })
+                }
+                Some((obj_name, indices)) => Ok(crate::ast::AssignTarget::IndexChain {
+                    object: obj_name,
+                    indices,
+                }),
+                None => Err(self.error(
+                    "Left side of index assignment must be a variable (e.g., arr[i] = x)".to_string(),
+                )),
+            },
+            Expr::StructAccess { object, field } => {
+                if let Expr::Identifier(obj_name) = *object {
+                    Ok(crate::ast::AssignTarget::Field {
+                        object: obj_name,
+                        field,
+                    })
+                } else {
+                    Err(self.error(
+                        "Left side of field assignment must be a variable (e.g., obj.field = x)"
+                            .to_string(),
+                    ))
+                }
+            }
+            Expr::Member { object, property } => {
+                if let Expr::Identifier(obj_name) = *object {
+                    Ok(crate::ast::AssignTarget::Field {
+                        object: obj_name,
+                        field: property,
+                    })
+                } else {
+                    Err(self.error(
+                        "Left side of field assignment must be a variable (e.g., obj.field = x)"
+                            .to_string(),
+                    ))
+                }
+            }
+            _ => Err(self.error(
+                "Invalid assignment target. Can only assign to variables, array indices, or object fields."
+                    .to_string(),
+            )),
+        }
+    }
+
     fn assignment_statement(&mut self) -> ParseResult<Stmt> {
         // Parse the left side as an expression first
         let expr = self.expression()?;
         
         self.consume(Token::Equal, "Expected '=' in assignment")?;
+        while self.match_token(&Token::Newline) {}
         let value = self.expression()?;
         
         // Convert the expression to an assignment target
-        // For index/field assignment, the object must be a simple identifier
-        let target = match expr {
-            Expr::Identifier(name) => crate::ast::AssignTarget::Identifier(name),
-            Expr::Index { object, index } => {
-                // Object must be a simple identifier
-                if let Expr::Identifier(obj_name) = *object {
-                    crate::ast::AssignTarget::Index { object: obj_name, index }
-                } else {
-                    return Err(self.error("Left side of index assignment must be a variable (e.g., arr[i] = x)".to_string()));
-                }
-            }
-            Expr::StructAccess { object, field } => {
-                if let Expr::Identifier(obj_name) = *object {
-                    crate::ast::AssignTarget::Field { object: obj_name, field }
-                } else {
-                    return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
-                }
-            }
-            Expr::Member { object, property } => {
-                if let Expr::Identifier(obj_name) = *object {
-                    crate::ast::AssignTarget::Field { object: obj_name, field: property }
-                } else {
-                    return Err(self.error("Left side of field assignment must be a variable (e.g., obj.field = x)".to_string()));
-                }
-            }
-            _ => {
-                return Err(self.error(format!(
-                    "Invalid assignment target. Can only assign to variables, array indices, or object fields."
-                )));
-            }
-        };
+        let target = self.lhs_expr_to_assign_target(expr)?;
 
         Ok(Stmt::Assign { target, value })
     }
@@ -1051,6 +1035,8 @@ impl Parser {
             self.advance(); // consume ]
             return Err(self.error("Empty brackets are not allowed. Use array methods instead.".to_string()));
         }
+
+        while self.match_token(&Token::Newline) {}
         
         // Save current position to look ahead
         let start_pos = self.current;
@@ -1104,6 +1090,7 @@ impl Parser {
         
         // If we parsed any named parameters, this is a named slice
         if is_named_slice {
+            while self.match_token(&Token::Newline) {}
             self.consume(Token::RightBracket, "Expected ']' after slice")?;
             return Ok(Expr::Slice {
                 object: Box::new(object),
@@ -1190,6 +1177,7 @@ impl Parser {
                 }
             }
             
+            while self.match_token(&Token::Newline) {}
             self.consume(Token::RightBracket, "Expected ']' after slice")?;
             
             return Ok(Expr::Slice {
@@ -1203,8 +1191,11 @@ impl Parser {
         // Check for range syntax: start..end:step
         let expr = self.expression()?;
 
+        while self.match_token(&Token::Newline) {}
+
         // Check if this is a range expression
         if let Expr::Range { start, end, step } = expr {
+            while self.match_token(&Token::Newline) {}
             self.consume(Token::RightBracket, "Expected ']' after slice")?;
             return Ok(Expr::Slice {
                 object: Box::new(object),
@@ -1215,6 +1206,7 @@ impl Parser {
         }
 
         // Simple index
+        while self.match_token(&Token::Newline) {}
         self.consume(Token::RightBracket, "Expected ']' after array index")?;
         // Compatibility: tests expect `matrix[0][1]` to nest with the *last* index inside.
         // That is, the second bracket becomes the inner `Index`.
@@ -1237,6 +1229,7 @@ impl Parser {
         let mut args = Vec::new();
         
         if !self.check(&Token::RightParen) {
+            while self.match_token(&Token::Newline) {}
             loop {
                 // Check for keyword argument (identifier followed by =)
                 if let Token::Identifier(name) = &self.peek() {
@@ -1267,9 +1260,11 @@ impl Parser {
                 if !self.match_token(&Token::Comma) {
                     break;
                 }
+                while self.match_token(&Token::Newline) {}
             }
         }
         
+        while self.match_token(&Token::Newline) {}
         self.consume(Token::RightParen, "Expected ')' after arguments")?;
         
         let call = Expr::Call {
@@ -1324,10 +1319,15 @@ impl Parser {
                 let mut found_for = false;
                 
                 // Skip first expression
-                while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket | Token::Newline) {
+                // Allow newlines so `[` / `expr` on separate lines is not mistaken for a list comprehension
+                while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket) {
                     if matches!(self.tokens[pos].0, Token::For) {
                         found_for = true;
                         break;
+                    }
+                    if matches!(self.tokens[pos].0, Token::Newline) {
+                        pos += 1;
+                        continue;
                     }
                     pos += 1;
                 }
@@ -1529,6 +1529,8 @@ impl Parser {
         
         // Parse then expression
         let then_expr = self.expression()?;
+
+        while self.match_token(&Token::Newline) {}
         
         // Parse elseif branches
         let mut elseif_branches = Vec::new();
@@ -1547,7 +1549,11 @@ impl Parser {
                 condition: elseif_condition,
                 then_expr: elseif_then_expr,
             });
+
+            while self.match_token(&Token::Newline) {}
         }
+
+        while self.match_token(&Token::Newline) {}
         
         // Parse else branch if present
         let else_expr = if self.match_token(&Token::Else) {
@@ -1558,6 +1564,8 @@ impl Parser {
             None
         };
         
+        while self.match_token(&Token::Newline) {}
+
         // Consume 'end'
         self.consume(Token::End, "Expected 'end' after conditional expression")?;
         
