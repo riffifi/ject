@@ -1,30 +1,19 @@
-# Ject for VS Code
+# Ject VS Code extension
 
-Language support for Ject (`.ject` and `.jt`) files.
+## Build `out/*.js` from TypeScript
+
+```bash
+npm install
+npm run compile
+```
+
+If you do not have npm, you can still compile using the TypeScript package alone plus typings (see CI or local `tsc -p .` with `@types/node` and `@types/vscode` installed).
 
 ## Features
 
-- Syntax highlighting for Ject keywords, strings, interpolation, comments, ranges, slices, unique arrays, structs, imports, and built-ins.
-- The Ject file icon supplied by the language author.
-- Snippets for functions, loops, conditionals, modules, structs, try/catch, interpolation, and unique arrays.
-- Completion items and hover notes for core keywords, standard modules, built-ins, and constants.
-- Document symbols for functions, exported functions, structs, and exported values.
-- Built-in formatter for `end`-closed Ject blocks.
-- Commands to run the current file, run a selection, start the REPL, build the Rust interpreter, check a file, and open examples.
+- Syntax highlighting, snippets, formatter
+- **Run** / REPL / selection-run / `cargo build`
+- **Safe diagnostics**: `ject --check` (never runs your script)
+- Testing sidebar: discovers `test_*.ject` and `*_test.ject`, runs `ject --test <file>`
 
-## Commands
-
-- `Ject: Run Current File`
-- `Ject: Run Selection`
-- `Ject: Start REPL`
-- `Ject: Build Interpreter`
-- `Ject: Check Current File`
-- `Ject: Open Examples Folder`
-
-## Settings
-
-- `ject.executablePath`: Path to the Ject executable. Defaults to `ject`.
-- `ject.workspaceExecutable`: Prefer `target/debug/ject` or `target/release/ject` from the workspace when present.
-- `ject.format.indentSize`: Number of spaces for formatter indentation.
-
-`Ject: Check Current File` invokes the Ject CLI. Because the current CLI parses, lints, and runs files in one command, checks are opt-in instead of automatic on every keystroke.
+See [DEBUG_AND_LSP_ROADMAP.md](https://github.com/riffifi/ject/blob/master/vscode-ject/DEBUG_AND_LSP_ROADMAP.md) for planned DAP debugger and LSP integration.

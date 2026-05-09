@@ -1,6 +1,15 @@
 use crate::value::Value;
 use crate::interpreter::RuntimeError;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static SEED: AtomicU64 = AtomicU64::new(0);
+
+/// Modules that are implemented only in Rust (`get_module` returns `Some`).
+/// Every other import name should prefer `stdlib/<name>.ject` when present.
+pub fn is_native_only_module(name: &str) -> bool {
+    matches!(name, "base" | "gui" | "numpy")
+}
 
 /// Create CorLib - Core Library (always available)
 /// These are Rust primitives that CANNOT be written in Ject itself
@@ -135,6 +144,7 @@ pub fn get_math_module() -> HashMap<String, Value> {
 
 /// Get string module functions (import "string")
 /// Advanced string functions NOT in CorLib - written in Ject
+#[allow(dead_code)]
 pub fn get_string_module() -> HashMap<String, Value> {
     let mut module = HashMap::new();
 
@@ -378,29 +388,72 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
             }
             h
         }
+        "math" => get_math_module(),
+        "util" => [
+            "type_of",
+            "random",
+            "random_int",
+            "to_int",
+            "to_float",
+            "to_string",
+            "to_bool",
+        ]
+        .into_iter()
+        .map(|k| (k.to_string(), Value::BuiltinFunction(k.to_string())))
+        .collect(),
         _ => HashMap::new(),
     }
 }
 
 /// Get a module by name (for import system)
-/// Returns None for modules that exist as .ject files (they will be loaded from disk)
-/// Only returns Some() for Rust-only modules that don't have .ject equivalents
+/// Returns `Some` only for **native-only** modules (`base`, `gui`, `numpy`).
+/// Modules such as `string`, `math`, and `array` load from `stdlib/*.ject` first.
 pub fn get_module(name: &str) -> Option<HashMap<String, Value>> {
     match name {
-        // These modules exist as .ject files in stdlib/ - load from disk
-        // "math", "array", "io", "json", "system" - all load from stdlib/*.ject
-
-        // Rust implementations for these modules (faster than loading .ject)
-        "string" => Some(get_string_module()),
-
-        // Rust-only modules (no .ject equivalent)
         "base" => Some(get_base_module()),
         "gui" => Some(get_gui_module()),
         "numpy" => Some(crate::numpy::create_numpy_module()),
-
-        // All other modules will be loaded from .ject files
         _ => None,
     }
+}
+
+/// Embedded stdlib module source fallback.
+/// This lets `import "system"` / `import "datetime"` work even when runtime cwd
+/// does not contain a `stdlib/` folder (e.g. running installed `ject` globally).
+pub fn embedded_stdlib_module_source(name: &str) -> Option<&'static str> {
+    match name {
+        "math" => Some(include_str!("../stdlib/math.ject")),
+        "array" => Some(include_str!("../stdlib/array.ject")),
+        "string" => Some(include_str!("../stdlib/string.ject")),
+        "io" => Some(include_str!("../stdlib/io.ject")),
+        "json" => Some(include_str!("../stdlib/json.ject")),
+        "system" => Some(include_str!("../stdlib/system.ject")),
+        "datetime" => Some(include_str!("../stdlib/datetime.ject")),
+        "util" => Some(include_str!("../stdlib/util.ject")),
+        "collections" => Some(include_str!("../stdlib/collections.ject")),
+        "numpy" => Some(include_str!("../stdlib/numpy.ject")),
+        "test" => Some(include_str!("../stdlib/test.ject")),
+        "test_math" => Some(include_str!("../stdlib/test_math.ject")),
+        _ => None,
+    }
+}
+
+/// JSON-friendly introspection for editors and CI drift checks.
+pub fn introspect_native_kernel_json() -> String {
+    let mut corlib_names: Vec<String> = create_corlib().keys().cloned().collect();
+    corlib_names.sort();
+
+    let native_modules = vec!["base", "gui", "numpy"];
+    let inject_module_stems = vec![
+        "array", "collections", "datetime", "io", "json", "math", "system", "util",
+    ];
+
+    serde_json::json!({
+        "corlib": corlib_names,
+        "native_modules": native_modules,
+        "inject_module_stems": inject_module_stems,
+    })
+    .to_string()
 }
 
 /// Create the full StdLib (CorLib + all modules for backward compatibility)
@@ -570,6 +623,36 @@ match name {
                 .expect("Time went backwards")
                 .as_secs();
             Ok(Value::Integer(now as i64))
+        },
+        "timestamp" => {
+            if !args.is_empty() {
+                return Err(RuntimeError {
+                    message: "timestamp() takes no arguments".to_string(),
+                });
+            }
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs();
+            Ok(Value::Integer(ts as i64))
+        },
+        "sleep" => {
+            if args.len() != 1 {
+                return Err(RuntimeError {
+                    message: "sleep() takes exactly 1 argument (milliseconds)".to_string(),
+                });
+            }
+            let ms = match &args[0] {
+                Value::Integer(n) if *n >= 0 => *n as u64,
+                Value::Float(f) if *f >= 0.0 => *f as u64,
+                _ => {
+                    return Err(RuntimeError {
+                        message: "sleep() requires a non-negative number".to_string(),
+                    });
+                }
+            };
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            Ok(Value::Nil)
         },
 
         // Environment/system functions
@@ -1989,15 +2072,10 @@ match name {
                             message: "random_int() min must be less than max".to_string(),
                         });
                     }
-                    use std::collections::hash_map::DefaultHasher;
-                    use std::hash::{Hash, Hasher};
-                    use std::time::{SystemTime, UNIX_EPOCH};
-                    
-                    let mut hasher = DefaultHasher::new();
-                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
-                    let hash = hasher.finish();
-                    let range = (max - min + 1) as u64;
-                    let result = min + ((hash % range) as i64);
+                    let seed = SEED.fetch_add(1, Ordering::Relaxed);
+                    let range = (max - min) as u64;
+                    let hash = seed.wrapping_mul(1103515245).wrapping_add(12345) % range;
+                    let result = min + (hash as i64);
                     Ok(Value::Integer(result))
                 }
                 _ => Err(RuntimeError {

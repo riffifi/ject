@@ -785,4 +785,39 @@ assert(type_of(s.exec) == "builtin", "module should export exec builtin")
 "#);
         assert!(result.is_ok(), "{:?}", result);
     }
+
+    #[test]
+    fn test_native_only_module_flags() {
+        assert!(crate::stdlib::is_native_only_module("numpy"));
+        assert!(crate::stdlib::is_native_only_module("gui"));
+        assert!(crate::stdlib::is_native_only_module("base"));
+        assert!(!crate::stdlib::is_native_only_module("math"));
+        assert!(!crate::stdlib::is_native_only_module("string"));
+    }
+
+    #[test]
+    fn test_math_module_log_builtin_from_injection() {
+        let result = run(r#"
+import "math" as m
+assert(m.log(100.0, 10.0) == 2.0, "log base 10")
+"#);
+        assert!(result.is_ok(), "{:?}", result);
+    }
+
+    #[test]
+    fn test_string_module_loads_from_stdlib_ject() {
+        let result = run(r#"
+import "string" as s
+assert(s.capitalize("hello") == "Hello", "capitalize from stdlib/string.ject")
+"#);
+        assert!(result.is_ok(), "{:?}", result);
+    }
+
+    #[test]
+    fn test_introspect_emits_json() {
+        let j = crate::stdlib::introspect_native_kernel_json();
+        assert!(j.contains("native_modules"));
+        assert!(j.contains("numpy"));
+        assert!(j.contains("corlib"));
+    }
 }

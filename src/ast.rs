@@ -22,8 +22,10 @@ pub enum AssignTarget {
     },
 }
 
-/// Flatten `grid[y][x]` (parser may swap nested `Index` nodes) into `( "grid", [y, x] )`
-/// in **evaluation order** (same order as `Expr::Index` reads).
+/// Flatten `grid[y][x]` into `( "grid", [y, x] )` for assignment targets.
+/// The parser already represents nested `Index` nodes in the order needed for
+/// assignment evaluation, so we keep the collected indices in the order they
+/// are encountered.
 pub fn flatten_index_assignment_lhs(mut expr: Expr) -> Option<(String, Vec<Expr>)> {
     let mut indices = Vec::new();
     loop {
@@ -33,7 +35,6 @@ pub fn flatten_index_assignment_lhs(mut expr: Expr) -> Option<(String, Vec<Expr>
                 expr = *object;
             }
             Expr::Identifier(name) => {
-                indices.reverse();
                 return Some((name, indices));
             }
             _ => return None,

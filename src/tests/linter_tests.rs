@@ -397,6 +397,17 @@ print doubled
     }
 
     #[test]
+    fn test_list_comprehension_variable_usage_no_false_unused() {
+        let (errors, warnings) = lint(r#"
+let arr = [i for i in 1..101]
+let new_arr = [elem for elem in arr if elem % 2 == 1]
+print new_arr
+"#);
+        assert!(!errors.iter().any(|e| e.contains("undefined")));
+        assert!(!warnings.iter().any(|w| w.contains("unused variable `arr`")));
+    }
+
+    #[test]
     fn test_recursive_function() {
         let (errors, _) = lint(r#"
 fn factorial(n)

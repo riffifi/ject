@@ -50,6 +50,37 @@ enum ScopeKind {
 }
 
 impl Linter {
+    fn should_skip_unused_warning(name: &str) -> bool {
+        if name.starts_with('_') {
+            return true;
+        }
+        matches!(name,
+            "PI" | "E" |
+            "type_of" | "to_int" | "to_float" | "to_string" | "to_bool" |
+            "len" | "range" | "push" | "pop" | "sum" | "contains" | "index_of" |
+            "first" | "last" | "sort" | "reverse" | "unique" | "map" | "filter" | "reduce" |
+            "abs" | "sqrt" | "pow" | "sin" | "cos" | "tan" | "floor" | "ceil" | "round" |
+            "min" | "max" | "random" | "upper" | "lower" | "trim" | "split" | "join" | "replace" |
+            "char_at" | "substring" | "input" | "print" | "read_file" | "write_file" |
+            "assert" | "log" | "log10" | "exp" | "log2" | "ln" | "degrees" | "radians" |
+            "deg_to_rad" | "rad_to_deg" | "clamp" | "sign" | "gcd" | "lcm" | "asin" | "acos" |
+            "atan" | "atan2" | "sinh" | "cosh" | "tanh" | "round_to" | "capitalize" | "title_case" |
+            "trim_left" | "trim_right" | "pad_left" | "pad_right" | "pad_center" | "starts_with" |
+            "ends_with" | "contains_str" | "count" | "find" | "replace_all" | "replace_first" | "remove" |
+            "repeat" | "reverse_str" | "left" | "right" | "truncate" | "is_empty" | "is_numeric" |
+            "is_alpha" | "is_alphanumeric" | "word_count" | "sentence_count" | "paragraph_count" | "lines" |
+            "extract_numbers" | "to_char_codes" | "from_char_codes" | "format" | "escape" | "unescape" |
+            "wrap_text" | "any" | "all" | "average" | "median" | "slice" | "take" | "drop" | "initial" |
+            "rest" | "concat" | "zip" | "union" | "intersection" | "difference" | "flatten" | "chunk" |
+            "group_by" | "partition" | "shuffle" | "rotate_left" | "rotate_right" | "insert_at" | "remove_at" |
+            "without" | "compact" | "compact_unique" | "enumerate" | "fill" | "range_arr" | "sample" |
+            "sort_by" | "to_uarray" | "to_array" | "parse_json" | "to_json" | "env" | "exit" | "now" |
+            "timestamp" | "sleep" | "to_binary" | "to_octal" | "to_hex" | "from_binary" | "from_octal" |
+            "from_hex" | "base_repr" | "from_base" | "random_int" | "random_float" | "println" | "exec" |
+            "file_exists" | "is_file" | "is_dir" | "list_dir" | "mkdir" | "remove_file" | "collection" |
+            "add_to" | "remove_from" | "has" | "intersect" | "size" | "is_subset" | "is_superset" | "clear_collection")
+    }
+
     pub fn new() -> Self {
         let mut linter = Linter {
             scopes: vec![HashMap::new()], // Global scope
@@ -321,68 +352,7 @@ impl Linter {
         for scope in &self.scopes {
             for var in scope.values() {
                 // Skip warnings for stdlib constants and underscore-prefixed variables
-                let is_stdlib_constant = matches!(var.name.as_str(),
-                    // CorLib constants
-                    "PI" | "E" |
-                    // CorLib functions
-                    "type_of" | "to_int" | "to_float" | "to_string" | "to_bool" |
-                    "len" | "range" | "push" | "pop" |
-                    "sum" | "contains" | "index_of" | "first" | "last" |
-                    "sort" | "reverse" | "unique" |
-                    "map" | "filter" | "reduce" |
-                    "abs" | "sqrt" | "pow" | "sin" | "cos" | "tan" |
-                    "floor" | "ceil" | "round" | "min" | "max" | "random" |
-                    "upper" | "lower" | "trim" | "split" | "join" | "replace" |
-                    "char_at" | "substring" |
-                    "input" | "print" | "read_file" | "write_file" |
-                    "assert" |
-                    // Math module
-                    "log" | "log10" | "exp" | "log2" | "ln" |
-                    "degrees" | "radians" | "deg_to_rad" | "rad_to_deg" |
-                    "clamp" | "sign" | "gcd" | "lcm" |
-                    "asin" | "acos" | "atan" | "atan2" |
-                    "sinh" | "cosh" | "tanh" | "round_to" |
-                    // String module
-                    "capitalize" | "title_case" |
-                    "trim_left" | "trim_right" |
-                    "pad_left" | "pad_right" | "pad_center" |
-                    "starts_with" | "ends_with" | "contains_str" |
-                    "count" | "find" |
-                    "replace_all" | "replace_first" | "remove" |
-                    "repeat" | "reverse_str" |
-                    "left" | "right" | "truncate" |
-                    "is_empty" | "is_numeric" | "is_alpha" | "is_alphanumeric" |
-                    "word_count" | "sentence_count" | "paragraph_count" | "lines" |
-                    "extract_numbers" | "to_char_codes" | "from_char_codes" |
-                    "format" | "escape" | "unescape" | "wrap_text" |
-                    // Array module
-                    "any" | "all" | "average" | "median" |
-                    "slice" | "take" | "drop" | "initial" | "rest" |
-                    "concat" | "zip" | "union" | "intersection" | "difference" |
-                    "flatten" | "chunk" | "group_by" | "partition" |
-                    "shuffle" | "rotate_left" | "rotate_right" |
-                    "insert_at" | "remove_at" | "without" |
-                    "compact" | "compact_unique" |
-                    "enumerate" | "fill" | "range_arr" | "sample" | "sort_by" |
-                    "to_uarray" | "to_array" |
-                    // JSON module
-                    "parse_json" | "to_json" |
-                    // System module
-                    "env" | "exit" | "now" | "timestamp" | "sleep" |
-                    // Base module
-                    "to_binary" | "to_octal" | "to_hex" |
-                    "from_binary" | "from_octal" | "from_hex" |
-                    "base_repr" | "from_base" |
-                    // Additional utilities
-                    "random_int" | "random_float" | "println" |
-                    "exec" | "file_exists" | "is_file" | "is_dir" |
-                    "list_dir" | "mkdir" | "remove_file" |
-                    // Collection functions
-                    "collection" | "add_to" | "remove_from" | "has" |
-                    "intersect" | "size" | "is_subset" | "is_superset" |
-                    "clear_collection");
-
-                if !var.used && !var.name.starts_with('_') && !is_stdlib_constant {
+                if !var.used && !Self::should_skip_unused_warning(&var.name) {
                     self.warnings.push(LintWarning {
                         message: format!("unused variable `{}`", var.name),
                         position: self.find_identifier_position(&var.name),
@@ -488,7 +458,7 @@ impl Linter {
             // Before popping, check for unused variables in this scope
             if let Some(scope) = self.scopes.last() {
                 for var in scope.values() {
-                    if !var.used && !var.name.starts_with('_') {
+                    if !var.used && !Self::should_skip_unused_warning(&var.name) {
                         self.warnings.push(LintWarning {
                             message: format!("unused variable `{}`", var.name),
                             position: self.find_identifier_position(&var.name),
@@ -566,7 +536,8 @@ impl Linter {
         // Get current working directory
         let cwd = std::env::current_dir().unwrap_or_default();
 
-        // Determine the module file path (same logic as interpreter)
+        // Determine module source (same logic as interpreter with embedded stdlib fallback)
+        let mut embedded_module_content: Option<String> = None;
         let module_file_path = if module_path.starts_with("~/") {
             // Home directory path
             if let Ok(home) = std::env::var("HOME") {
@@ -645,19 +616,28 @@ impl Linter {
                 if cwd_stdlib.exists() {
                     cwd_stdlib.to_string_lossy().to_string()
                 } else {
-                    return Err(());
+                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name) {
+                        embedded_module_content = Some(source.to_string());
+                        format!("<embedded:{module_name}>")
+                    } else {
+                        return Err(());
+                    }
                 }
             }
         };
 
-        if !Path::new(&module_file_path).exists() {
+        if embedded_module_content.is_none() && !Path::new(&module_file_path).exists() {
             return Err(());
         }
 
         // Read and parse the module file
-        let module_content = match fs::read_to_string(&module_file_path) {
-            Ok(content) => content,
-            Err(_) => return Err(()),
+        let module_content = if let Some(content) = embedded_module_content {
+            content
+        } else {
+            match fs::read_to_string(&module_file_path) {
+                Ok(content) => content,
+                Err(_) => return Err(()),
+            }
         };
 
         let mut lexer = crate::lexer::Lexer::new(&module_content);
@@ -1035,7 +1015,11 @@ impl Linter {
                             }
                         }
                     } else {
-                        message.push_str("\n  help: variables must be declared with `let` before use");
+                        if let Some(module_name) = self.find_module_exporting_symbol(name) {
+                            message.push_str(&format!("\n  help: import it first: import {{{}}} from \"{}\"", name, module_name));
+                        } else {
+                            message.push_str("\n  help: variables must be declared with `let` before use");
+                        }
                     }
                     
                     self.errors.push(LintError {
@@ -1093,6 +1077,26 @@ impl Linter {
                 for elem in elements {
                     self.analyze_expr(elem);
                 }
+            }
+            Expr::ListComprehension { expr, var, iterable, condition } => {
+                self.analyze_expr(iterable);
+                self.push_scope();
+                self.declare_variable(var.clone());
+                self.analyze_expr(expr);
+                if let Some(cond) = condition {
+                    self.analyze_expr(cond);
+                }
+                self.pop_scope();
+            }
+            Expr::Generator { expr, var, iterable, condition } => {
+                self.analyze_expr(iterable);
+                self.push_scope();
+                self.declare_variable(var.clone());
+                self.analyze_expr(expr);
+                if let Some(cond) = condition {
+                    self.analyze_expr(cond);
+                }
+                self.pop_scope();
             }
             Expr::Dictionary(pairs) => {
                 for (_, value) in pairs {
@@ -1176,6 +1180,20 @@ impl Linter {
             if let crate::lexer::Token::Identifier(name) = token {
                 if name == identifier {
                     return Some(position.clone());
+                }
+            }
+        }
+        None
+    }
+
+    fn find_module_exporting_symbol(&self, symbol: &str) -> Option<String> {
+        let common_modules = [
+            "math", "string", "array", "io", "json", "system", "datetime", "util", "collections",
+        ];
+        for module in common_modules {
+            if let Ok(exports) = self.get_module_exports(module) {
+                if exports.iter().any(|e| e == symbol) {
+                    return Some(module.to_string());
                 }
             }
         }

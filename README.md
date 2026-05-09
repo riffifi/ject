@@ -11,7 +11,7 @@ greet("World")
 greet("Leo", "Hey")
 
 let numbers = [1, 2, 3, 4, 5]
-let doubled = map(numbers, fn(n) -> n * 2)
+let doubled = map(numbers, lambda(n) -> n * 2)
 print doubled  # [2, 4, 6, 8, 10]
 
 for i in 1..6 do
@@ -33,6 +33,18 @@ Run a file:
 
 ```bash
 ./target/release/ject hello.ject
+```
+
+Parse and lint only (does **not** execute code — used by the VS Code extension):
+
+```bash
+./target/release/ject --check hello.ject
+```
+
+Print native-kernel metadata (for tooling; see `NATIVE_KERNEL.md`):
+
+```bash
+./target/release/ject --introspect
 ```
 
 Start the REPL (with history):
@@ -70,9 +82,9 @@ fn greet(name, greeting = "Hello")
     print "$greeting, $name!"
 end
 
-# Lambdas
-let square = fn(x) -> x * x
-let clamp = fn(v, lo, hi) -> max(lo, min(hi, v))
+# Expression lambdas (use `lambda`, not `fn ... ->`)
+let square = lambda(x) -> x * x
+let clamp = lambda(v, lo, hi) -> max(lo, min(hi, v))
 ```
 
 ### Control flow
@@ -231,8 +243,8 @@ round(3.5)       # 4
 sum([1,2,3,4])            # 10
 sort([3,1,2])             # [1,2,3]
 reverse([1,2,3])          # [3,2,1]
-filter([1,2,3,4], fn(x) -> x % 2 == 0)  # [2,4]
-map([1,2,3], fn(x) -> x * x)            # [1,4,9]
+filter([1,2,3,4], lambda(x) -> x % 2 == 0)  # [2,4]
+map([1,2,3], lambda(x) -> x * x)            # [1,4,9]
 
 # Strings
 len("hello")              # 5

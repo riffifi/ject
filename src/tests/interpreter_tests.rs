@@ -659,6 +659,15 @@ print arr3
     }
 
     #[test]
+    fn test_float_modulo_supported() {
+        let result = run(r#"
+let x = 3.5 % 2
+print x
+"#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_array_length() {
         let result = run(r#"
 let arr = [1, 2, 3, 4, 5]
@@ -752,6 +761,16 @@ print fruits
 let fruits = ["apple", "banana", "cherry"]
 let joined = join(fruits, ", ")
 print joined
+"#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_nested_array_assignment() {
+        let result = run(r#"
+let g = [[0,0,0],[0,0,0]]
+g[0][1] = 5
+print g[0][1]
 "#);
         assert!(result.is_ok());
     }

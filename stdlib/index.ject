@@ -1,2 +1,3 @@
 # Ject stdlib overview (this file is intentionally non-executable documentation in comments only).
-# For module lists see stdlib/*.ject and CorLib in the interpreter.
+# For module lists see stdlib/*.ject.
+# For Rust vs Ject boundaries see ../docs/NATIVE_KERNEL.md (CorLib, native-only modules, injected builtins).

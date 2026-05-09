@@ -216,11 +216,12 @@ assert(len(lines) == 3, "read_lines length")
 # ------------------------------------------------------------
 # 11) GUI module smoke (non-blocking builder path)
 # ------------------------------------------------------------
-import {window, label, separator, button, input} from "gui"
+import {button, input, label, run, separator, window} from "gui"
 let app = window("MegaTest GUI Builder", 420, 280)
 label(app, "GUI builder initialized")
 separator(app)
 input(app, "field1", "Field 1:", "")
 button(app, "ok", "OK")
+run(app)
 
 print "=== Ject Mega Test: PASS ==="

@@ -1,39 +1,11 @@
 # Utility Standard Library Module
 # Professional utility functions
+# Note: type_of, random, random_int, to_int, to_float, to_string, to_bool are injected
+# from CorLib (see inject_module_file_builtins "util") so they are real builtins here.
 
-# Type checking
-export fn type_of(value)
-    return type_of(value)
-end
-
-# Random number generation (uses builtin)
-export fn random()
-    return random()
-end
-
-export fn random_int(min_val, max_val)
-    return random_int(min_val, max_val)
-end
-
+# Uniform float in [min_val, max_val)
 export fn random_float(min_val, max_val)
-    return random_float(min_val, max_val)
-end
-
-# Type conversions (use builtins)
-export fn to_int(value)
-    return to_int(value)
-end
-
-export fn to_float(value)
-    return to_float(value)
-end
-
-export fn to_string(value)
-    return to_string(value)
-end
-
-export fn to_bool(value)
-    return to_bool(value)
+    return min_val + (max_val - min_val) * random()
 end
 
 # Identity function
@@ -69,7 +41,9 @@ export fn is_truthy(value)
         return false
     elseif value == 0 then
         return false
-    elseif type_of(value) == "number" and value == 0.0 then
+    elseif type_of(value) == "integer" and value == 0 then
+        return false
+    elseif type_of(value) == "float" and value == 0.0 then
         return false
     elseif type_of(value) == "string" and len(value) == 0 then
         return false
@@ -103,9 +77,27 @@ export fn deep_equal(a, b)
     end
 end
 
-# Hash function (simple)
+# Deterministic hash (djb2-style over string form; arrays recurse)
 export fn hash(value)
-    return hash(value)
+    let t = type_of(value)
+    if t == "array" then
+        let h = 5381
+        let i = 0
+        while i < len(value) do
+            h = ((h * 33) + hash(value[i])) % 1000000007
+            i = i + 1
+        end
+        return h
+    end
+    let s = to_string(value)
+    let chars = split(s, "")
+    let h = 5381
+    let i = 0
+    while i < len(chars) do
+        h = ((h * 33) + len(chars[i]) + i) % 1000000007
+        i = i + 1
+    end
+    return h
 end
 
 # Copy value (deep copy for arrays/dicts)

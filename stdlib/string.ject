@@ -215,10 +215,11 @@ export fn is_numeric(str)
     if len(str) == 0 then
         return false
     end
+    let digits = "0123456789"
     let i = 0
     while i < len(str) do
         let ch = char_at(str, i)
-        if ch < "0" or ch > "9" then
+        if !(ch in digits) then
             return false
         end
         i = i + 1
@@ -230,25 +231,11 @@ export fn is_alpha(str)
     if len(str) == 0 then
         return false
     end
+    let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     let i = 0
     while i < len(str) do
         let ch = char_at(str, i)
-        if (ch < "a" or ch > "z") and (ch < "A" or ch > "Z") then
-            return false
-        end
-        i = i + 1
-    end
-    return true
-end
-
-export fn is_alpha(str)
-    if len(str) == 0 then
-        return false
-    end
-    let i = 0
-    while i < len(str) do
-        let ch = char_at(str, i)
-        if (ch < "a" or ch > "z") and (ch < "A" or ch > "Z") then
+        if !(ch in letters) then
             return false
         end
         i = i + 1

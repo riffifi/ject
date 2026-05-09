@@ -45,6 +45,14 @@ cargo build --release
 ./target/release/ject hello.ject
 ```
 
+Parse and lint **without running** (safe for editors — no side effects):
+
+```bash
+./target/release/ject --check hello.ject
+```
+
+See [NATIVE_KERNEL.md](NATIVE_KERNEL.md) for what stays in Rust vs Ject in the standard library.
+
 ### REPL
 
 Running without arguments starts the interactive REPL with history support:
@@ -106,7 +114,7 @@ Ject is dynamically typed. The available value types are:
 | Unique Array | `{|"a", "b"|}` |
 | Dictionary | `{name: "Alice", age: 30}` |
 | Struct instance | `new Point { x: 0, y: 0 }` |
-| Function | `fn(x) -> x * 2` |
+| Function | `lambda(x) -> x * 2` (expression lambdas; see below) |
 
 ### Type checking
 
@@ -343,30 +351,26 @@ end
 
 ### Lambda expressions
 
-Lambdas are anonymous functions. Both `fn` and `lambda` are valid keywords for them.
+Anonymous **expression** functions use the `lambda` keyword with **arrow (`->`) syntax only**:
 
 ```ject
-# Arrow syntax (expression body)
-let square = fn(x) -> x * x
+# Single expression body (supported)
+let square = lambda(x) -> x * x
 let add = lambda(a, b) -> a + b
 
-# Block body
-let describe = fn(x)
-    if x > 0 then
-        return "positive"
-    else
-        return "non-positive"
-    end
-end
+let numbers = [1, 2, 3, 4, 5]
+let doubled = map(numbers, lambda(n) -> n * 2)
+let evens = filter(numbers, lambda(n) -> n % 2 == 0)
+let total = reduce(numbers, lambda(acc, n) -> acc + n, 0)
 ```
+
+**Compatibility:** `fn(name) -> expr` as an inline lambda is not reliably supported in current builds—use `lambda(args) -> expr` instead. For multi-statement anonymous logic, use a named function (`fn name(...) ... end`) and pass it by name.
 
 Lambdas are first-class values and can be passed to functions or stored in variables:
 
 ```ject
 let numbers = [1, 2, 3, 4, 5]
-let doubled = map(numbers, fn(n) -> n * 2)
-let evens = filter(numbers, fn(n) -> n % 2 == 0)
-let total = reduce(numbers, fn(acc, n) -> acc + n, 0)
+let doubled = map(numbers, lambda(n) -> n * 2)
 ```
 
 ### Functions as values
@@ -475,9 +479,9 @@ unique([1, 2, 2, 3, 3])            # [1, 2, 3]
 contains([1, 2, 3], 2)             # true
 index_of([1, 2, 3], 2)             # 1
 slice([0, 1, 2, 3, 4], 1, 4)       # [1, 2, 3]
-map([1, 2, 3], fn(x) -> x * 2)    # [2, 4, 6]
-filter([1,2,3,4], fn(x) -> x > 2) # [3, 4]
-reduce([1,2,3], fn(a,b) -> a+b, 0) # 6
+map([1, 2, 3], lambda(x) -> x * 2)    # [2, 4, 6]
+filter([1,2,3,4], lambda(x) -> x > 2) # [3, 4]
+reduce([1,2,3], lambda(a,b) -> a+b, 0) # 6
 ```
 
 ---
@@ -1158,8 +1162,8 @@ import "util" as u
 
 ```ject
 u.identity(x)           # returns x unchanged
-u.constant(value)       # returns fn(_) -> value
-u.compose(f, g)         # returns fn(x) -> f(g(x))
+u.constant(value)       # returns lambda(_) -> value
+u.compose(f, g)         # returns lambda(x) -> f(g(x))
 u.apply(func, value)    # func(value)
 u.is_nil(value)         # value == nil
 u.is_truthy(value)      # explicit truthiness check

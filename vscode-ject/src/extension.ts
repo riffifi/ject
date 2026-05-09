@@ -2,6 +2,8 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { quoteShellArg, resolveJectExecutable, workspaceRoot } from "./jectExec";
+import { registerJectTesting } from "./testing";
 
 const languageSelector: vscode.DocumentSelector = { language: "ject", scheme: "file" };
 
@@ -72,19 +74,9 @@ const builtinSignatures = new Map<string, BuiltinSig>([
   ["input",      { sig: "input(prompt) -> string",          doc: "Displays `prompt` and reads a line from stdin.", params: ["prompt"] }],
   ["read_file",  { sig: "read_file(path) -> string",        doc: "Reads the file at `path` and returns its contents as a string.", params: ["path"] }],
   ["write_file", { sig: "write_file(path, content)",        doc: "Writes `content` to the file at `path`, creating or overwriting it.", params: ["path", "content"] }],
+  ["append_file",{ sig: "append_file(path, content)",       doc: "Appends string `content` to `path`.", params: ["path", "content"] }],
+  ["read_lines", { sig: "read_lines(path) -> array",        doc: "Reads file lines into an array of strings.", params: ["path"] }],
   ["file_exists",{ sig: "file_exists(path) -> boolean",     doc: "Returns `true` if a file or directory exists at `path`.", params: ["path"] }],
-  ["is_file",    { sig: "is_file(path) -> boolean",         doc: "Returns `true` if `path` refers to a regular file.", params: ["path"] }],
-  ["is_dir",     { sig: "is_dir(path) -> boolean",          doc: "Returns `true` if `path` refers to a directory.", params: ["path"] }],
-  // JSON
-  ["parse_json", { sig: "parse_json(str) -> any",           doc: "Parses a JSON string into a Ject value.", params: ["str"] }],
-  ["to_json",    { sig: "to_json(value) -> string",         doc: "Serializes a Ject value to a JSON string.", params: ["value"] }],
-  // System
-  ["exec",       { sig: "exec(command) -> string",          doc: "Runs `command` in a shell and returns stdout as a string.", params: ["command"] }],
-  ["env",        { sig: "env(name) -> string",              doc: "Returns the value of environment variable `name`.", params: ["name"] }],
-  ["exit",       { sig: "exit(code)",                       doc: "Exits the program with the given status `code`.", params: ["code"] }],
-  ["now",        { sig: "now() -> float",                   doc: "Returns the current time as a Unix timestamp (float seconds).", params: [] }],
-  ["timestamp",  { sig: "timestamp() -> integer",           doc: "Returns the current Unix timestamp as an integer.", params: [] }],
-  ["sleep",      { sig: "sleep(ms)",                        doc: "Sleeps for `ms` milliseconds.", params: ["ms"] }],
 ]);
 
 const builtins = Array.from(builtinSignatures.keys());
@@ -106,9 +98,9 @@ const moduleMembers: Record<string, string[]> = {
   array:    ["average", "median", "take", "drop", "initial", "rest", "concat", "zip", "union", "intersection",
              "difference", "flatten", "chunk", "shuffle", "rotate_left", "rotate_right", "insert_at",
              "remove_at", "compact", "enumerate", "fill_arr", "range_arr", "sample", "sort_by"],
-  io:       ["write_lines", "read_json", "write_json"],
-  json:     ["to_json_pretty", "is_valid_json", "json_get"],
-  system:   ["get_cwd", "change_dir"],
+  io:       ["write_lines", "read_json", "write_json", "read_file", "write_file", "append_file", "read_lines", "file_exists", "is_file", "is_dir", "parse_json", "to_json"],
+  json:     ["to_json_pretty", "is_valid_json", "json_get", "parse_json", "to_json"],
+  system:   ["get_cwd", "change_dir", "input", "exec", "env", "exit", "args", "cwd", "now", "timestamp", "sleep", "file_exists", "is_file", "is_dir"],
   util:     ["identity", "constant", "compose", "apply", "is_nil", "is_truthy", "deep_equal", "copy"],
   numpy:    ["array", "zeros", "ones", "arange", "linspace", "eye", "identity", "shape", "ndim", "size",
              "reshape", "flatten", "transpose", "concatenate", "stack", "sqrt", "exp", "log", "abs",
@@ -120,7 +112,7 @@ const moduleMembers: Record<string, string[]> = {
 const keywordDocs = new Map<string, string>([
   ["let",      "Declare a variable: `let name = value`."],
   ["fn",       "Define a named function. Closes with `end`.\n\n```ject\nfn greet(name, greeting = \"Hello\")\n    print \"$greeting, $name!\"\nend\n```"],
-  ["lambda",   "Create an inline function: `lambda(x) -> x * x`. `fn` also works for lambdas."],
+  ["lambda",   "Expression lambda (supported): `lambda(x) -> x * x`. Use `lambda(args) -> expr` — not `fn(...) -> expr`."],
   ["if",       "Conditional block. `then` is optional. Closes with `end`.\n\n```ject\nif x > 0\n    print \"positive\"\nelseif x < 0\n    print \"negative\"\nelse\n    print \"zero\"\nend\n```"],
   ["elseif",   "Additional condition branch inside an `if` block."],
   ["else",     "Fallback branch inside an `if` block."],
@@ -150,6 +142,9 @@ let replTerminal: vscode.Terminal | undefined;
 let diagnosticCollection: vscode.DiagnosticCollection;
 let statusBarItem: vscode.StatusBarItem;
 let checkTimeout: ReturnType<typeof setTimeout> | undefined;
+let moduleMembersCache: Record<string, string[]> | undefined;
+let moduleMembersCacheRoot: string | undefined;
+const savePipelineGuard = new Set<string>();
 
 // ─── Activate ────────────────────────────────────────────────────────────────
 
@@ -172,6 +167,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("ject.checkFile", checkCurrentFile),
     vscode.commands.registerCommand("ject.openExamples", openExamples),
     vscode.commands.registerCommand("ject.newFile", newJectFile),
+    vscode.commands.registerCommand("ject.organizeImports", organizeImportsCommand),
+    vscode.commands.registerCommand("ject.formatFile", formatCurrentFile),
 
     // Language providers
     vscode.languages.registerCompletionItemProvider(languageSelector, new JectCompletionProvider(), ".", "\"", "("),
@@ -191,7 +188,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Events
     vscode.window.onDidChangeActiveTextEditor(updateStatusBar),
     vscode.workspace.onDidChangeTextDocument(onDocumentChange),
-    vscode.workspace.onDidSaveTextDocument(onDocumentSave),
+    vscode.workspace.onDidSaveTextDocument((doc) => { void onDocumentSave(doc); }),
     vscode.workspace.onDidCloseTextDocument((doc) => diagnosticCollection.delete(doc.uri)),
     vscode.window.onDidCloseTerminal((t) => {
       if (t === runTerminal) { runTerminal = undefined; }
@@ -200,6 +197,8 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   updateStatusBar(vscode.window.activeTextEditor);
+
+  registerJectTesting(context);
 }
 
 export function deactivate(): void {
@@ -227,18 +226,48 @@ function onDocumentChange(event: vscode.TextDocumentChangeEvent): void {
   checkTimeout = setTimeout(() => lintDocument(event.document), 600);
 }
 
-function onDocumentSave(document: vscode.TextDocument): void {
+async function onDocumentSave(document: vscode.TextDocument): Promise<void> {
   if (document.languageId !== "ject") { return; }
+  const key = document.uri.toString();
+  if (savePipelineGuard.has(key)) {
+    savePipelineGuard.delete(key);
+    return;
+  }
   const cfg = vscode.workspace.getConfiguration("ject");
+  const shouldFormat = cfg.get<boolean>("autoFormatOnSave", false);
+  const shouldOrganize = cfg.get<boolean>("organizeImportsOnSave", false);
+
+  if (shouldFormat || shouldOrganize) {
+    savePipelineGuard.add(key);
+    if (shouldOrganize) {
+      await organizeImportsDocument(document);
+    }
+    if (shouldFormat) {
+      await vscode.commands.executeCommand("editor.action.formatDocument", document.uri);
+    }
+    if (document.isDirty) {
+      await document.save();
+      return;
+    }
+    savePipelineGuard.delete(key);
+  }
+
   if (cfg.get<boolean>("checkOnSave", true)) { lintDocument(document); }
   if (cfg.get<boolean>("runOnSave", false)) { runCurrentFile(); }
 }
 
 async function lintDocument(document: vscode.TextDocument): Promise<void> {
   const executable = await resolveJectExecutable();
-  if (!fs.existsSync(executable) && executable === "ject") { return; }
   const childProcess = await import("child_process");
-  childProcess.execFile(executable, [document.uri.fsPath], { cwd: workspaceRoot(), timeout: 10000 }, (_error, stdout, stderr) => {
+  const root = workspaceRoot();
+  const hasExecutable = executable !== "ject" || fs.existsSync(executable);
+  const checkCmd = hasExecutable
+    ? { cmd: executable, args: ["--check", document.uri.fsPath], cwd: root }
+    : (root && fs.existsSync(path.join(root, "Cargo.toml")))
+      ? { cmd: "cargo", args: ["run", "--quiet", "--", "--check", document.uri.fsPath], cwd: root }
+      : undefined;
+  if (!checkCmd) { return; }
+  childProcess.execFile(checkCmd.cmd, checkCmd.args, { cwd: checkCmd.cwd, timeout: 10000 }, (_error, stdout, stderr) => {
     const diagnostics = parseDiagnostics(`${stdout}\n${stderr}`, document);
     diagnosticCollection.set(document.uri, diagnostics);
     const errCount  = diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Error).length;
@@ -260,7 +289,7 @@ async function runCurrentFile(uri?: vscode.Uri): Promise<void> {
   const executable = await resolveJectExecutable();
   const terminal = getRunTerminal();
   terminal.show(true);
-  terminal.sendText(`${quote(executable)} ${quote(document.uri.fsPath)}`);
+  terminal.sendText(`${quoteShellArg(executable)} ${quoteShellArg(document.uri.fsPath)}`);
 }
 
 async function runSelection(): Promise<void> {
@@ -279,14 +308,14 @@ async function runSelection(): Promise<void> {
   const executable = await resolveJectExecutable();
   const terminal = getRunTerminal();
   terminal.show(true);
-  terminal.sendText(`${quote(executable)} ${quote(tmpFile)}`);
+  terminal.sendText(`${quoteShellArg(executable)} ${quoteShellArg(tmpFile)}`);
 }
 
 async function startRepl(): Promise<void> {
   const executable = await resolveJectExecutable();
   replTerminal = replTerminal ?? vscode.window.createTerminal({ name: "Ject REPL", cwd: workspaceRoot() });
   replTerminal.show(true);
-  replTerminal.sendText(quote(executable));
+  replTerminal.sendText(quoteShellArg(executable));
 }
 
 async function buildInterpreter(): Promise<void> {
@@ -307,7 +336,18 @@ async function checkCurrentFile(): Promise<void> {
   diagnosticCollection.delete(document.uri);
   const executable = await resolveJectExecutable();
   const childProcess = await import("child_process");
-  childProcess.execFile(executable, [document.uri.fsPath], { cwd: workspaceRoot(), timeout: 15000 }, (error, stdout, stderr) => {
+  const root = workspaceRoot();
+  const hasExecutable = executable !== "ject" || fs.existsSync(executable);
+  const checkCmd = hasExecutable
+    ? { cmd: executable, args: ["--check", document.uri.fsPath], cwd: root }
+    : (root && fs.existsSync(path.join(root, "Cargo.toml")))
+      ? { cmd: "cargo", args: ["run", "--quiet", "--", "--check", document.uri.fsPath], cwd: root }
+      : undefined;
+  if (!checkCmd) {
+    vscode.window.showWarningMessage("Ject executable not found. Build it (`cargo build`) or configure `ject.executablePath`.");
+    return;
+  }
+  childProcess.execFile(checkCmd.cmd, checkCmd.args, { cwd: checkCmd.cwd, timeout: 15000 }, (error, stdout, stderr) => {
     const diagnostics = parseDiagnostics(`${stdout}\n${stderr}`, document);
     diagnosticCollection.set(document.uri, diagnostics);
     if (diagnostics.length === 0 && !error) {
@@ -315,7 +355,7 @@ async function checkCurrentFile(): Promise<void> {
     } else if (diagnostics.length === 0) {
       vscode.window.showWarningMessage("Ject returned an error but no line diagnostics. Check the terminal.");
       getRunTerminal().show(true);
-      getRunTerminal().sendText(`${quote(executable)} ${quote(document.uri.fsPath)}`);
+      getRunTerminal().sendText(`${quoteShellArg(checkCmd.cmd)} ${checkCmd.args.map(quoteShellArg).join(" ")}`);
     } else {
       vscode.window.showInformationMessage(`Ject: ${diagnostics.length} issue${diagnostics.length === 1 ? "" : "s"} found.`);
     }
@@ -337,11 +377,30 @@ async function newJectFile(): Promise<void> {
   await vscode.window.showTextDocument(doc);
 }
 
+async function formatCurrentFile(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== "ject") {
+    vscode.window.showWarningMessage("Open a Ject file first.");
+    return;
+  }
+  await vscode.commands.executeCommand("editor.action.formatDocument", editor.document.uri);
+}
+
+async function organizeImportsCommand(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== "ject") {
+    vscode.window.showWarningMessage("Open a Ject file first.");
+    return;
+  }
+  await organizeImportsDocument(editor.document);
+}
+
 // ─── Completion ──────────────────────────────────────────────────────────────
 
 class JectCompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.slice(0, position.character);
+    const allModuleMembers = getResolvedModuleMembers();
 
     // Module name completions inside import strings
     if (/import\s+"[^"]*$/.test(linePrefix) || /from\s+"[^"]*$/.test(linePrefix)) {
@@ -360,8 +419,8 @@ class JectCompletionProvider implements vscode.CompletionItemProvider {
       if (alias) {
         // Try to resolve alias → module name from `import "X" as alias` in the doc
         const resolvedModule = resolveAlias(document, alias);
-        const members = resolvedModule ? moduleMembers[resolvedModule] : undefined;
-        const candidates = members ?? (moduleMembers[alias] ?? []);
+        const members = resolvedModule ? allModuleMembers[resolvedModule] : undefined;
+        const candidates = members ?? (allModuleMembers[alias] ?? []);
         if (candidates.length > 0) {
           return candidates.map((m) => {
             const item = new vscode.CompletionItem(m, vscode.CompletionItemKind.Method);
@@ -419,6 +478,22 @@ class JectCompletionProvider implements vscode.CompletionItemProvider {
         ? new vscode.SnippetString(`${name}()`)
         : new vscode.SnippetString(`${name}($0)`);
       items.push(item);
+    }
+
+    // Module exports (auto-import if needed)
+    for (const [moduleName, members] of Object.entries(allModuleMembers)) {
+      for (const member of members) {
+        if (builtinSignatures.has(member)) { continue; }
+        const item = new vscode.CompletionItem(member, vscode.CompletionItemKind.Function);
+        item.detail = `${member}(...) from "${moduleName}"`;
+        item.documentation = new vscode.MarkdownString(`Auto-imports from \`${moduleName}\` when inserted.`);
+        item.insertText = new vscode.SnippetString(`${member}($0)`);
+        const importEdit = buildAutoImportEdit(document, moduleName, member);
+        if (importEdit) {
+          item.additionalTextEdits = [importEdit];
+        }
+        items.push(item);
+      }
     }
 
     // Constants
@@ -700,7 +775,13 @@ class JectFoldingProvider implements vscode.FoldingRangeProvider {
       } else if (opensBlock(trimmed)) {
         stack.push({ line, isRegion: false });
       } else if (/^end\b/.test(trimmed)) {
-        const top = stack.findLastIndex(s => !s.isRegion);
+        let top = -1;
+        for (let i = stack.length - 1; i >= 0; i--) {
+          if (!stack[i].isRegion) {
+            top = i;
+            break;
+          }
+        }
         if (top >= 0 && line > stack[top].line + 1) {
           ranges.push(new vscode.FoldingRange(stack[top].line, line));
           stack.splice(top, 1);
@@ -714,7 +795,7 @@ class JectFoldingProvider implements vscode.FoldingRangeProvider {
 // ─── Code actions ────────────────────────────────────────────────────────────
 
 class JectCodeActionProvider implements vscode.CodeActionProvider {
-  provideCodeActions(document: vscode.TextDocument, range: vscode.Range): vscode.CodeAction[] {
+  provideCodeActions(document: vscode.TextDocument, range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
     const actions: vscode.CodeAction[] = [];
     const lineText = document.lineAt(range.start.line).text;
     const selected = document.getText(range).trim();
@@ -736,6 +817,37 @@ class JectCodeActionProvider implements vscode.CodeActionProvider {
       edit.insert(document.uri, new vscode.Position(range.start.line, bareAssign[1].length), "let ");
       action.edit = edit;
       actions.push(action);
+    }
+
+    const allModuleMembers = getResolvedModuleMembers();
+    const missingForBatch = new Map<string, string>();
+    for (const diagnostic of context.diagnostics) {
+      const symbol = extractUndefinedSymbol(diagnostic.message);
+      if (!symbol) { continue; }
+      if (isAlreadyKnownSymbol(document, symbol)) { continue; }
+      const moduleName = findModuleForSymbol(symbol, allModuleMembers);
+      if (!moduleName) { continue; }
+      missingForBatch.set(symbol, moduleName);
+      const importEdit = buildAutoImportEdit(document, moduleName, symbol);
+      if (!importEdit) { continue; }
+      const action = new vscode.CodeAction(`Add import for ${symbol} from "${moduleName}"`, vscode.CodeActionKind.QuickFix);
+      action.diagnostics = [diagnostic];
+      const edit = new vscode.WorkspaceEdit();
+      edit.set(document.uri, [importEdit]);
+      action.edit = edit;
+      actions.push(action);
+    }
+
+    if (missingForBatch.size > 1) {
+      const batchEdit = buildBatchAutoImportEdit(document, missingForBatch);
+      if (batchEdit) {
+        const action = new vscode.CodeAction("Import all missing symbols in file", vscode.CodeActionKind.QuickFix);
+        action.diagnostics = [...context.diagnostics];
+        const edit = new vscode.WorkspaceEdit();
+        edit.set(document.uri, [batchEdit]);
+        action.edit = edit;
+        actions.push(action);
+      }
     }
 
     return actions;
@@ -816,12 +928,243 @@ function resolveAlias(document: vscode.TextDocument, alias: string): string | un
   return undefined;
 }
 
+function getResolvedModuleMembers(): Record<string, string[]> {
+  const root = workspaceRoot();
+  if (!root) { return moduleMembers; }
+  if (moduleMembersCache && moduleMembersCacheRoot === root) {
+    return moduleMembersCache;
+  }
+  moduleMembersCache = buildModuleMembersFromStdlib(root);
+  moduleMembersCacheRoot = root;
+  return moduleMembersCache;
+}
+
+function buildModuleMembersFromStdlib(root: string): Record<string, string[]> {
+  const merged: Record<string, Set<string>> = {};
+  for (const [mod, members] of Object.entries(moduleMembers)) {
+    merged[mod] = new Set(members);
+  }
+
+  const stdlibDir = path.join(root, "stdlib");
+  if (!fs.existsSync(stdlibDir)) {
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(merged)) { out[k] = [...v].sort(); }
+    return out;
+  }
+
+  for (const entry of fs.readdirSync(stdlibDir)) {
+    if (!entry.endsWith(".ject")) { continue; }
+    const moduleName = path.basename(entry, ".ject");
+    const source = fs.readFileSync(path.join(stdlibDir, entry), "utf8");
+    const bucket = merged[moduleName] ?? new Set<string>();
+    const lines = source.replace(/\r\n/g, "\n").split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const fnMatch = trimmed.match(/^export\s+fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+      const valueMatch = trimmed.match(/^export\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+      if (fnMatch) { bucket.add(fnMatch[1]); }
+      if (valueMatch) { bucket.add(valueMatch[1]); }
+    }
+    merged[moduleName] = bucket;
+  }
+
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(merged)) {
+    out[k] = [...v].sort();
+  }
+  return out;
+}
+
+function buildAutoImportEdit(document: vscode.TextDocument, moduleName: string, symbol: string): vscode.TextEdit | undefined {
+  const lines = document.getText().replace(/\r\n/g, "\n").split("\n");
+  const selective = new RegExp(`^\\s*import\\s*\\{([^}]*)\\}\\s*from\\s*\"${escapeRegExp(moduleName)}\"\\s*$`);
+  const aliasOrFull = new RegExp(`^\\s*import\\s+\"${escapeRegExp(moduleName)}\"(?:\\s+as\\s+\\w+)?\\s*$`);
+
+  let firstImport = -1;
+  let lastImport = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith("import ")) {
+      if (firstImport === -1) { firstImport = i; }
+      lastImport = i;
+    }
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("import ")) { continue; }
+    if (firstImport !== -1 && lastImport !== -1 && i > lastImport) { break; }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    const m = trimmed.match(selective);
+    if (m) {
+      const names = m[1].split(",").map(s => s.trim()).filter(Boolean);
+      if (names.includes(symbol)) { return undefined; }
+      const updated = [...new Set([...names, symbol])].sort().join(", ");
+      return vscode.TextEdit.replace(new vscode.Range(i, 0, i, lines[i].length), `import {${updated}} from "${moduleName}"`);
+    }
+    if (aliasOrFull.test(trimmed)) { return undefined; }
+  }
+
+  const insertLine = (lastImport >= 0) ? lastImport + 1 : 0;
+  const newline = lines.length > 0 ? "\n" : "";
+  return vscode.TextEdit.insert(new vscode.Position(insertLine, 0), `import {${symbol}} from "${moduleName}"${newline}`);
+}
+
+function buildBatchAutoImportEdit(document: vscode.TextDocument, symbolsToModules: Map<string, string>): vscode.TextEdit | undefined {
+  const lines = document.getText().replace(/\r\n/g, "\n").split("\n");
+  const selectiveRegex = /^\s*import\s*\{([^}]*)\}\s*from\s*"([^"]+)"\s*$/;
+  const aliasRegex = /^\s*import\s+"([^"]+)"\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$/;
+  const fullRegex = /^\s*import\s+"([^"]+)"\s*$/;
+
+  const selective = new Map<string, Set<string>>();
+  const fullOrAlias = new Set<string>();
+  const importLines: number[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed.startsWith("import ")) { continue; }
+    importLines.push(i);
+    const s = trimmed.match(selectiveRegex);
+    if (s) {
+      const moduleName = s[2];
+      const existing = selective.get(moduleName) ?? new Set<string>();
+      for (const n of s[1].split(",").map(x => x.trim()).filter(Boolean)) {
+        existing.add(n);
+      }
+      selective.set(moduleName, existing);
+      continue;
+    }
+    const a = trimmed.match(aliasRegex);
+    if (a) {
+      fullOrAlias.add(a[1]);
+      continue;
+    }
+    const f = trimmed.match(fullRegex);
+    if (f) {
+      fullOrAlias.add(f[1]);
+    }
+  }
+
+  let changed = false;
+  for (const [symbol, moduleName] of symbolsToModules) {
+    if (fullOrAlias.has(moduleName)) { continue; }
+    const set = selective.get(moduleName) ?? new Set<string>();
+    const before = set.size;
+    set.add(symbol);
+    if (set.size !== before) { changed = true; }
+    selective.set(moduleName, set);
+  }
+  if (!changed) { return undefined; }
+
+  const selectiveLines = [...selective.entries()]
+    .map(([moduleName, names]) => `import {${[...names].sort().join(", ")}} from "${moduleName}"`)
+    .sort((a, b) => a.localeCompare(b));
+  const fullAliasLines = [...importLines]
+    .map(i => lines[i].trim())
+    .filter(t => !selectiveRegex.test(t))
+    .sort((a, b) => a.localeCompare(b));
+
+  const mergedImports = [...fullAliasLines, ...selectiveLines].sort((a, b) => a.localeCompare(b));
+  const replacement = mergedImports.join("\n");
+
+  if (importLines.length === 0) {
+    const newline = lines.length > 0 ? "\n" : "";
+    return vscode.TextEdit.insert(new vscode.Position(0, 0), `${replacement}${newline}`);
+  }
+
+  const first = Math.min(...importLines);
+  const last = Math.max(...importLines);
+  return vscode.TextEdit.replace(new vscode.Range(first, 0, last, lines[last].length), replacement);
+}
+
+function extractUndefinedSymbol(message: string): string | undefined {
+  const m = message.match(/(?:undefined variable|undeclared variable)\s+`([A-Za-z_][A-Za-z0-9_]*)`/i);
+  return m?.[1];
+}
+
+function findModuleForSymbol(symbol: string, membersByModule: Record<string, string[]>): string | undefined {
+  for (const [moduleName, members] of Object.entries(membersByModule)) {
+    if (members.includes(symbol)) {
+      return moduleName;
+    }
+  }
+  return undefined;
+}
+
+function isAlreadyKnownSymbol(document: vscode.TextDocument, symbol: string): boolean {
+  if (builtinSignatures.has(symbol)) { return true; }
+  if (keywords.includes(symbol)) { return true; }
+  const syms = collectDocumentSymbols(document);
+  if (syms.functions.some(f => f.name === symbol)) { return true; }
+  if (syms.variables.some(v => v.name === symbol)) { return true; }
+  if (syms.structs.some(s => s.name === symbol)) { return true; }
+  return false;
+}
+
+async function organizeImportsDocument(document: vscode.TextDocument): Promise<void> {
+  const src = document.getText().replace(/\r\n/g, "\n");
+  const lines = src.split("\n");
+  const importRegex = /^\s*import\s+.+$/;
+  const selectiveRegex = /^\s*import\s*\{([^}]*)\}\s*from\s*"([^"]+)"\s*$/;
+  const aliasRegex = /^\s*import\s+"([^"]+)"\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$/;
+  const fullRegex = /^\s*import\s+"([^"]+)"\s*$/;
+
+  const importLines: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (importRegex.test(lines[i].trim())) { importLines.push(i); }
+  }
+  if (importLines.length === 0) { return; }
+
+  const usedText = lines
+    .map((line, idx) => (importLines.includes(idx) ? "" : line))
+    .join("\n");
+  const usedWord = (name: string): boolean => new RegExp(`\\b${escapeRegExp(name)}\\b`).test(usedText);
+
+  const normalized: string[] = [];
+  for (const idx of importLines) {
+    const trimmed = lines[idx].trim();
+    const selective = trimmed.match(selectiveRegex);
+    if (selective) {
+      const module = selective[2];
+      const kept = selective[1].split(",").map(s => s.trim()).filter(Boolean).filter(usedWord);
+      if (kept.length > 0) {
+        normalized.push(`import {${[...new Set(kept)].sort().join(", ")}} from "${module}"`);
+      }
+      continue;
+    }
+    const alias = trimmed.match(aliasRegex);
+    if (alias) {
+      const aliasName = alias[2];
+      if (usedWord(aliasName)) {
+        normalized.push(`import "${alias[1]}" as ${aliasName}`);
+      }
+      continue;
+    }
+    const full = trimmed.match(fullRegex);
+    if (full) {
+      normalized.push(`import "${full[1]}"`);
+      continue;
+    }
+  }
+
+  const deduped = [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
+  const first = Math.min(...importLines);
+  const last = Math.max(...importLines);
+  const hasCodeAfter = lines.slice(last + 1).some(l => l.trim().length > 0);
+  const replacement = deduped.length > 0
+    ? `${deduped.join("\n")}${hasCodeAfter ? "\n" : ""}`
+    : "";
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(document.uri, new vscode.Range(first, 0, last, lines[last].length), replacement);
+  await vscode.workspace.applyEdit(edit);
+}
+
 function parseDiagnostics(output: string, document: vscode.TextDocument): vscode.Diagnostic[] {
   const diagnostics: vscode.Diagnostic[] = [];
   const chunks = output.split(/\n(?=(?:Error|Warning|Runtime Error|Parse error|Parse Error)\b)/i);
   for (const chunk of chunks) {
     const severity    = /warning/i.test(chunk) ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Error;
-    const lineMatch   = chunk.match(/line\s+(\d+)(?:,\s*column\s+(\d+))?/i);
+    const lineMatch   = chunk.match(/line\s+(\d+)(?:,\s*column\s+(\d+))?/i)
+      ?? chunk.match(/-->\s+[^:\n]+:(\d+):(\d+)/);
     const codeMatch   = chunk.match(/\b([EW]\d{4})\b/);
     const messageLine = chunk.split(/\r?\n/).find(l => /(error|warning)/i.test(l))?.replace(/\x1b\[[0-9;]*m/g, "").trim();
     if (!lineMatch && !messageLine) { continue; }
@@ -848,37 +1191,9 @@ async function getTargetDocument(uri?: vscode.Uri): Promise<vscode.TextDocument 
   return undefined;
 }
 
-async function resolveJectExecutable(): Promise<string> {
-  const config = vscode.workspace.getConfiguration("ject");
-  const root = workspaceRoot();
-  if (config.get<boolean>("workspaceExecutable", true) && root) {
-    for (const candidate of [
-      path.join(root, "target", "release", executableName("ject")),
-      path.join(root, "target", "debug",   executableName("ject")),
-    ]) {
-      if (fs.existsSync(candidate)) { return candidate; }
-    }
-  }
-  return config.get<string>("executablePath", "ject");
-}
-
-function workspaceRoot(): string | undefined {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-}
-
 function getRunTerminal(): vscode.Terminal {
   runTerminal = runTerminal ?? vscode.window.createTerminal({ name: "Ject", cwd: workspaceRoot() });
   return runTerminal;
-}
-
-function executableName(base: string): string {
-  return process.platform === "win32" ? `${base}.exe` : base;
-}
-
-function quote(value: string): string {
-  return process.platform === "win32"
-    ? `"${value.replace(/"/g, '\\"')}"`
-    : `'${value.replace(/'/g, "'\\''")}' `;
 }
 
 function escapeRegExp(s: string): string {
@@ -903,9 +1218,9 @@ function snippetCompletions(): vscode.CompletionItem[] {
     ["export fn",       "export fn ${1:name}(${2:params})\n    $0\nend",                       "Export function"],
     ["unique array",    "{|${1:items}|}",                                                       "Unique array literal"],
     ["named slice",     "${1:arr}[from:${2:0} to:${3:end}]",                                  "Named slice"],
-    ["map lambda",      "map(${1:arr}, fn(${2:x}) -> $0)",                                    "Map with lambda"],
-    ["filter lambda",   "filter(${1:arr}, fn(${2:x}) -> $0)",                                 "Filter with lambda"],
-    ["reduce lambda",   "reduce(${1:arr}, fn(${2:acc}, ${3:x}) -> $0, ${4:0})",               "Reduce with lambda"],
+    ["map lambda",      "map(${1:arr}, lambda(${2:x}) -> $0)",                                    "Map with lambda"],
+    ["filter lambda",   "filter(${1:arr}, lambda(${2:x}) -> $0)",                                 "Filter with lambda"],
+    ["reduce lambda",   "reduce(${1:arr}, lambda(${2:acc}, ${3:x}) -> $0, ${4:0})",               "Reduce with lambda"],
     ["string interp",   "\"${1:text} \\${${2:expr}}\"",                                        "String interpolation"],
     ["file read",       "let ${1:content} = read_file(\"${2:path}\")",                        "Read file"],
     ["file write",      "write_file(\"${1:path}\", ${2:content})",                             "Write file"],

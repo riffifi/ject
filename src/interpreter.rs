@@ -1108,6 +1108,27 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     Ok(Value::Integer(a % b))
                 }
             }
+            (Value::Float(a), BinaryOp::Modulo, Value::Float(b)) => {
+                if *b == 0.0 {
+                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                } else {
+                    Ok(Value::Float(a % b))
+                }
+            }
+            (Value::Integer(a), BinaryOp::Modulo, Value::Float(b)) => {
+                if *b == 0.0 {
+                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                } else {
+                    Ok(Value::Float((*a as f64) % b))
+                }
+            }
+            (Value::Float(a), BinaryOp::Modulo, Value::Integer(b)) => {
+                if *b == 0 {
+                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                } else {
+                    Ok(Value::Float(a % (*b as f64)))
+                }
+            }
             
             // Comparison
             (Value::Integer(a), BinaryOp::Equal, Value::Integer(b)) => Ok(Value::Bool(a == b)),
@@ -1191,9 +1212,13 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
             }
             
-            (left, op, right) => Err(RuntimeError {
-                message: format!("Unsupported operation: {} {} {}", left.type_name(), op, right.type_name()),
-            }),
+            (left, op, right) => {
+                let mut msg = format!("Unsupported operation: {} {} {}", left.type_name(), op, right.type_name());
+                if matches!(op, BinaryOp::Modulo) {
+                    msg.push_str(" (tip: `%` supports integer and float numbers only)");
+                }
+                Err(RuntimeError { message: msg })
+            }
         }
     }
     
@@ -1209,8 +1234,13 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
     }
     
     fn load_module(&mut self, module_path: &str, items: &Option<Vec<String>>, alias: &Option<String>) -> RuntimeResult<()> {
-        // First check if this is a builtin module (base conversion, etc.)
-        if let Some(module_functions) = crate::stdlib::get_module(module_path) {
+        // Native-only modules (`base`, `gui`, `numpy`) — see `NATIVE_KERNEL.md`
+        if crate::stdlib::is_native_only_module(module_path) {
+            let Some(module_functions) = crate::stdlib::get_module(module_path) else {
+                return Err(RuntimeError {
+                    message: format!("Internal error: native module '{}' missing exports", module_path),
+                });
+            };
             // It's a builtin module - load the requested functions
             let module_env = if let Some(items) = items {
                 // Selective import: import {item1, item2} from "module"
@@ -1243,7 +1273,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             return Ok(());
         }
 
-        // Not a builtin module - load from file
+        // Standard library / user modules — load from .ject file
         // Get the directory where the executable is located for resolving stdlib paths
         let exe_dir = std::env::current_exe()
             .ok()
@@ -1264,6 +1294,8 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         // Get current working directory
         let cwd = std::env::current_dir().unwrap_or_default();
 
+        // Determine module source from file path or embedded stdlib fallback.
+        let mut embedded_module_content: Option<String> = None;
         // Determine the module file path based on import style
         let module_file_path = if module_path.starts_with("~/") {
             // Home directory path: import "~/Documents/MyModule"
@@ -1356,24 +1388,33 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 if cwd_stdlib.exists() {
                     cwd_stdlib.to_string_lossy().to_string()
                 } else {
-                    return Err(RuntimeError {
-                        message: format!("Module '{}' not found. Expected at 'stdlib/{}.ject' or provide a path.", module_path, module_name),
-                    });
+                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name) {
+                        embedded_module_content = Some(source.to_string());
+                        format!("<embedded:{module_name}>")
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!("Module '{}' not found. Expected at 'stdlib/{}.ject' or provide a path.", module_path, module_name),
+                        });
+                    }
                 }
             }
         };
 
-        if !Path::new(&module_file_path).exists() {
+        if embedded_module_content.is_none() && !Path::new(&module_file_path).exists() {
             return Err(RuntimeError {
                 message: format!("Module '{}' not found at {}", module_path, module_file_path),
             });
         }
         
         // Read and parse the module file
-        let module_content = fs::read_to_string(&module_file_path)
-            .map_err(|e| RuntimeError {
-                message: format!("Failed to read module '{}': {}", module_path, e),
-            })?;
+        let module_content = if let Some(content) = embedded_module_content {
+            content
+        } else {
+            fs::read_to_string(&module_file_path)
+                .map_err(|e| RuntimeError {
+                    message: format!("Failed to read module '{}': {}", module_path, e),
+                })?
+        };
             
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
@@ -1392,10 +1433,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             module_env.define(name, value);
         }
 
-        let module_file_stem = Path::new(&module_file_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let module_file_stem = if module_file_path.starts_with("<embedded:") {
+            module_path.trim_end_matches(".ject")
+        } else {
+            Path::new(&module_file_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+        };
         for (name, value) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
             module_env.define(name, value);
         }
