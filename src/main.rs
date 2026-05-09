@@ -127,7 +127,7 @@ fn check_file(filename: &str) {
 }
 
 fn run_repl() {
-    println!("Ject REPL - v0.1.0");
+    println!("Ject REPL - version {}", env!("CARGO_PKG_VERSION"));
     println!("Use arrow keys to access history");
     println!("'exit' to, well, exit\n");
 
