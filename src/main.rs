@@ -139,7 +139,7 @@ fn run_repl() {
     let _ = rl.load_history(".ject_history");
 
     loop {
-        match rl.readline("ject› ") {
+        match rl.readline(">> ") {
             Ok(line) => {
                 let input = line.trim();
                 if input == "exit" {
