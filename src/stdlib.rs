@@ -97,6 +97,8 @@ pub fn create_corlib() -> HashMap<String, Value> {
     // ========== Constants ==========
     corlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
     corlib.insert("E".to_string(), Value::Float(std::f64::consts::E));
+    corlib.insert("inf".to_string(), Value::Float(f64::INFINITY));
+    corlib.insert("nan".to_string(), Value::Float(f64::NAN));
 
     corlib
 }
@@ -434,6 +436,8 @@ pub fn embedded_stdlib_module_source(name: &str) -> Option<&'static str> {
         "numpy" => Some(include_str!("../stdlib/numpy.ject")),
         "test" => Some(include_str!("../stdlib/test.ject")),
         "test_math" => Some(include_str!("../stdlib/test_math.ject")),
+        "color" => Some(include_str!("../stdlib/color.ject")),
+        "table" => Some(include_str!("../stdlib/table.ject")),
         _ => None,
     }
 }
@@ -1357,12 +1361,16 @@ match name {
                             if *step > 0 {
                                 while current < *end {
                                     result.push(Value::Integer(current));
-                                    current += step;
+                                    current = current.checked_add(*step).ok_or_else(|| RuntimeError {
+                                        message: "range() integer overflow".to_string(),
+                                    })?;
                                 }
                             } else {
                                 while current > *end {
                                     result.push(Value::Integer(current));
-                                    current += step;
+                                    current = current.checked_add(*step).ok_or_else(|| RuntimeError {
+                                        message: "range() integer overflow".to_string(),
+                                    })?;
                                 }
                             }
                             Ok(Value::Array(result))
@@ -1442,7 +1450,8 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Array(arr), Value::Integer(n)) => {
-                    let count = (*n as usize).min(arr.len());
+                    let count = (*n).max(0) as usize;
+                    let count = count.min(arr.len());
                     Ok(Value::Array(arr[..count].to_vec()))
                 }
                 _ => Err(RuntimeError {
@@ -1828,7 +1837,8 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Array(arr), Value::Integer(n)) => {
-                    let count = (*n as usize).min(arr.len());
+                    let count = (*n).max(0) as usize;
+                    let count = count.min(arr.len());
                     Ok(Value::Array(arr[count..].to_vec()))
                 }
                 _ => Err(RuntimeError {
@@ -1996,7 +2006,7 @@ match name {
                     message: "to_string() takes exactly 1 argument".to_string(),
                 });
             }
-            Ok(Value::String(args[0].to_string()))
+            Ok(Value::String(args[0].display()))
         },
         "to_bool" => {
             if args.len() != 1 {

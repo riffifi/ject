@@ -17,6 +17,7 @@ pub enum Value {
     Function {
         params: Vec<Parameter>,
         body: Vec<Stmt>,
+        closure_env: Environment,
     },
     ModuleFunction {
         params: Vec<Parameter>,
@@ -218,6 +219,7 @@ impl Value {
             Value::Float(f) => *f != 0.0,
             Value::String(s) => !s.is_empty(),
             Value::Array(arr) => !arr.is_empty(),
+            Value::UniqueArray(arr) => !arr.is_empty(),
             Value::Dictionary(dict) => !dict.is_empty(),
             Value::Collection(set) => !set.is_empty(),
             _ => true,
@@ -257,27 +259,35 @@ impl Value {
     }
 }
 
+/// A single lexical scope: a mutable name table shared by reference. Using `Rc<RefCell<_>>`
+/// means cloning an `Environment` (e.g. to capture a closure) is O(depth) — it just clones
+/// scope pointers — instead of deep-copying every variable in every enclosing scope. It also
+/// gives real closure semantics for free: a captured scope stays alive (and mutations to it
+/// stay visible to the closure) via the shared reference, even after the scope that declared
+/// it has been popped off the live call stack.
+pub type Scope = std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
-    scopes: Vec<HashMap<String, Value>>,
+    scopes: Vec<Scope>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Environment {
-            scopes: vec![HashMap::new()],
+            scopes: vec![std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()))],
         }
     }
     
     pub fn define(&mut self, name: String, value: Value) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, value);
+        if let Some(scope) = self.scopes.last() {
+            scope.borrow_mut().insert(name, value);
         }
     }
     
     pub fn get(&self, name: &str) -> Option<Value> {
         for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.get(name) {
+            if let Some(value) = scope.borrow().get(name) {
                 return Some(value.clone());
             }
         }
@@ -285,9 +295,9 @@ impl Environment {
     }
     
     pub fn set(&mut self, name: &str, value: Value) -> bool {
-        for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(name) {
-                scope.insert(name.to_string(), value);
+        for scope in self.scopes.iter().rev() {
+            if scope.borrow().contains_key(name) {
+                scope.borrow_mut().insert(name.to_string(), value);
                 return true;
             }
         }
@@ -295,7 +305,7 @@ impl Environment {
     }
     
     pub fn push_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())));
     }
     
     pub fn pop_scope(&mut self) {

@@ -235,8 +235,14 @@ pub enum Argument {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
-    pub pattern: Pattern,
-    pub body: Expr,
+    pub patterns: Vec<Pattern>,
+    pub body: MatchArmBody,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MatchArmBody {
+    Expression(Expr),
+    Block(Vec<Stmt>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -244,6 +250,11 @@ pub enum Pattern {
     Literal(Expr),
     Identifier(String),
     Wildcard, // _
+    /// `> 90`, `< 10`, `>= 5`, `<= 5`, `== x`, `!= x` -- compares the match subject
+    /// against `expr` using `op` (subject OP expr).
+    Relational(BinaryOp, Expr),
+    /// `0..12` -- inclusive membership test: subject >= start and subject <= end.
+    Range(Expr, Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -450,7 +461,7 @@ impl fmt::Display for Expr {
                 write!(f, "match {} {{ ", expr)?;
                 for (i, arm) in arms.iter().enumerate() {
                     if i > 0 { write!(f, ", ")?; }
-                    write!(f, "{:?} => {:?}", arm.pattern, arm.body)?;
+                    write!(f, "{:?} => {:?}", arm.patterns, arm.body)?;
                 }
                 write!(f, " }}")
             }

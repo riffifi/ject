@@ -1135,8 +1135,19 @@ impl Linter {
                 for arm in arms {
                     // Each match arm gets its own scope for pattern bindings
                     self.push_scope();
-                    self.analyze_pattern(&arm.pattern);
-                    self.analyze_expr(&arm.body);
+                    for pattern in &arm.patterns {
+                        self.analyze_pattern(pattern);
+                    }
+                    match &arm.body {
+                        crate::ast::MatchArmBody::Expression(expr) => {
+                            self.analyze_expr(expr);
+                        }
+                        crate::ast::MatchArmBody::Block(stmts) => {
+                            for stmt in stmts {
+                                self.analyze_statement(stmt);
+                            }
+                        }
+                    }
                     self.pop_scope();
                 }
             }
@@ -1151,9 +1162,30 @@ impl Linter {
                     self.analyze_expr(end);
                 }
             }
+            Expr::InterpolatedString(parts) => {
+                for part in parts {
+                    if let crate::lexer::InterpolationPart::Expression(expr_str) = part {
+                        // Interpolated expressions are stored as raw source text and only
+                        // parsed at evaluation time, so parse them here too, purely to
+                        // discover which variables they reference (marking them used).
+                        let mut lexer = crate::lexer::Lexer::new(expr_str);
+                        let located_tokens = lexer.tokenize_with_positions();
+                        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+                        let mut parser = crate::parser::Parser::new_simple(tokens);
+                        if let Ok(statements) = parser.parse() {
+                            for stmt in &statements {
+                                if let Stmt::Expression(inner_expr) = stmt {
+                                    self.analyze_expr(inner_expr);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Literals don't need analysis
             Expr::Integer(_) | Expr::Float(_) | Expr::String(_) | 
-            Expr::InterpolatedString(_) | Expr::Bool(_) | Expr::Nil => {}
+            Expr::Bool(_) | Expr::Nil => {}
             
             _ => {}
         }
@@ -1170,6 +1202,13 @@ impl Linter {
             }
             crate::ast::Pattern::Wildcard => {
                 // Wildcard doesn't create any bindings
+            }
+            crate::ast::Pattern::Relational(_, expr) => {
+                self.analyze_expr(expr);
+            }
+            crate::ast::Pattern::Range(start, end) => {
+                self.analyze_expr(start);
+                self.analyze_expr(end);
             }
         }
     }

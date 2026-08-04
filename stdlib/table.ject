@@ -1,0 +1,104 @@
+# table.ject - format tabular data as an aligned ASCII table.
+#
+#   import "table" as t
+#
+#   print(t.render(["Name", "Score"], [["Alice", 92], ["Bob", 81]]))
+#
+#   +-------+-------+
+#   | Name  | Score |
+#   +-------+-------+
+#   | Alice | 92    |
+#   | Bob   | 81    |
+#   +-------+-------+
+#
+# Or, if your data is already an array of dictionaries (e.g. loaded from JSON),
+# use from_dicts to derive the headers automatically:
+#
+#   let rows = [{"name": "Alice", "score": 92}, {"name": "Bob", "score": 81}]
+#   print(t.render_dicts(rows))
+
+import "string" as s
+
+fn column_widths(headers, rows)
+    let widths = []
+    for h in headers do
+        widths = push(widths, len(to_string(h)))
+    end
+
+    for row in rows do
+        let i = 0
+        for cell in row do
+            let cell_width = len(to_string(cell))
+            if cell_width > widths[i] then
+                widths[i] = cell_width
+            end
+            i = i + 1
+        end
+    end
+
+    return widths
+end
+
+fn border_line(widths)
+    let line = "+"
+    for w in widths do
+        line = line + repeat("-", w + 2) + "+"
+    end
+    return line
+end
+
+fn data_line(cells, widths)
+    let line = "|"
+    let i = 0
+    for cell in cells do
+        line = line + " " + s.pad_right(to_string(cell), widths[i], " ") + " |"
+        i = i + 1
+    end
+    return line
+end
+
+# Renders "headers" (array of strings) and "rows" (array of arrays, one per row,
+# same length as headers) as a bordered, column-aligned ASCII table string.
+export fn render(headers, rows)
+    let widths = column_widths(headers, rows)
+
+    let lines = []
+    lines = push(lines, border_line(widths))
+    lines = push(lines, data_line(headers, widths))
+    lines = push(lines, border_line(widths))
+    for row in rows do
+        lines = push(lines, data_line(row, widths))
+    end
+    lines = push(lines, border_line(widths))
+
+    return join(lines, "\n")
+end
+
+# Same as render, but takes an array of dictionaries and derives the headers from
+# the first dictionary's keys, in insertion order. Every dictionary should have
+# the same keys.
+export fn render_dicts(dicts)
+    if len(dicts) == 0 then
+        return ""
+    end
+
+    let headers = keys(dicts[0])
+    let rows = []
+    for d in dicts do
+        let row = []
+        for h in headers do
+            row = push(row, d[h])
+        end
+        rows = push(rows, row)
+    end
+
+    return render(headers, rows)
+end
+
+export fn print_table(headers, rows)
+    print(render(headers, rows))
+end
+
+export fn print_dicts(dicts)
+    print(render_dicts(dicts))
+end

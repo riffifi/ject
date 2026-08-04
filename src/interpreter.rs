@@ -45,6 +45,19 @@ type RuntimeResult<T> = Result<T, RuntimeError>;
 
 pub struct Interpreter {
     environment: Environment,
+    // Canonical file paths of modules currently being loaded (innermost last), used to
+    // detect circular imports with a clear error instead of infinite recursion.
+    import_stack: Vec<String>,
+    // Cache of already-loaded modules (canonical file path -> its exports), so importing
+    // the same module twice doesn't re-parse and re-execute the file, and so module-level
+    // state is a singleton across importers, like Python/JS modules.
+    module_cache: HashMap<String, HashMap<String, Value>>,
+    // Directory of the module file currently being loaded (innermost last). A relative
+    // import (`./x`, `../x`) inside that module resolves against THIS, not the process's
+    // current working directory -- otherwise a module's own internal imports break the
+    // moment it's used from a different directory than the one it happened to be
+    // authored/tested in, or is nested inside a subdirectory of a larger project.
+    module_dir_stack: Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug)]
@@ -72,7 +85,22 @@ impl Interpreter {
 
         Interpreter {
             environment,
+            import_stack: Vec::new(),
+            module_cache: HashMap::new(),
+            module_dir_stack: vec![std::env::current_dir().unwrap_or_default()],
         }
+    }
+
+    /// Sets the base directory that top-level relative imports (in the entry script
+    /// itself) resolve against. Call this with the entry script's own directory right
+    /// after `new()`, before `interpret`, so `import "./x"` in the entry file resolves
+    /// relative to wherever that file lives rather than the process's CWD.
+    pub fn set_script_dir(&mut self, dir: std::path::PathBuf) {
+        self.module_dir_stack[0] = dir;
+    }
+
+    fn current_import_base(&self) -> std::path::PathBuf {
+        self.module_dir_stack.last().cloned().unwrap_or_default()
     }
     
 //     fn load_stdlib_from_ject(environment: &mut Environment) -> RuntimeResult<()> {
@@ -225,6 +253,7 @@ impl Interpreter {
                 let func = Value::Function {
                     params: params.clone(),
                     body: body.clone(),
+                    closure_env: self.environment.clone(),
                 };
                 self.environment.define(name.clone(), func);
                 Ok(ControlFlow::None)
@@ -272,27 +301,24 @@ impl Interpreter {
                             self.environment.push_scope();
                             self.environment.define(var.clone(), element);
 
-                            match self.execute_block(body)? {
+                            let block_result = self.execute_block(body);
+                            self.environment.pop_scope();
+
+                            match block_result? {
                                 ControlFlow::Return(value) => {
-                                    self.environment.pop_scope();
                                     return Ok(ControlFlow::Return(value));
                                 }
                                 ControlFlow::Throw(error) => {
-                                    self.environment.pop_scope();
                                     return Ok(ControlFlow::Throw(error));
                                 }
                                 ControlFlow::Break => {
-                                    self.environment.pop_scope();
                                     break;
                                 }
                                 ControlFlow::Continue => {
-                                    self.environment.pop_scope();
                                     continue;
                                 }
                                 ControlFlow::None => {}
                             }
-
-                            self.environment.pop_scope();
                         }
                     }
                     Value::String(s) => {
@@ -301,27 +327,24 @@ impl Interpreter {
                             self.environment.push_scope();
                             self.environment.define(var.clone(), Value::String(ch.to_string()));
 
-                            match self.execute_block(body)? {
+                            let block_result = self.execute_block(body);
+                            self.environment.pop_scope();
+
+                            match block_result? {
                                 ControlFlow::Return(value) => {
-                                    self.environment.pop_scope();
                                     return Ok(ControlFlow::Return(value));
                                 }
                                 ControlFlow::Throw(error) => {
-                                    self.environment.pop_scope();
                                     return Ok(ControlFlow::Throw(error));
                                 }
                                 ControlFlow::Break => {
-                                    self.environment.pop_scope();
                                     break;
                                 }
                                 ControlFlow::Continue => {
-                                    self.environment.pop_scope();
                                     continue;
                                 }
                                 ControlFlow::None => {}
                             }
-
-                            self.environment.pop_scope();
                         }
                     }
                     _ => {
@@ -354,6 +377,7 @@ impl Interpreter {
                 let func = Value::Function {
                     params: params.clone(),
                     body: body.clone(),
+                    closure_env: self.environment.clone(),
                 };
                 self.environment.define(name.clone(), func);
                 Ok(ControlFlow::None)
@@ -368,14 +392,14 @@ impl Interpreter {
 
                 // Determine separator (default: space)
                 let separator = if let Some(sep_expr) = sep {
-                    self.evaluate_expression(sep_expr)?.to_string()
+                    self.evaluate_expression(sep_expr)?.display()
                 } else {
                     " ".to_string()
                 };
 
                 // Determine end (default: newline)
                 let ending = if let Some(end_expr) = end {
-                    self.evaluate_expression(end_expr)?.to_string()
+                    self.evaluate_expression(end_expr)?.display()
                 } else {
                     "\n".to_string()
                 };
@@ -404,9 +428,9 @@ impl Interpreter {
                             // Store the error value directly (it can be any value)
                             self.environment.define(var_name.clone(), error_value.clone());
                         }
-                        let result = self.execute_block(catch_body)?;
+                        let result = self.execute_block(catch_body);
                         self.environment.pop_scope();
-                        Ok(result)
+                        Ok(result?)
                     }
                     Ok(other) => Ok(other),
                     Err(e) => {
@@ -415,9 +439,9 @@ impl Interpreter {
                         if let Some(var_name) = catch_var {
                             self.environment.define(var_name.clone(), Value::String(e.message.clone()));
                         }
-                        let result = self.execute_block(catch_body)?;
+                        let result = self.execute_block(catch_body);
                         self.environment.pop_scope();
-                        Ok(result)
+                        Ok(result?)
                     }
                 }
             }
@@ -467,7 +491,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                                     if let Some(stmt) = statements.first() {
                                         if let crate::ast::Stmt::Expression(expr) = stmt {
                                             let value = self.evaluate_expression(expr)?;
-                                            result.push_str(&value.to_string());
+                                            result.push_str(&value.display());
                                         } else {
                                             return Err(RuntimeError {
                                                 message: "Invalid expression in string interpolation".to_string(),
@@ -495,6 +519,15 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             Expr::Binary { left, operator, right } => {
                 let left_val = self.evaluate_expression(left)?;
+
+                // Short-circuit: don't evaluate (or execute the side effects of) the
+                // right operand when the left operand alone already determines the result.
+                match operator {
+                    BinaryOp::And if !left_val.is_truthy() => return Ok(left_val),
+                    BinaryOp::Or if left_val.is_truthy() => return Ok(left_val),
+                    _ => {}
+                }
+
                 let right_val = self.evaluate_expression(right)?;
                 self.evaluate_binary_op(&left_val, operator, &right_val)
             }
@@ -530,6 +563,57 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         return self.call_higher_order_function(func_name, args);
                     }
                 }
+
+                // `obj.field(args)`: if `field` is a genuine member of `obj` (a struct
+                // field, dictionary key, or module export), call that -- this is what
+                // makes documented patterns like `import "math" as m; m.log(x, base)`
+                // work. Otherwise (obj is a primitive with no member concept at all --
+                // an array, string, number, etc. -- or a struct/dict without that
+                // field), `field` is treated as method-call sugar for a free function:
+                // `arr.map(f)` is exactly `map(arr, f)`. Member access always wins over
+                // sugar, so a real member is never shadowed by a same-named function.
+                if let Expr::StructAccess { object, field } = &**callee {
+                    let obj_val = self.evaluate_expression(object)?;
+                    let member = match &obj_val {
+                        Value::StructInstance { fields, .. } => fields.get(field).cloned(),
+                        Value::Dictionary(dict) => dict.get(field).cloned(),
+                        Value::ModuleObject(exports) => exports.get(field).cloned(),
+                        _ => None,
+                    };
+                    if let Some(member_val) = member {
+                        return self.call_function(member_val, args);
+                    }
+
+                    // Evaluate the remaining (non-receiver) arguments once; obj_val is
+                    // already evaluated, so it's used directly rather than re-evaluating
+                    // the receiver expression a second time.
+                    let mut rest_values = Vec::with_capacity(args.len());
+                    for arg in args {
+                        match arg {
+                            crate::ast::Argument::Positional(expr) => rest_values.push(self.evaluate_expression(expr)?),
+                            crate::ast::Argument::Keyword { .. } => {
+                                return Err(RuntimeError {
+                                    message: format!("{}() does not support keyword arguments", field),
+                                });
+                            }
+                        }
+                    }
+
+                    if field == "map" || field == "filter" || field == "reduce" || field == "any" || field == "all" {
+                        let mut values = vec![obj_val];
+                        values.extend(rest_values);
+                        return self.call_higher_order_with_values(field, values);
+                    }
+                    if let Some(free_fn @ (Value::BuiltinFunction(_) | Value::Function { .. } | Value::Lambda { .. } | Value::ModuleFunction { .. })) = self.environment.get(field) {
+                        let mut values = vec![obj_val];
+                        values.extend(rest_values);
+                        return self.invoke_callable(&free_fn, values);
+                    }
+
+                    return Err(RuntimeError {
+                        message: format!("Cannot access field '{}' on {}", field, obj_val.type_name()),
+                    });
+                }
                 
                 let func = self.evaluate_expression(callee)?;
 
@@ -561,11 +645,12 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 // Evaluate the iterable
                 let iter_value = self.evaluate_expression(iterable)?;
                 
-                // Get elements from iterable (array, unique array, or range)
+                // Get elements from iterable (array, unique array, string chars, or range)
                 let elements = match iter_value {
                     Value::Array(arr) => arr,
                     Value::UniqueArray(arr) => arr,
-                    _ => return Err(RuntimeError { message: "Can only iterate over arrays or ranges".to_string() }),
+                    Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
+                    _ => return Err(RuntimeError { message: "Can only iterate over arrays, strings, or ranges".to_string() }),
                 };
                 
                 let mut result = Vec::new();
@@ -575,21 +660,24 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     self.environment.push_scope();
                     self.environment.define(var.clone(), item.clone());
                     
-                    // Check condition if present
-                    let include = if let Some(cond) = condition {
-                        let cond_value = self.evaluate_expression(cond)?;
-                        cond_value.is_truthy()
-                    } else {
-                        true
-                    };
-                    
-                    if include {
-                        // Evaluate the expression
-                        let value = self.evaluate_expression(expr)?;
+                    let outcome: RuntimeResult<Option<Value>> = (|| {
+                        let include = if let Some(cond) = condition {
+                            self.evaluate_expression(cond)?.is_truthy()
+                        } else {
+                            true
+                        };
+                        if include {
+                            Ok(Some(self.evaluate_expression(expr)?))
+                        } else {
+                            Ok(None)
+                        }
+                    })();
+
+                    self.environment.pop_scope();
+
+                    if let Some(value) = outcome? {
                         result.push(value);
                     }
-                    
-                    self.environment.pop_scope();
                 }
                 
                 Ok(Value::Array(result))
@@ -602,7 +690,8 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let elements = match iter_value {
                     Value::Array(arr) => arr,
                     Value::UniqueArray(arr) => arr,
-                    _ => return Err(RuntimeError { message: "Can only iterate over arrays or ranges".to_string() }),
+                    Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
+                    _ => return Err(RuntimeError { message: "Can only iterate over arrays, strings, or ranges".to_string() }),
                 };
                 
                 let mut result = Vec::new();
@@ -611,19 +700,24 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     self.environment.push_scope();
                     self.environment.define(var.clone(), item.clone());
                     
-                    let include = if let Some(cond) = condition {
-                        let cond_value = self.evaluate_expression(cond)?;
-                        cond_value.is_truthy()
-                    } else {
-                        true
-                    };
-                    
-                    if include {
-                        let value = self.evaluate_expression(expr)?;
+                    let outcome: RuntimeResult<Option<Value>> = (|| {
+                        let include = if let Some(cond) = condition {
+                            self.evaluate_expression(cond)?.is_truthy()
+                        } else {
+                            true
+                        };
+                        if include {
+                            Ok(Some(self.evaluate_expression(expr)?))
+                        } else {
+                            Ok(None)
+                        }
+                    })();
+
+                    self.environment.pop_scope();
+
+                    if let Some(value) = outcome? {
                         result.push(value);
                     }
-                    
-                    self.environment.pop_scope();
                 }
                 
                 // Return as array for now (could be made lazy in future)
@@ -1001,17 +1095,25 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let match_value = self.evaluate_expression(expr)?;
                 
                 for arm in arms {
-                    if self.pattern_matches(&arm.pattern, &match_value)? {
-                        // If pattern is an identifier, bind it to the value
-                        if let crate::ast::Pattern::Identifier(name) = &arm.pattern {
-                            self.environment.push_scope();
-                            self.environment.define(name.clone(), match_value.clone());
-                            let result = self.evaluate_expression(&arm.body)?;
-                            self.environment.pop_scope();
-                            return Ok(result);
-                        } else {
-                            return Ok(self.evaluate_expression(&arm.body)?);
+                    let mut matched = false;
+                    let mut bound_name: Option<&String> = None;
+                    for pattern in &arm.patterns {
+                        if self.pattern_matches(pattern, &match_value)? {
+                            matched = true;
+                            if let crate::ast::Pattern::Identifier(name) = pattern {
+                                bound_name = Some(name);
+                            }
+                            break;
                         }
+                    }
+                    if matched {
+                        self.environment.push_scope();
+                        if let Some(name) = bound_name {
+                            self.environment.define(name.clone(), match_value.clone());
+                        }
+                        let result = self.evaluate_match_arm_body(&arm.body);
+                        self.environment.pop_scope();
+                        return result;
                     }
                 }
                 
@@ -1028,13 +1130,13 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
 
                 let separator = if let Some(sep) = sep {
-                    self.evaluate_expression(sep)?.to_string()
+                    self.evaluate_expression(sep)?.display()
                 } else {
                     " ".to_string()
                 };
 
                 let ending = if let Some(end) = end {
-                    self.evaluate_expression(end)?.to_string()
+                    self.evaluate_expression(end)?.display()
                 } else {
                     "\n".to_string()
                 };
@@ -1140,6 +1242,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             (Value::Array(a), BinaryOp::Equal, Value::Array(b)) => Ok(Value::Bool(a == b)),
             (Value::Collection(a), BinaryOp::Equal, Value::Collection(b)) => Ok(Value::Bool(a == b)),
             (Value::Nil, BinaryOp::Equal, Value::Nil) => Ok(Value::Bool(true)),
+            (Value::Dictionary(_), BinaryOp::Equal, Value::Dictionary(_)) => Ok(Value::Bool(left == right)),
+            (Value::UniqueArray(_), BinaryOp::Equal, Value::UniqueArray(_)) => Ok(Value::Bool(left == right)),
+            (Value::StructInstance { .. }, BinaryOp::Equal, Value::StructInstance { .. }) => Ok(Value::Bool(left == right)),
             (_, BinaryOp::Equal, _) => Ok(Value::Bool(false)),
             
             (a, BinaryOp::NotEqual, b) => {
@@ -1308,7 +1413,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 };
                 let full_path = home.join(&path_with_ext);
                 if full_path.exists() {
-                    full_path.to_string_lossy().to_string()
+                    full_path.canonicalize().unwrap_or(full_path).to_string_lossy().to_string()
                 } else {
                     return Err(RuntimeError {
                         message: format!("Module '{}' not found at {}", module_path, full_path.display()),
@@ -1328,22 +1433,26 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             };
             let full_path = std::path::PathBuf::from(&path_with_ext);
             if full_path.exists() {
-                full_path.to_string_lossy().to_string()
+                full_path.canonicalize().unwrap_or(full_path).to_string_lossy().to_string()
             } else {
                 return Err(RuntimeError {
                     message: format!("Module '{}' not found at {}", module_path, full_path.display()),
                 });
             }
         } else if module_path.starts_with("./") || module_path.starts_with("../") {
-            // Relative path from current directory
+            // Relative path: resolves against the directory of the module doing the
+            // importing (not the process's working directory) -- see module_dir_stack.
             let path_with_ext = if module_path.ends_with(".ject") {
                 module_path.to_string()
             } else {
                 format!("{}.ject", module_path)
             };
-            let full_path = cwd.join(&path_with_ext);
+            let full_path = self.current_import_base().join(&path_with_ext);
             if full_path.exists() {
-                full_path.to_string_lossy().to_string()
+                full_path.canonicalize()
+                    .unwrap_or(full_path)
+                    .to_string_lossy()
+                    .to_string()
             } else {
                 return Err(RuntimeError {
                     message: format!("Module '{}' not found at {}", module_path, full_path.display()),
@@ -1358,12 +1467,12 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             };
             let full_path = project_root.join(&path_with_ext);
             if full_path.exists() {
-                full_path.to_string_lossy().to_string()
+                full_path.canonicalize().unwrap_or(full_path).to_string_lossy().to_string()
             } else {
                 // Try cwd as fallback
                 let cwd_path = cwd.join(&path_with_ext);
                 if cwd_path.exists() {
-                    cwd_path.to_string_lossy().to_string()
+                    cwd_path.canonicalize().unwrap_or(cwd_path).to_string_lossy().to_string()
                 } else {
                     return Err(RuntimeError {
                         message: format!("Module '{}' not found at {}", module_path, full_path.display()),
@@ -1381,12 +1490,12 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             // Try project root stdlib first
             let stdlib_path = project_root.join("stdlib").join(format!("{}.ject", module_name));
             if stdlib_path.exists() {
-                stdlib_path.to_string_lossy().to_string()
+                stdlib_path.canonicalize().unwrap_or(stdlib_path).to_string_lossy().to_string()
             } else {
                 // Try cwd stdlib
                 let cwd_stdlib = cwd.join("stdlib").join(format!("{}.ject", module_name));
                 if cwd_stdlib.exists() {
-                    cwd_stdlib.to_string_lossy().to_string()
+                    cwd_stdlib.canonicalize().unwrap_or(cwd_stdlib).to_string_lossy().to_string()
                 } else {
                     if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name) {
                         embedded_module_content = Some(source.to_string());
@@ -1405,12 +1514,62 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 message: format!("Module '{}' not found at {}", module_path, module_file_path),
             });
         }
-        
+
+        // Already loaded this exact module before: reuse its exports instead of
+        // re-parsing and re-executing the file. This also makes a module's top-level
+        // state a singleton across every place that imports it (as in Python/JS),
+        // rather than each importer getting a fresh, independent copy.
+        if let Some(cached_exports) = self.module_cache.get(&module_file_path) {
+            let exports = cached_exports.clone();
+            return self.apply_module_exports(module_path, exports, items, alias);
+        }
+
+        // Currently in the middle of loading this same module further up the call
+        // stack: importing it again here would recurse forever instead of erroring.
+        if self.import_stack.iter().any(|p| p == &module_file_path) {
+            let mut chain = self.import_stack.clone();
+            chain.push(module_file_path.clone());
+            return Err(RuntimeError {
+                message: format!("Circular import detected: {}", chain.join(" -> ")),
+            });
+        }
+
+        self.import_stack.push(module_file_path.clone());
+        let module_dir = if module_file_path.starts_with("<embedded:") {
+            // Embedded modules have no real file location; inherit whatever base is
+            // currently active so the push/pop stays balanced.
+            self.current_import_base()
+        } else {
+            Path::new(&module_file_path)
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| self.current_import_base())
+        };
+        self.module_dir_stack.push(module_dir);
+        let body_result = self.execute_module_file(module_path, &module_file_path, embedded_module_content);
+        self.module_dir_stack.pop();
+        self.import_stack.pop();
+        let exports = body_result?;
+
+        self.module_cache.insert(module_file_path.clone(), exports.clone());
+        self.apply_module_exports(module_path, exports, items, alias)
+    }
+
+    /// Parses and executes a module file's body, producing its exports. Does not apply
+    /// any caching/cycle-detection itself (see the caller, `load_module`) — this just
+    /// does the actual work of running the file, restoring `self.environment` to the
+    /// caller's environment before returning, whether it succeeds or fails.
+    fn execute_module_file(
+        &mut self,
+        module_path: &str,
+        module_file_path: &str,
+        embedded_module_content: Option<String>,
+    ) -> RuntimeResult<HashMap<String, Value>> {
         // Read and parse the module file
         let module_content = if let Some(content) = embedded_module_content {
             content
         } else {
-            fs::read_to_string(&module_file_path)
+            fs::read_to_string(module_file_path)
                 .map_err(|e| RuntimeError {
                     message: format!("Failed to read module '{}': {}", module_path, e),
                 })?
@@ -1419,7 +1578,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
         let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
-let mut parser = crate::parser::Parser::new_simple(tokens);
+        let mut parser = crate::parser::Parser::new_simple(tokens);
         let statements = parser.parse().map_err(|e| RuntimeError {
             message: format!("Parse error in module '{}': {}", module_path, e),
         })?;
@@ -1434,22 +1593,33 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         }
 
         let module_file_stem = if module_file_path.starts_with("<embedded:") {
-            module_path.trim_end_matches(".ject")
+            module_path.trim_end_matches(".ject").to_string()
         } else {
-            Path::new(&module_file_path)
+            Path::new(module_file_path)
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
+                .to_string()
         };
-        for (name, value) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
+        for (name, value) in crate::stdlib::inject_module_file_builtins(&module_file_stem) {
             module_env.define(name, value);
         }
         
         // Save current environment and switch to module environment
         let saved_env = std::mem::replace(&mut self.environment, module_env);
-        
+
+        // Run the module body, whatever it returns (Ok or Err) — the environment is
+        // restored below either way, so a failing module (e.g. a bad `export` value)
+        // can't leave the interpreter stuck in its module-local environment.
+        let outcome = self.run_module_body(&statements, &module_file_stem);
+
+        self.environment = saved_env;
+        outcome
+    }
+
+    fn run_module_body(&mut self, statements: &[Stmt], module_file_stem: &str) -> RuntimeResult<HashMap<String, Value>> {
         // First, execute all non-export statements to build up the module environment
-        for statement in &statements {
+        for statement in statements {
             match statement {
                 Stmt::Export { .. } | Stmt::ExportFunction { .. } => {
                     // Skip export statements for now
@@ -1462,11 +1632,12 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         
         // Process export functions and define them in the module environment first
         // This ensures they're available in the module scope for potential self-references
-        for statement in &statements {
+        for statement in statements {
             if let Stmt::ExportFunction { name, params, body } = statement {
                 let func = Value::Function {
                     params: params.clone(),
                     body: body.clone(),
+                    closure_env: self.environment.clone(),
                 };
                 self.environment.define(name.clone(), func);
             }
@@ -1474,7 +1645,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         
         // Now process export statements and create module functions with proper closure
         let mut exports = HashMap::new();
-        for statement in &statements {
+        for statement in statements {
             match statement {
                 Stmt::Export { name, value } => {
                     let val = self.evaluate_expression(value)?;
@@ -1499,10 +1670,17 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         for (k, v) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
             exports.insert(k, v);
         }
-        
-        // Restore original environment
-        self.environment = saved_env;
-        
+
+        Ok(exports)
+    }
+
+    fn apply_module_exports(
+        &mut self,
+        module_path: &str,
+        exports: HashMap<String, Value>,
+        items: &Option<Vec<String>>,
+        alias: &Option<String>,
+    ) -> RuntimeResult<()> {
         // Import the exported values based on import type
         match (items, alias) {
             (Some(item_list), None) => {
@@ -1540,68 +1718,15 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
     }
     
     fn call_function(&mut self, func: Value, args: &[Argument]) -> RuntimeResult<Value> {
-        match func {
-            Value::Function { params, body } => {
-                let resolved_args = self.resolve_arguments(&params, args)?;
-                
-                self.environment.push_scope();
-
-                for (param, arg) in params.iter().zip(resolved_args.iter()) {
-                    self.environment.define(param.name.clone(), arg.clone());
-                }
-
-                let result = match self.execute_block(&body)? {
-                    ControlFlow::Return(value) => value,
-                    ControlFlow::Throw(error) => return Err(RuntimeError {
-                        message: format!("Error in function: {}", error),
-                    }),
-                    ControlFlow::Break | ControlFlow::Continue => {
-                        return Err(RuntimeError {
-                            message: "break/continue in function".to_string(),
-                        });
-                    }
-                    ControlFlow::None => Value::Nil,
-                };
-
-                self.environment.pop_scope();
-                Ok(result)
+        match &func {
+            Value::Function { params, .. } => {
+                // Function supports keyword arguments and defaults, so argument
+                // resolution stays here; invoke_callable just does the actual call.
+                let resolved_args = self.resolve_arguments(params, args)?;
+                self.invoke_callable(&func, resolved_args)
             }
-            Value::ModuleFunction { params, body, closure_env } => {
-                let resolved_args = self.resolve_arguments(&params, args)?;
-                
-                // Save current environment and use the closure environment
-                let saved_env = std::mem::replace(&mut self.environment, closure_env);
-                
-                self.environment.push_scope();
-                
-                for (param, arg) in params.iter().zip(resolved_args.iter()) {
-                    self.environment.define(param.name.clone(), arg.clone());
-                }
-                
-                let result = match self.execute_block(&body)? {
-                    ControlFlow::Return(value) => value,
-                    ControlFlow::Throw(error) => return Err(RuntimeError {
-                        message: format!("Error in function: {}", error),
-                    }),
-                    ControlFlow::Break | ControlFlow::Continue => {
-                        return Err(RuntimeError {
-                            message: "break/continue in function".to_string(),
-                        });
-                    }
-                    ControlFlow::None => Value::Nil,
-                };
-                
-                self.environment.pop_scope();
-                
-                // Restore original environment
-                self.environment = saved_env;
-                Ok(result)
-            }
-            Value::Lambda { params, body, closure_env } => {
-                // Save current environment and use closure environment
-                let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                
-                // Convert arguments to old format for lambdas (they don't support defaults yet)
+            Value::ModuleFunction { .. } | Value::Lambda { .. } => {
+                let type_label = if matches!(&func, Value::Lambda { .. }) { "Lambdas" } else { "Module functions" };
                 let mut arg_values = Vec::new();
                 for arg in args {
                     match arg {
@@ -1610,51 +1735,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         }
                         Argument::Keyword { .. } => {
                             return Err(RuntimeError {
-                                message: "Lambdas do not support keyword arguments".to_string(),
+                                message: format!("{} do not support keyword arguments", type_label),
                             });
                         }
                     }
                 }
-                
-                if arg_values.len() != params.len() {
-                    return Err(RuntimeError {
-                        message: format!("Expected {} arguments but got {}", params.len(), arg_values.len()),
-                    });
-                }
-                
-                self.environment.push_scope();
-                
-                for (param, arg) in params.iter().zip(arg_values.iter()) {
-                    self.environment.define(param.clone(), arg.clone());
-                }
-                
-                let result = match &body {
-                    crate::ast::LambdaBody::Expression(ref expr) => {
-                        self.evaluate_expression(&expr)?
-                    }
-                    crate::ast::LambdaBody::Block(statements) => {
-                        match self.execute_block(&statements)? {
-                            ControlFlow::Return(value) => value,
-                            ControlFlow::Throw(error) => return Err(RuntimeError {
-                                message: format!("Error in lambda: {}", error),
-                            }),
-                            ControlFlow::Break | ControlFlow::Continue => {
-                                return Err(RuntimeError {
-                                    message: "break/continue in lambda".to_string(),
-                                });
-                            }
-                            ControlFlow::None => Value::Nil,
-                        }
-                    }
-                };
-
-                self.environment.pop_scope();
-                // Restore original environment
-                self.environment = saved_env;
-                Ok(result)
+                self.invoke_callable(&func, arg_values)
             }
-            Value::BuiltinFunction(name) => {
-                // Convert arguments to old format for builtin functions
+            Value::BuiltinFunction(_) => {
                 let mut arg_values = Vec::new();
                 for arg in args {
                     match arg {
@@ -1668,16 +1756,157 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         }
                     }
                 }
-
-                // Try numpy functions first (they have np_ prefix)
-                if name.starts_with("np_") {
-                    crate::numpy::call_numpy_function(&name, arg_values)
-                } else {
-                    crate::stdlib::call_builtin_function(&name, arg_values)
-                }
+                self.invoke_callable(&func, arg_values)
             }
             _ => Err(RuntimeError {
                 message: format!("Cannot call {}", func.type_name()),
+            }),
+        }
+    }
+
+    /// Calls any callable `Value` with already-evaluated positional argument values.
+    /// This is the single place that swaps in a closure's captured environment and
+    /// guarantees it is restored before returning -- on success, on a runtime error,
+    /// and on an escaping `throw`/`break`/`continue` -- so a failure inside a
+    /// function/lambda/module-function body can never leave the interpreter stuck
+    /// running in that callee's environment. Every call site (direct calls, method
+    /// dispatch, and the map/filter/reduce/any/all callbacks) should go through this
+    /// rather than hand-rolling the swap/restore dance, since that's exactly what led
+    /// to the environment-leak class of bug here before.
+    /// Runs a lambda's block body. Unlike a named function's block body (which always
+    /// requires an explicit `return`, matching Python-style predictability),
+    /// an anonymous lambda's block implicitly returns the value of a trailing bare
+    /// expression statement, the way an OCaml/Ruby/Rust block does -- so
+    /// `fn(x) x * x end` doesn't need `return x * x`.
+    fn execute_lambda_block(&mut self, statements: &[Stmt]) -> RuntimeResult<Value> {
+        if statements.is_empty() {
+            return Ok(Value::Nil);
+        }
+
+        let (last, rest) = statements.split_last().unwrap();
+
+        for statement in rest {
+            match self.execute_statement(statement)? {
+                ControlFlow::Return(value) => return Ok(value),
+                ControlFlow::Throw(error) => {
+                    return Err(RuntimeError { message: error.display() });
+                }
+                ControlFlow::Break | ControlFlow::Continue => {
+                    return Err(RuntimeError { message: "break/continue in lambda".to_string() });
+                }
+                ControlFlow::None => {}
+            }
+        }
+
+        if let Stmt::Expression(expr) = last {
+            // Trailing bare expression with no earlier explicit return: its value IS
+            // the lambda's result.
+            self.evaluate_expression(expr)
+        } else {
+            match self.execute_statement(last)? {
+                ControlFlow::Return(value) => Ok(value),
+                ControlFlow::Throw(error) => Err(RuntimeError { message: error.display() }),
+                ControlFlow::Break | ControlFlow::Continue => {
+                    Err(RuntimeError { message: "break/continue in lambda".to_string() })
+                }
+                ControlFlow::None => Ok(Value::Nil),
+            }
+        }
+    }
+
+    fn invoke_callable(&mut self, callable: &Value, arg_values: Vec<Value>) -> RuntimeResult<Value> {
+        match callable {
+            Value::Lambda { params, body, closure_env } => {
+                if arg_values.len() != params.len() {
+                    return Err(RuntimeError {
+                        message: format!("Expected {} argument(s) but got {}", params.len(), arg_values.len()),
+                    });
+                }
+
+                let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
+                self.environment.push_scope();
+                for (param, arg) in params.iter().zip(arg_values.iter()) {
+                    self.environment.define(param.clone(), arg.clone());
+                }
+
+                let result = match &body {
+                    crate::ast::LambdaBody::Expression(expr) => self.evaluate_expression(expr),
+                    crate::ast::LambdaBody::Block(statements) => {
+                        self.execute_lambda_block(statements)
+                    }
+                };
+
+                self.environment.pop_scope();
+                self.environment = saved_env;
+                result
+            }
+            Value::Function { params, body, closure_env } => {
+                if arg_values.len() != params.len() {
+                    return Err(RuntimeError {
+                        message: format!("Expected {} argument(s) but got {}", params.len(), arg_values.len()),
+                    });
+                }
+
+                let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
+                self.environment.push_scope();
+                for (param, arg) in params.iter().zip(arg_values.iter()) {
+                    self.environment.define(param.name.clone(), arg.clone());
+                }
+
+                let result = match self.execute_block(body) {
+                    Ok(ControlFlow::Return(value)) => Ok(value),
+                    Ok(ControlFlow::Throw(error)) => Err(RuntimeError {
+                        message: error.display(),
+                    }),
+                    Ok(ControlFlow::Break) | Ok(ControlFlow::Continue) => Err(RuntimeError {
+                        message: "break/continue in function".to_string(),
+                    }),
+                    Ok(ControlFlow::None) => Ok(Value::Nil),
+                    Err(e) => Err(e),
+                };
+
+                self.environment.pop_scope();
+                self.environment = saved_env;
+                result
+            }
+            Value::ModuleFunction { params, body, closure_env } => {
+                if arg_values.len() != params.len() {
+                    return Err(RuntimeError {
+                        message: format!("Expected {} argument(s) but got {}", params.len(), arg_values.len()),
+                    });
+                }
+
+                let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
+                self.environment.push_scope();
+                for (param, arg) in params.iter().zip(arg_values.iter()) {
+                    self.environment.define(param.name.clone(), arg.clone());
+                }
+
+                let result = match self.execute_block(body) {
+                    Ok(ControlFlow::Return(value)) => Ok(value),
+                    Ok(ControlFlow::Throw(error)) => Err(RuntimeError {
+                        message: error.display(),
+                    }),
+                    Ok(ControlFlow::Break) | Ok(ControlFlow::Continue) => Err(RuntimeError {
+                        message: "break/continue in function".to_string(),
+                    }),
+                    Ok(ControlFlow::None) => Ok(Value::Nil),
+                    Err(e) => Err(e),
+                };
+
+                self.environment.pop_scope();
+                self.environment = saved_env;
+                result
+            }
+            Value::BuiltinFunction(name) => {
+                if name.starts_with("np_") {
+                    crate::numpy::call_numpy_function(name, arg_values)
+                } else {
+                    crate::stdlib::call_builtin_function(name, arg_values)
+                }
+            }
+            _ => Err(RuntimeError {
+                message: format!("Cannot call {}", callable.type_name()),
             }),
         }
     }
@@ -1756,6 +1985,43 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     Ok(is_equal)
                 } else {
                     Ok(false)
+                }
+            }
+            crate::ast::Pattern::Relational(op, expr) => {
+                let pattern_value = self.evaluate_expression(expr)?;
+                let result = self.evaluate_binary_op(value, op, &pattern_value)?;
+                if let Value::Bool(b) = result {
+                    Ok(b)
+                } else {
+                    Ok(false)
+                }
+            }
+            crate::ast::Pattern::Range(start_expr, end_expr) => {
+                let start_value = self.evaluate_expression(start_expr)?;
+                let end_value = self.evaluate_expression(end_expr)?;
+                let above_start = self.evaluate_binary_op(value, &BinaryOp::GreaterEqual, &start_value)?;
+                let below_end = self.evaluate_binary_op(value, &BinaryOp::LessEqual, &end_value)?;
+                match (above_start, below_end) {
+                    (Value::Bool(a), Value::Bool(b)) => Ok(a && b),
+                    _ => Ok(false),
+                }
+            }
+        }
+    }
+
+    fn evaluate_match_arm_body(&mut self, body: &crate::ast::MatchArmBody) -> RuntimeResult<Value> {
+        match body {
+            crate::ast::MatchArmBody::Expression(expr) => self.evaluate_expression(expr),
+            crate::ast::MatchArmBody::Block(statements) => {
+                match self.execute_block(statements)? {
+                    ControlFlow::Return(value) => Ok(value),
+                    ControlFlow::Throw(error) => Err(RuntimeError {
+                        message: format!("Error in match arm: {}", error),
+                    }),
+                    ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                        message: "break/continue not allowed directly in a match arm".to_string(),
+                    }),
+                    ControlFlow::None => Ok(Value::Nil),
                 }
             }
         }
@@ -1861,270 +2127,164 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         }
     }
 
+    /// Extracts (array_or_unique_array, is_unique) from an evaluated Value, erroring
+    /// with a consistent message if it's neither.
+    fn expect_array_like(&self, value: Value, func_name: &str) -> RuntimeResult<(Vec<Value>, bool)> {
+        match value {
+            Value::Array(arr) => Ok((arr, false)),
+            Value::UniqueArray(arr) => Ok((arr, true)),
+            other => Err(RuntimeError {
+                message: format!("{}() requires an array or unique array, got {}", func_name, other.type_name()),
+            }),
+        }
+    }
+
     fn call_higher_order_function(&mut self, func_name: &str, args: &[crate::ast::Argument]) -> RuntimeResult<Value> {
+        // Evaluate every argument expression exactly once, here, then hand off to the
+        // Value-based core. This matters most for the `obj.map(f)` method-sugar call
+        // site, which already has `obj` evaluated -- routing it through here again
+        // would evaluate the receiver expression a second time (and re-run any side
+        // effects in it) just to reach the same array.
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            match arg {
+                crate::ast::Argument::Positional(expr) => values.push(self.evaluate_expression(expr)?),
+                crate::ast::Argument::Keyword { .. } => {
+                    return Err(RuntimeError { message: format!("{}() does not support keyword arguments", func_name) });
+                }
+            }
+        }
+        self.call_higher_order_with_values(func_name, values)
+    }
+
+    /// Same as `call_higher_order_function`, but takes already-evaluated argument
+    /// values instead of AST expressions -- for call sites (like method-sugar
+    /// dispatch) that already have the receiver evaluated and shouldn't evaluate it
+    /// twice.
+    fn call_higher_order_with_values(&mut self, func_name: &str, values: Vec<Value>) -> RuntimeResult<Value> {
         match func_name {
             "map" => {
-                if args.len() != 2 {
+                if values.len() != 2 {
                     return Err(RuntimeError { message: "map() takes 2 arguments (array, function)".to_string() });
                 }
-                let array_val = match &args[0] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
-                };
-                let func_val = match &args[1] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
-                };
+                let mut values = values;
+                let func_val = values.pop().unwrap();
+                let array_val = values.pop().unwrap();
+                let (arr, is_unique) = self.expect_array_like(array_val, "map")?;
 
-                // Handle both Array and UniqueArray
-                let (arr, is_unique) = match array_val {
-                    Value::Array(arr) => (arr, false),
-                    Value::UniqueArray(arr) => (arr, true),
-                    _ => return Err(RuntimeError { message: "map() requires an array or unique array".to_string() }),
-                };
-
-                if let Value::Lambda { params, body, closure_env } = func_val {
-                    let mut result = Vec::new();
-                    let mut seen = std::collections::HashSet::new();
-                    
-                    for item in &arr {
-                        let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                        self.environment.push_scope();
-                        if !params.is_empty() {
-                            self.environment.define(params[0].clone(), item.clone());
-                        }
-                        let mapped = match &body {
-                            crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?,
-                            crate::ast::LambdaBody::Block(ref stmts) => {
-                                match self.execute_block(&stmts)? {
-                                    ControlFlow::Return(v) => v,
-                                    ControlFlow::None => Value::Nil,
-                                    _ => Value::Nil,
-                                }
-                            }
-                        };
-                        self.environment.pop_scope();
-                        self.environment = saved_env;
-                        
-                        // For unique arrays, deduplicate results
-                        if is_unique {
-                            let key = mapped.to_string();
-                            if !seen.contains(&key) {
-                                seen.insert(key);
-                                result.push(mapped);
-                            }
-                        } else {
+                let mut result = Vec::new();
+                let mut seen = std::collections::HashSet::new();
+                for item in &arr {
+                    let mapped = self.invoke_callable(&func_val, vec![item.clone()])?;
+                    if is_unique {
+                        let key = mapped.to_string();
+                        if !seen.contains(&key) {
+                            seen.insert(key);
                             result.push(mapped);
                         }
+                    } else {
+                        result.push(mapped);
                     }
-                    
-                    // Return same type as input
-                    if is_unique {
-                        return Ok(Value::UniqueArray(result));
-                    }
-                    return Ok(Value::Array(result));
                 }
-                Err(RuntimeError { message: "map() requires array/unique_array and lambda".to_string() })
+
+                if is_unique {
+                    Ok(Value::UniqueArray(result))
+                } else {
+                    Ok(Value::Array(result))
+                }
             }
             "filter" => {
-                if args.len() != 2 {
+                if values.len() != 2 {
                     return Err(RuntimeError { message: "filter() takes 2 arguments (array, function)".to_string() });
                 }
-                let array_val = match &args[0] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
-                };
-                let func_val = match &args[1] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
-                };
+                let mut values = values;
+                let func_val = values.pop().unwrap();
+                let array_val = values.pop().unwrap();
+                let (arr, is_unique) = self.expect_array_like(array_val, "filter")?;
 
-                // Handle both Array and UniqueArray
-                let (arr, is_unique) = match array_val {
-                    Value::Array(arr) => (arr, false),
-                    Value::UniqueArray(arr) => (arr, true),
-                    _ => return Err(RuntimeError { message: "filter() requires an array or unique array".to_string() }),
-                };
-
-                if let Value::Lambda { params, body, closure_env } = func_val {
-                    let mut result = Vec::new();
-                    let mut seen = std::collections::HashSet::new();
-                    
-                    for item in &arr {
-                        let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                        self.environment.push_scope();
-                        if !params.is_empty() {
-                            self.environment.define(params[0].clone(), item.clone());
-                        }
-                        let keep = match &body {
-                            crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?.is_truthy(),
-                            crate::ast::LambdaBody::Block(ref stmts) => {
-                                match self.execute_block(&stmts)? {
-                                    ControlFlow::Return(v) => v.is_truthy(),
-                                    ControlFlow::None => false,
-                                    _ => false,
-                                }
-                            }
-                        };
-                        self.environment.pop_scope();
-                        self.environment = saved_env;
-                        
-                        if keep {
-                            // For unique arrays, deduplicate results
-                            if is_unique {
-                                let key = item.to_string();
-                                if !seen.contains(&key) {
-                                    seen.insert(key);
-                                    result.push(item.clone());
-                                }
-                            } else {
+                let mut result = Vec::new();
+                let mut seen = std::collections::HashSet::new();
+                for item in &arr {
+                    let keep = self.invoke_callable(&func_val, vec![item.clone()])?.is_truthy();
+                    if keep {
+                        if is_unique {
+                            let key = item.to_string();
+                            if !seen.contains(&key) {
+                                seen.insert(key);
                                 result.push(item.clone());
                             }
+                        } else {
+                            result.push(item.clone());
                         }
                     }
-                    
-                    // Return same type as input
-                    if is_unique {
-                        return Ok(Value::UniqueArray(result));
-                    }
-                    return Ok(Value::Array(result));
                 }
-                Err(RuntimeError { message: "filter() requires array/unique_array and lambda".to_string() })
+
+                if is_unique {
+                    Ok(Value::UniqueArray(result))
+                } else {
+                    Ok(Value::Array(result))
+                }
             }
             "reduce" => {
-                if args.len() < 2 {
-                    return Err(RuntimeError { message: "reduce() needs at least 2 arguments (array, function, [initial])".to_string() });
+                if values.len() < 2 || values.len() > 3 {
+                    return Err(RuntimeError { message: "reduce() takes 2 or 3 arguments (array, function, [initial])".to_string() });
                 }
-                let array_val = match &args[0] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
-                };
-                let func_val = match &args[1] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
-                };
-                let mut accumulator = if args.len() > 2 {
-                    match &args[2] {
-                        crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                        _ => Value::Nil,
-                    }
+                let mut values = values;
+                let explicit_initial = if values.len() > 2 { values.pop() } else { None };
+                let func_val = values.pop().unwrap();
+                let array_val = values.pop().unwrap();
+                let (arr, _is_unique) = self.expect_array_like(array_val, "reduce")?;
+
+                // With no explicit initial value, the first element seeds the
+                // accumulator and iteration starts from the second element -- not
+                // Value::Nil, which would make the very first call `nil OP first_item`
+                // and fail for any operator that doesn't accept nil.
+                let (mut accumulator, start_index) = if let Some(initial) = explicit_initial {
+                    (initial, 0)
+                } else if let Some(first) = arr.first() {
+                    (first.clone(), 1)
                 } else {
-                    Value::Nil
+                    return Err(RuntimeError {
+                        message: "reduce() of an empty array requires an initial value".to_string(),
+                    });
                 };
-                
-                if let Value::Array(arr) = array_val {
-                    if let Value::Lambda { params, body, closure_env } = func_val {
-                        for item in &arr {
-                            let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                            self.environment.push_scope();
-                            if params.len() >= 2 {
-                                self.environment.define(params[0].clone(), accumulator.clone());
-                                self.environment.define(params[1].clone(), item.clone());
-                            }
-                            let new_acc = match &body {
-                                crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?,
-                                crate::ast::LambdaBody::Block(ref stmts) => {
-                                    match self.execute_block(&stmts)? {
-                                        ControlFlow::Return(v) => v,
-                                        ControlFlow::None => Value::Nil,
-                                        _ => Value::Nil,
-                                    }
-                                }
-                            };
-                            self.environment.pop_scope();
-                            self.environment = saved_env;
-                            accumulator = new_acc;
-                        }
-                        return Ok(accumulator);
-                    }
+
+                for item in arr.iter().skip(start_index) {
+                    accumulator = self.invoke_callable(&func_val, vec![accumulator, item.clone()])?;
                 }
-                Err(RuntimeError { message: "reduce() requires array and lambda".to_string() })
+                Ok(accumulator)
             }
             "any" => {
-                if args.len() != 2 {
+                if values.len() != 2 {
                     return Err(RuntimeError { message: "any() takes 2 arguments (array, function)".to_string() });
                 }
-                let array_val = match &args[0] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
-                };
-                let func_val = match &args[1] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
-                };
+                let mut values = values;
+                let func_val = values.pop().unwrap();
+                let array_val = values.pop().unwrap();
+                let (arr, _is_unique) = self.expect_array_like(array_val, "any")?;
 
-                if let Value::Array(arr) = array_val {
-                    if let Value::Lambda { params, body, closure_env } = func_val {
-                        for item in &arr {
-                            let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                            self.environment.push_scope();
-                            if !params.is_empty() {
-                                self.environment.define(params[0].clone(), item.clone());
-                            }
-                            let result = match &body {
-                                crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?.is_truthy(),
-                                crate::ast::LambdaBody::Block(ref stmts) => {
-                                    match self.execute_block(&stmts)? {
-                                        ControlFlow::Return(v) => v.is_truthy(),
-                                        ControlFlow::None => false,
-                                        _ => false,
-                                    }
-                                }
-                            };
-                            self.environment.pop_scope();
-                            self.environment = saved_env;
-                            
-                            if result {
-                                return Ok(Value::Bool(true));
-                            }
-                        }
-                        return Ok(Value::Bool(false));
-                    }
-                }
-                Err(RuntimeError { message: "any() requires array and lambda".to_string() })
-            }
-            "all" => {
-                if args.len() != 2 {
-                    return Err(RuntimeError { message: "all() takes 2 arguments (array, function)".to_string() });
-                }
-                let array_val = match &args[0] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "First argument must be positional".to_string() }),
-                };
-                let func_val = match &args[1] {
-                    crate::ast::Argument::Positional(expr) => self.evaluate_expression(expr)?,
-                    _ => return Err(RuntimeError { message: "Second argument must be positional".to_string() }),
-                };
-
-                if let Value::Array(arr) = array_val {
-                    if let Value::Lambda { params, body, closure_env } = func_val {
-                        for item in &arr {
-                            let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                            self.environment.push_scope();
-                            if !params.is_empty() {
-                                self.environment.define(params[0].clone(), item.clone());
-                            }
-                            let result = match &body {
-                                crate::ast::LambdaBody::Expression(ref expr) => self.evaluate_expression(&expr)?.is_truthy(),
-                                crate::ast::LambdaBody::Block(ref stmts) => {
-                                    match self.execute_block(&stmts)? {
-                                        ControlFlow::Return(v) => v.is_truthy(),
-                                        ControlFlow::None => false,
-                                        _ => false,
-                                    }
-                                }
-                            };
-                            self.environment.pop_scope();
-                            self.environment = saved_env;
-                            
-                            if !result {
-                                return Ok(Value::Bool(false));
-                            }
-                        }
+                for item in &arr {
+                    if self.invoke_callable(&func_val, vec![item.clone()])?.is_truthy() {
                         return Ok(Value::Bool(true));
                     }
                 }
-                Err(RuntimeError { message: "all() requires array and lambda".to_string() })
+                Ok(Value::Bool(false))
+            }
+            "all" => {
+                if values.len() != 2 {
+                    return Err(RuntimeError { message: "all() takes 2 arguments (array, function)".to_string() });
+                }
+                let mut values = values;
+                let func_val = values.pop().unwrap();
+                let array_val = values.pop().unwrap();
+                let (arr, _is_unique) = self.expect_array_like(array_val, "all")?;
+
+                for item in &arr {
+                    if !self.invoke_callable(&func_val, vec![item.clone()])?.is_truthy() {
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                Ok(Value::Bool(true))
             }
             _ => Err(RuntimeError { message: format!("Unknown function: {}", func_name) })
         }

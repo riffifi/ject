@@ -1,6 +1,0 @@
-# Test module
-let _version = 1
-
-export fn double(n)
-    return n * 2
-end

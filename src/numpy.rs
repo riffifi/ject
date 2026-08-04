@@ -225,6 +225,9 @@ pub fn create_numpy_module() -> HashMap<String, Value> {
     module.insert("E".to_string(), Value::Float(std::f64::consts::E));
     module.insert("inf".to_string(), Value::Float(f64::INFINITY));
     module.insert("nan".to_string(), Value::Float(f64::NAN));
+    // Uppercase aliases matching numpy's conventional np.NAN / np.INF naming.
+    module.insert("NAN".to_string(), Value::Float(f64::NAN));
+    module.insert("INF".to_string(), Value::Float(f64::INFINITY));
 
     module
 }

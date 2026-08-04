@@ -183,6 +183,14 @@ impl Parser {
         
         self.consume(Token::RightParen, "Expected ')' after parameters")?;
         
+        // Expression-body sugar: `fn name(args) -> expr` desugars to a single
+        // `return expr`, no `end` needed -- mirrors the anonymous `fn(args) -> expr`
+        // form below, just with a name attached.
+        if self.match_token(&Token::Arrow) {
+            let expr = self.expression()?;
+            return Ok(Stmt::Function { name, params, body: vec![Stmt::Return(Some(expr))] });
+        }
+        
         // Skip optional newlines before body
         while self.match_token(&Token::Newline) {}
         
@@ -993,10 +1001,16 @@ impl Parser {
                 // Check if this is a slice or simple index
                 expr = self.parse_index_or_slice(expr)?;
             } else if self.match_token(&Token::Dot) {
-                if let Token::Identifier(property) = self.advance() {
-                    // Check if this is a struct access or module member access
-                    // For now, we'll use StructAccess for struct instances and Member for modules
-                    // We'll determine at runtime which one it is
+                if self.check(&Token::Match) {
+                    // `value.match ... end` sugar for `match value ... end`.
+                    self.advance();
+                    expr = self.match_arms_and_end(expr)?;
+                } else if let Token::Identifier(property) = self.advance() {
+                    // Struct field, module member, or (if the object turns out to be a
+                    // primitive with no such member) method-call sugar for a free
+                    // function -- see the `Expr::Call` evaluator, which is what
+                    // actually decides between those, since only it knows the
+                    // object's runtime type.
                     expr = Expr::StructAccess {
                         object: Box::new(expr),
                         field: property,
@@ -1225,7 +1239,7 @@ impl Parser {
         }
     }
 
-    fn finish_call(&mut self, callee: Expr) -> ParseResult<Expr> {
+    fn parse_call_args(&mut self) -> ParseResult<Vec<crate::ast::Argument>> {
         let mut args = Vec::new();
         
         if !self.check(&Token::RightParen) {
@@ -1266,6 +1280,11 @@ impl Parser {
         
         while self.match_token(&Token::Newline) {}
         self.consume(Token::RightParen, "Expected ')' after arguments")?;
+        Ok(args)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> ParseResult<Expr> {
+        let args = self.parse_call_args()?;
         
         let call = Expr::Call {
             callee: Box::new(callee),
@@ -1298,6 +1317,7 @@ impl Parser {
             Token::Match => self.match_expression(),
             Token::If => self.conditional_expression(),
             Token::Lambda => self.lambda_expression(),
+            Token::Fn => self.fn_expression(),
             Token::New => self.struct_init_expression(),
             Token::True => Ok(Expr::Bool(true)),
             Token::False => Ok(Expr::Bool(false)),
@@ -1516,6 +1536,41 @@ impl Parser {
 
         Ok(Expr::Lambda { params, body })
     }
+
+    /// Anonymous function expression: `fn(args) -> expr` for a single-expression body
+    /// (OCaml-`let`-style value), or `fn(args) ... end` for a block body -- the same
+    /// `fn` keyword as named functions, just without a name. Produces the same AST node
+    /// as `lambda(...)`, which keeps working unchanged as a compatibility alias.
+    fn fn_expression(&mut self) -> ParseResult<Expr> {
+        self.consume(Token::LeftParen, "Expected '(' after 'fn'")?;
+        let mut params = Vec::new();
+        if !self.check(&Token::RightParen) {
+            loop {
+                if let Token::Identifier(name) = self.advance() {
+                    params.push(name);
+                } else {
+                    return Err(self.error("Expected parameter name".to_string()));
+                }
+                if !self.match_token(&Token::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(Token::RightParen, "Expected ')' after parameters")?;
+
+        let body = if self.match_token(&Token::Arrow) {
+            // fn(x) -> expr : single-expression body
+            let expr = self.expression()?;
+            crate::ast::LambdaBody::Expression(Box::new(expr))
+        } else {
+            // fn(x) ... end : block body, same delimiter as named functions
+            while self.match_token(&Token::Newline) {}
+            let statements = self.block()?;
+            crate::ast::LambdaBody::Block(statements)
+        };
+
+        Ok(Expr::Lambda { params, body })
+    }
     
     fn conditional_expression(&mut self) -> ParseResult<Expr> {
         // We already consumed 'if', now parse condition
@@ -1633,7 +1688,14 @@ impl Parser {
     
     fn match_expression(&mut self) -> ParseResult<Expr> {
         let expr = self.expression()?;
-        
+        self.match_arms_and_end(expr)
+    }
+
+    /// Parses match arms and the closing `end`, given a subject expression that's
+    /// already been parsed. Shared by `match <expr> ... end` and the `<expr>.match
+    /// ... end` method-call sugar, which is exactly the same grammar with the subject
+    /// spelled differently.
+    fn match_arms_and_end(&mut self, expr: Expr) -> ParseResult<Expr> {
         // Skip optional newlines before match arms
         while self.match_token(&Token::Newline) {}
         
@@ -1645,57 +1707,146 @@ impl Parser {
                 continue;
             }
             
-            // Parse pattern
-            let pattern = self.parse_pattern()?;
+            // Parse one or more comma-separated patterns (any of them matching fires this arm)
+            let mut patterns = vec![self.parse_pattern()?];
+            while self.match_token(&Token::Comma) {
+                while self.match_token(&Token::Newline) {}
+                patterns.push(self.parse_pattern()?);
+            }
             
             // Expect arrow
             self.consume(Token::Arrow, "Expected '->' after match pattern")?;
             
-            // Parse body.
-            // Match arms are expression-oriented, but we also allow `print ...` as a special-case
-            // by lowering it to `Expr::Print`.
-            let body = if self.check(&Token::Print) {
+            // Body: if the arrow is immediately followed by a newline, it's a block body
+            // (one or more statements, terminated by the next arm or `end`); otherwise
+            // it's a single expression on the same line.
+            let body = if self.check(&Token::Newline) {
+                while self.match_token(&Token::Newline) {}
+                let mut statements = Vec::new();
+                loop {
+                    if self.check(&Token::End) || self.is_at_end() {
+                        break;
+                    }
+                    if self.match_token(&Token::Newline) {
+                        continue;
+                    }
+                    if self.looks_like_next_match_arm() {
+                        break;
+                    }
+                    statements.push(self.statement()?);
+                }
+                crate::ast::MatchArmBody::Block(statements)
+            } else if self.check(&Token::Print) {
                 let stmt = self.print_statement()?;
                 match stmt {
-                    Stmt::Print { values, sep, end } => Expr::Print {
+                    Stmt::Print { values, sep, end } => crate::ast::MatchArmBody::Expression(Expr::Print {
                         values,
                         sep: sep.map(Box::new),
                         end: end.map(Box::new),
-                    },
+                    }),
                     _ => return Err(self.error("Expected print statement in match arm".to_string())),
                 }
             } else {
-                self.expression()?
+                crate::ast::MatchArmBody::Expression(self.expression()?)
             };
             
-            arms.push(crate::ast::MatchArm { pattern, body });
+            arms.push(crate::ast::MatchArm { patterns, body });
         }
         
         self.consume(Token::End, "Expected 'end' after match expression")?;
+
+        // The wildcard, if present, must be the final arm -- anything past it would be
+        // unreachable, and its whole point is to be the catch-all.
+        for (i, arm) in arms.iter().enumerate() {
+            let has_wildcard = arm.patterns.iter().any(|p| matches!(p, crate::ast::Pattern::Wildcard));
+            if has_wildcard && i != arms.len() - 1 {
+                return Err(self.error("Wildcard pattern '_' must be the last arm in a match".to_string()));
+            }
+        }
         
         Ok(Expr::Match {
             expr: Box::new(expr),
             arms,
         })
     }
-    
-    fn parse_pattern(&mut self) -> ParseResult<crate::ast::Pattern> {
-        match self.advance() {
-            Token::Integer(n) => Ok(crate::ast::Pattern::Literal(Expr::Integer(n))),
-            Token::Float(f) => Ok(crate::ast::Pattern::Literal(Expr::Float(f))),
-            Token::String(s) => Ok(crate::ast::Pattern::Literal(Expr::String(s))),
-            Token::True => Ok(crate::ast::Pattern::Literal(Expr::Bool(true))),
-            Token::False => Ok(crate::ast::Pattern::Literal(Expr::Bool(false))),
-            Token::Nil => Ok(crate::ast::Pattern::Literal(Expr::Nil)),
-            Token::Identifier(name) => {
-                if name == "_" {
-                    Ok(crate::ast::Pattern::Wildcard)
-                } else {
-                    Ok(crate::ast::Pattern::Identifier(name))
+
+    /// Speculatively checks whether the parser is currently sitting at the start of a
+    /// new match arm (a pattern list followed by `->`), without consuming anything.
+    /// Used to decide where a block-bodied arm ends, since block bodies aren't
+    /// individually delimited -- they run until the next arm or the closing `end`.
+    fn looks_like_next_match_arm(&mut self) -> bool {
+        let save = self.current;
+        let matched = (|| -> bool {
+            if self.parse_pattern().is_err() {
+                return false;
+            }
+            while self.check(&Token::Comma) {
+                self.advance();
+                while self.match_token(&Token::Newline) {}
+                if self.parse_pattern().is_err() {
+                    return false;
                 }
             }
-            token => Err(self.error(format!("Unexpected token in pattern: {:?}", token))),
+            self.check(&Token::Arrow)
+        })();
+        self.current = save;
+        matched
+    }
+    
+    fn parse_pattern(&mut self) -> ParseResult<crate::ast::Pattern> {
+        // Relational pattern: `> expr`, `< expr`, `>= expr`, `<= expr`, `== expr`, `!= expr`.
+        // The comparison is against the match subject, filled in at evaluation time
+        // (`subject OP expr`), so only the operator and right-hand side are parsed here.
+        let relational_op = match self.peek() {
+            Token::Greater => Some(BinaryOp::Greater),
+            Token::Less => Some(BinaryOp::Less),
+            Token::GreaterEqual => Some(BinaryOp::GreaterEqual),
+            Token::LessEqual => Some(BinaryOp::LessEqual),
+            Token::EqualEqual => Some(BinaryOp::Equal),
+            Token::BangEqual => Some(BinaryOp::NotEqual),
+            _ => None,
+        };
+        if let Some(op) = relational_op {
+            self.advance();
+            let expr = self.term()?;
+            return Ok(crate::ast::Pattern::Relational(op, expr));
         }
+
+        let base_expr = match self.peek() {
+            Token::Integer(_) | Token::Float(_) => Some(self.term()?),
+            _ => None,
+        };
+
+        let base = if let Some(expr) = base_expr {
+            crate::ast::Pattern::Literal(expr)
+        } else {
+            match self.advance() {
+                Token::String(s) => crate::ast::Pattern::Literal(Expr::String(s)),
+                Token::True => crate::ast::Pattern::Literal(Expr::Bool(true)),
+                Token::False => crate::ast::Pattern::Literal(Expr::Bool(false)),
+                Token::Nil => crate::ast::Pattern::Literal(Expr::Nil),
+                Token::Identifier(name) => {
+                    if name == "_" {
+                        crate::ast::Pattern::Wildcard
+                    } else {
+                        crate::ast::Pattern::Identifier(name)
+                    }
+                }
+                token => return Err(self.error(format!("Unexpected token in pattern: {:?}", token))),
+            }
+        };
+
+        // Range pattern: `0..12` -- an inclusive membership test. Only literal numeric
+        // patterns can start a range (matches the spec's examples; identifiers/wildcard
+        // aren't range starts).
+        if let crate::ast::Pattern::Literal(start_expr) = &base {
+            if self.match_token(&Token::DotDot) {
+                let end_expr = self.term()?;
+                return Ok(crate::ast::Pattern::Range(start_expr.clone(), end_expr));
+            }
+        }
+
+        Ok(base)
     }
     
     fn match_equality_op(&mut self) -> Option<BinaryOp> {

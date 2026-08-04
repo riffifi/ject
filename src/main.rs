@@ -15,6 +15,7 @@ use parser::Parser;
 use interpreter::{Interpreter, get_runtime_suggestion};
 use diagnostic::DiagnosticRenderer;
 use std::{env, fs};
+use std::path::Path;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
@@ -94,6 +95,11 @@ fn run_file(filename: &str) {
     match fs::read_to_string(filename) {
         Ok(source) => {
             let mut interpreter = Interpreter::new();
+            if let Some(dir) = Path::new(filename).parent() {
+                if !dir.as_os_str().is_empty() {
+                    interpreter.set_script_dir(dir.to_path_buf());
+                }
+            }
             execute_source(
                 &source,
                 &mut interpreter,
@@ -112,6 +118,11 @@ fn check_file(filename: &str) {
     match fs::read_to_string(filename) {
         Ok(source) => {
             let mut interpreter = Interpreter::new();
+            if let Some(dir) = Path::new(filename).parent() {
+                if !dir.as_os_str().is_empty() {
+                    interpreter.set_script_dir(dir.to_path_buf());
+                }
+            }
             execute_source(
                 &source,
                 &mut interpreter,

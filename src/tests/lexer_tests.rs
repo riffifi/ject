@@ -163,7 +163,6 @@ mod tests {
             ("try", Token::Try),
             ("catch", Token::Catch),
             ("throw", Token::Throw),
-            ("error", Token::Error),
         ];
 
         for (input, expected) in keywords {

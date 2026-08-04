@@ -471,7 +471,6 @@ impl Lexer {
             "try" => Token::Try,
             "catch" => Token::Catch,
             "throw" => Token::Throw,
-            "error" => Token::Error,
             "break" => Token::Break,
             "continue" => Token::Continue,
             "to" => Token::To,

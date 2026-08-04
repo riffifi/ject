@@ -856,14 +856,14 @@ if true then 1 else 2 end";
             assert_eq!(arms.len(), 3);
             
             // First arm: literal pattern
-            if let Pattern::Literal(Expr::Integer(n)) = &arms[0].pattern {
+            if let Pattern::Literal(Expr::Integer(n)) = &arms[0].patterns[0] {
                 assert_eq!(n, &1);
             } else {
                 panic!("Expected literal pattern");
             }
             
             // Last arm: wildcard pattern
-            if let Pattern::Wildcard = &arms[2].pattern {
+            if let Pattern::Wildcard = &arms[2].patterns[0] {
                 // Success
             } else {
                 panic!("Expected wildcard pattern");
