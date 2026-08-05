@@ -434,8 +434,6 @@ pub fn embedded_stdlib_module_source(name: &str) -> Option<&'static str> {
         "util" => Some(include_str!("../stdlib/util.ject")),
         "collections" => Some(include_str!("../stdlib/collections.ject")),
         "numpy" => Some(include_str!("../stdlib/numpy.ject")),
-        "test" => Some(include_str!("../stdlib/test.ject")),
-        "test_math" => Some(include_str!("../stdlib/test_math.ject")),
         "color" => Some(include_str!("../stdlib/color.ject")),
         "table" => Some(include_str!("../stdlib/table.ject")),
         _ => None,
@@ -587,14 +585,21 @@ match name {
                     message: "log() takes exactly 2 arguments (value, base)".to_string(),
                 });
             }
-            match (&args[0], &args[1]) {
-                (Value::Float(n), Value::Float(base)) => {
-                    if *n <= 0.0 || *base <= 0.0 {
+            let as_f64 = |v: &Value| -> Option<f64> {
+                match v {
+                    Value::Integer(i) => Some(*i as f64),
+                    Value::Float(f) => Some(*f),
+                    _ => None,
+                }
+            };
+            match (as_f64(&args[0]), as_f64(&args[1])) {
+                (Some(n), Some(base)) => {
+                    if n <= 0.0 || base <= 0.0 {
                         return Err(RuntimeError {
                             message: "log() requires positive number and base".to_string(),
                         });
                     }
-                    Ok(Value::Float(n.log(*base)))
+                    Ok(Value::Float(n.log(base)))
                 },
                 _ => Err(RuntimeError {
                     message: "log() requires two numbers".to_string(),
@@ -609,6 +614,7 @@ match name {
             }
             match &args[0] {
                 Value::Float(n) => Ok(Value::Float(n.exp())),
+                Value::Integer(n) => Ok(Value::Float((*n as f64).exp())),
                 _ => Err(RuntimeError {
                     message: "exp() requires a number".to_string(),
                 }),

@@ -1,4 +1,4 @@
-# color.ject - ANSI terminal color and style helpers.
+# Color - ANSI terminal color and style helpers, written entirely in Ject.
 #
 # Each function wraps text in an ANSI escape code and resets styling afterward,
 # so calls can be nested/concatenated freely:
@@ -6,7 +6,10 @@
 #   import "color" as c
 #   print(c.bold(c.green("Build succeeded")))
 #   print(c.red("Error: ") + "file not found")
-
+#
+# Codes are only interpreted by ANSI-capable terminals; on anything else they're
+# just a few invisible bytes around the text, so this is safe to leave in for
+# piped/logged output too.
 
 let RESET = "\u001b[0m"
 
@@ -14,7 +17,7 @@ fn wrap(code, text)
     return code + text + RESET
 end
 
-#  Foreground colors 
+# ---- Foreground colors ----
 
 export fn black(text)
     return wrap("\u001b[30m", text)
@@ -52,7 +55,7 @@ export fn gray(text)
     return wrap("\u001b[90m", text)
 end
 
-#  Background colors 
+# ---- Background colors ----
 
 export fn bg_red(text)
     return wrap("\u001b[41m", text)
@@ -70,7 +73,7 @@ export fn bg_blue(text)
     return wrap("\u001b[44m", text)
 end
 
-#  Styles 
+# ---- Styles ----
 
 export fn bold(text)
     return wrap("\u001b[1m", text)
@@ -88,6 +91,8 @@ export fn italic(text)
     return wrap("\u001b[3m", text)
 end
 
+# ---- 24-bit true color, for anything the named colors above don't cover ----
+
 export fn rgb(text, r, g, b)
     return wrap("\u001b[38;2;" + r + ";" + g + ";" + b + "m", text)
 end
@@ -95,6 +100,8 @@ end
 export fn bg_rgb(text, r, g, b)
     return wrap("\u001b[48;2;" + r + ";" + g + ";" + b + "m", text)
 end
+
+# ---- Semantic shortcuts, for consistent CLI output without picking colors by hand ----
 
 export fn success(text)
     return green(text)

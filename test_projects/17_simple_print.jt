@@ -1,3 +1,0 @@
-print "Hello", "World"
-print "Hello", "World", sep: ","
-print 1, 2, 3, sep: " - "

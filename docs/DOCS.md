@@ -1,4 +1,4 @@
-# Ject Language Reference — v0.3.0
+# Ject Language Reference — v0.4.0
 
 ## Table of Contents
 
@@ -93,19 +93,21 @@ Ject is dynamically typed. Every value has one of these types:
 
 | Type | Examples | `type_of` result |
 |------|----------|-----------------|
-| Integer | `0`, `42`, `-7` | `"integer"` |
-| Float | `3.14`, `-0.5` | `"float"` |
+| Integer | `0`, `42`, `-7` | `"number"` |
+| Float | `3.14`, `-0.5` | `"number"` |
 | String | `"hello"` | `"string"` |
 | Boolean | `true`, `false` | `"boolean"` |
 | Nil | `nil` | `"nil"` |
 | Array | `[1, 2, 3]` | `"array"` |
+| Unique Array | `{|a, b|}` | `"unique_array"` |
 | Dictionary | `{name: "Alice"}` | `"dictionary"` |
-| Collection | `collection([1, 2])` | `"collection"` |
+| Collection | `import "collections" as col; col.from_array([1, 2])` | `"collection"` |
 | Struct instance | `new Point {x: 0}` | `"struct"` |
-| Function / Lambda | `fn(x) -> x * 2` | `"function"` |
-| Unique Array | see below | `"array"` |
+| Named function | `fn add(a, b) ... end` | `"function"` |
+| Anonymous function | `fn(x) -> x * 2` / `lambda(x) -> x * 2` | `"lambda"` |
 
--  {|a, b|}
+Integer and Float are both reported as `"number"` by `type_of` -- there's no separate check for which one you have; `to_int`/`to_float` convert explicitly, and arithmetic mixing them coerces to Float.
+
 ### Type conversion
 
 ```ject
@@ -118,7 +120,7 @@ to_bool(0)         # false
 to_bool(1)         # true
 to_bool("")        # false
 to_bool("hi")      # true
-type_of(42)        # "integer"
+type_of(42)        # "number"
 ```
 
 ---
@@ -188,6 +190,8 @@ a and b  # logical AND
 a or b   # logical OR
 !a       # logical NOT
 ```
+
+`and`/`or` short-circuit: `b` is only evaluated if it's actually needed (e.g. `false and expensive()` never calls `expensive()`).
 
 ### Membership
 
@@ -297,7 +301,7 @@ end
 
 ## Match
 
-`match` is an expression that compares a value against a series of patterns and returns the matching arm's value. Closes with `end`.
+`match` is an expression that compares a value against a series of patterns, top to bottom, and returns (or runs) the first matching arm. Closes with `end`.
 
 ```ject
 let day = "Monday"
@@ -311,14 +315,61 @@ end
 print kind   # weekday
 ```
 
-Patterns can be literals (`42`, `"hello"`, `true`, `nil`), identifiers (bind the value to a name), or `_` (wildcard that matches anything).
+### Pattern kinds
 
-`print` is also valid as a match arm body:
+- **Literal** — `42`, `"hello"`, `true`, `nil`
+- **Identifier** — binds the matched value to a name, always matches (a named catch-all)
+- **Wildcard** — `_`, matches anything. At most one per match, and it must be the last arm.
+- **Relational** — `> 90`, `< 10`, `>= 5`, `<= 5`, `== x`, `!= x`. Compares the subject against the right-hand side with that operator.
+- **Range** — `0..12`, an *inclusive* membership test (`subject >= 0 and subject <= 12`).
+- **Multiple patterns per arm** — comma-separated; the arm fires if *any* of them match.
 
 ```ject
-match score
-    100 -> print "perfect"
-    _   -> print "not perfect"
+let grade = match score
+    > 89       -> "A"
+    > 79       -> "B"
+    0..49      -> "F"
+    "x", "y"   -> "special case"
+    _          -> "C"
+end
+```
+
+### Arm bodies: expression or block
+
+If `->` is followed by something on the same line, that's a single expression:
+
+```ject
+match cmd
+    "quit" -> exit(0)
+    _      -> print "unknown"
+end
+```
+
+If `->` is followed by a newline, everything up to the next arm (or `end`) is a block of statements:
+
+```ject
+match choice
+    1 ->
+        print "Loading..."
+        load_game()
+    2 ->
+        print "Saving..."
+        save_game()
+    _ ->
+        print "Invalid"
+end
+```
+
+`print` is also valid as a same-line arm body, same as any other expression.
+
+### Method-call sugar
+
+`value.match ... end` is sugar for `match value ... end`:
+
+```ject
+score.match
+    > 90 -> print "excellent"
+    _    -> print "try again"
 end
 ```
 
@@ -360,13 +411,36 @@ connect("example.com", timeout=60)
 connect(port=443, host="example.com")
 ```
 
-### Lambdas
+### Anonymous functions
 
-`lambda` creates anonymous functions.
+`fn` without a name creates an anonymous function -- this is the preferred spelling. Two forms:
 
 ```ject
-let add    = lambda(a, b) -> a + b
+let square = fn(x) -> x * x          # expression body, OCaml-`let`-style value
+
+let square2 = fn(x)                  # block body -- a trailing bare expression
+    x * x                            # is implicitly returned, no `return` needed
+end
 ```
+
+`lambda(x) -> expr` still works, unchanged, as a compatibility alias for the expression form -- existing code using it doesn't need to change.
+
+Named functions can use the same expression-body sugar:
+
+```ject
+fn square(x) -> x * x
+```
+
+Note the difference from a named function's block body: `fn name(x) ... end` still requires an explicit `return` (predictable, Python-style); only the *anonymous* block form (`fn(x) ... end`) implicitly returns its trailing expression.
+
+### Method-call syntax
+
+`obj.method(args)` works two ways, decided by whether `method` is a genuine member of `obj`:
+
+- If `obj` is a struct with that field, a dictionary with that key, or a module with that export, `method` is looked up there and called -- this is what makes `import "math" as m; m.log(x, base)` work.
+- Otherwise (arrays, strings, numbers, or a struct/dict without that field), it's sugar for a free function call: `arr.map(f)` is exactly `map(arr, f)`, `arr.push(x)` is `push(arr, x)`, and so on for any function that takes the value as its first argument.
+
+A real member always wins over the sugar fallback, so it's never ambiguous which one fires.
 
 ### Functions are first-class
 
@@ -655,12 +729,17 @@ import {sqrt, PI} from "math"    # selective
 ### User modules
 
 ```ject
-import "modules/utils"           # relative path
+import "./utils"                 # relative path -- resolves against the IMPORTING file's own directory
+import "modules/utils"           # project-root-relative path
 import "~/Documents/mylib"       # home-relative
 import "/absolute/path/to/lib"   # absolute
 ```
 
 The `.ject` extension is added automatically if omitted.
+
+A `./` or `../` import always resolves relative to the directory of the file doing the importing, not the process's working directory or the entry script -- so a module can freely import its own sibling files no matter where the overall program is run from.
+
+Importing the same module twice (from anywhere in the program) reuses its already-executed state rather than re-running the file -- module-level variables behave like a singleton, the same as Python or JS modules. A module that imports another which (directly or transitively) imports it back gets a clear "Circular import detected" error instead of infinite recursion.
 
 ### Exporting
 
@@ -690,6 +769,8 @@ Use `export fn` for functions, `export name = value` for constants.
 | `"collections"` | Set operations |
 | `"numpy"` | Numerical arrays (Rust-backed) |
 | `"gui"` | Native dialog windows (Rust-backed) |
+| `"color"` | ANSI terminal color/style helpers |
+| `"table"` | Aligned ASCII table rendering |
 
 ---
 
@@ -706,7 +787,13 @@ fn divide(a, b)
 end
 ```
 
-Any value can be thrown — strings are most common.
+Any value can be thrown, not just strings -- a dict, a struct, whatever fits the situation:
+
+```ject
+throw {"code": 404, "message": "not found"}
+```
+
+A thrown value caught by a `try`/`catch` wrapped directly around it keeps its original type (string, dict, struct, ...). If it instead escapes a function call first (i.e. the `throw` is inside a function, and the `try` is around the *call* to that function), it's currently converted to its string representation before the catch sees it.
 
 ### try / catch
 
@@ -818,7 +905,7 @@ CorLib is always in scope — no import needed. All implemented in Rust.
 | `unique(arr)` | Deduplicated copy |
 | `map(arr, fn)` | Apply fn to each element |
 | `filter(arr, fn)` | Keep elements where fn is truthy |
-| `reduce(arr, fn, initial)` | Fold left |
+| `reduce(arr, fn, initial)` | Fold left. `initial` is optional -- if omitted, the first element seeds the accumulator and folding starts from the second element (an empty array then requires `initial`) |
 
 ### String
 
@@ -848,6 +935,8 @@ CorLib is always in scope — no import needed. All implemented in Rust.
 | `random_int(min, max)` | Integer in `[min, max)` |
 | `PI` | 3.141592653589793 |
 | `E` | 2.718281828459045 |
+| `inf` | Positive floating-point infinity (`-inf` for negative) |
+| `nan` | Floating-point not-a-number (`nan == nan` is `false`, per IEEE 754) |
 
 ### I/O
 
@@ -1198,6 +1287,65 @@ Rust-backed numerical arrays. Native-only.
 
 **Linear algebra:** `np.dot(a,b)`, `np.norm(arr)`, `np.det(m)`, `np.inv(m)`, `np.solve(A,b)`
 
+**Constants:** `np.PI`, `np.E`, `np.inf` / `np.INF`, `np.nan` / `np.NAN`
+
+---
+
+### color
+
+```ject
+import "color" as c
+```
+
+Pure Ject, no native code. Wraps text in ANSI escape codes; each call resets styling afterward, so calls nest and concatenate freely.
+
+**Foreground:** `c.black`, `c.red`, `c.green`, `c.yellow`, `c.blue`, `c.magenta`, `c.cyan`, `c.white`, `c.gray`
+
+**Background:** `c.bg_red`, `c.bg_green`, `c.bg_yellow`, `c.bg_blue`
+
+**Styles:** `c.bold`, `c.dim`, `c.underline`, `c.italic`
+
+**True color:** `c.rgb(text, r, g, b)`, `c.bg_rgb(text, r, g, b)`
+
+**Semantic shortcuts:** `c.success`, `c.error`, `c.warning`, `c.info`
+
+```ject
+print(c.bold(c.green("Build succeeded")))
+print(c.error("Something failed"))
+```
+
+---
+
+### table
+
+```ject
+import "table" as t
+```
+
+Pure Ject, no native code. Renders an aligned, bordered ASCII table.
+
+```ject
+print(t.render(["Name", "Score"], [["Alice", 92], ["Bob", 81]]))
+```
+
+```
++-------+-------+
+| Name  | Score |
++-------+-------+
+| Alice | 92    |
+| Bob   | 81    |
++-------+-------+
+```
+
+If your data is already an array of dictionaries (e.g. loaded from JSON), `render_dicts` derives the headers from the first dictionary's keys:
+
+```ject
+let rows = [{"name": "Alice", "score": 92}, {"name": "Bob", "score": 81}]
+print(t.render_dicts(rows))
+```
+
+`print_table(headers, rows)` and `print_dicts(dicts)` are shorthand for `print(render(...))` / `print(render_dicts(...))`.
+
 ---
 
 ## CLI Reference
@@ -1247,7 +1395,7 @@ import "gui"
 let  fn  lambda  return
 if  elseif  else  then  end
 while  for  in  do
-match
+match  when
 struct  new
 try  catch  throw
 import  export  from  as

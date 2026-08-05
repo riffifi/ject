@@ -16,6 +16,9 @@ pub fn get_runtime_suggestion(message: &str) -> String {
     if msg.contains("array index") {
         return "Use negative indices to count from the end (arr[-1] = last element).".to_string();
     }
+    if msg.contains("break/continue") {
+        return "break/continue can only affect the loop they're directly inside -- they can't jump out of a function, lambda, or match arm.".to_string();
+    }
     if msg.contains("break") {
         return "'break' can only be used inside for or while loops.".to_string();
     }
@@ -24,6 +27,27 @@ pub fn get_runtime_suggestion(message: &str) -> String {
     }
     if msg.contains("sqrt") || msg.contains("pow") {
         return "sqrt() requires non-negative numbers. pow(0,0) is undefined.".to_string();
+    }
+    if msg.contains("division by zero") {
+        return "Check the denominator isn't zero before dividing.".to_string();
+    }
+    if msg.contains("expected") && msg.contains("argument") {
+        return "Check the number of arguments passed matches the function/lambda's parameters.".to_string();
+    }
+    if msg.contains("circular import") {
+        return "One of these modules needs to stop importing the other, or move the shared code into a third module both of them import instead.".to_string();
+    }
+    if msg.contains("does not export") || msg.contains("not found in module") {
+        return "Check the export name for typos, and that it's declared with 'export' in the module.".to_string();
+    }
+    if msg.contains("cannot access field") {
+        return "This value doesn't have that field/member, and there's no function by that name to fall back to as arr.method(x) sugar for method(arr, x).".to_string();
+    }
+    if msg.contains("cannot call") {
+        return "Only functions, lambdas, and builtins can be called -- check this isn't a plain value.".to_string();
+    }
+    if msg.contains("module") && msg.contains("not found") {
+        return "Check the import path -- relative imports ('./x') resolve against the importing file's own directory.".to_string();
     }
     String::new()
 }

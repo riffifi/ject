@@ -11,7 +11,7 @@ greet("World")
 greet("Leo", "Hey")
 
 let numbers = [1, 2, 3, 4, 5]
-let doubled = map(numbers, lambda(n) -> n * 2)
+let doubled = numbers.map(fn(n) -> n * 2)
 print doubled  # [2, 4, 6, 8, 10]
 
 for i in 1..6 do
@@ -82,9 +82,37 @@ fn greet(name, greeting = "Hello")
     print "$greeting, $name!"
 end
 
-# Expression lambdas (use `lambda`, not `fn ... ->`)
-let square = lambda(x) -> x * x
-let clamp = lambda(v, lo, hi) -> max(lo, min(hi, v))
+# Anonymous functions: fn(x) -> expr (a value, OCaml-let-style) or
+# fn(x) ... end (block body -- the trailing bare expression is returned,
+# no `return` needed). lambda(x) -> expr still works as an alias.
+let square = fn(x) -> x * x
+let clamp = fn(v, lo, hi)
+    max(lo, min(hi, v))
+end
+
+# obj.method(args) is sugar for method(obj, args) when obj has no such
+# member of its own -- arr.map(f), arr.push(x), arr.len() all just work.
+print [1, 2, 3].map(fn(x) -> x * x)   # [1, 4, 9]
+```
+
+### Match
+
+```ject
+let grade = match score
+    > 89     -> "A"
+    > 79     -> "B"
+    0..59    -> "F"
+    _        -> "C"
+end
+
+# Multiple patterns per arm, and block bodies:
+match command
+    "quit", "exit", "q" -> exit(0)
+    "help", "h" ->
+        print "Available commands: ..."
+        show_help()
+    _ -> print "Unknown command"
+end
 ```
 
 ### Control flow
@@ -180,16 +208,15 @@ print person["name"]
 
 ```ject
 import "math" as m
-print m.sqrt(16)        # 4.0
 print m.fibonacci(10)   # 55
 print m.is_prime(17)    # true
-
-import {PI, sin, cos} from "math"
-print sin(PI / 2)       # 1.0
+print m.log(8, 2)       # 3.0  (log base 2 -- not in CorLib, needs this import)
 
 import "string" as s
 print s.title_case("hello world")  # "Hello World"
 ```
+
+`sqrt`, `pow`, `sin`, `cos`, `PI`, and friends are already in CorLib -- no import needed for those; the `math`/`string`/etc. modules add the less-common stuff on top.
 
 Write your own:
 
@@ -261,24 +288,26 @@ let output = exec("ls")
 let home = env("HOME")
 ```
 
-The `math`, `string`, `array`, `io`, `json`, and `gui` modules extend this further. See [DOCS.md](DOCS.md) for the full reference.
+The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `gui` modules extend this further. See [DOCS.md](DOCS.md) for the full reference.
 
 ---
 
 ## What's in the box
 
 - Dynamic typing, clean syntax
-- First-class functions and closures
+- First-class functions, real closures, and pattern matching (`match` with relational/range/multi-value patterns)
+- Method-call syntax sugar (`arr.map(f)`, `arr.push(x)`) alongside real member access (`import "math" as m; m.log(x, base)`)
 - Three slicing syntaxes for arrays and strings
 - Unique arrays `{| |}` with auto-deduplication
 - Range expressions (`1..6`, `0..10:2`)
 - String interpolation (`"Hello, $name!"`, `"${expr}"`)
-- Module system with selective imports and exports
+- Module system with selective imports, singleton module state, and circular-import detection
 - Structs and dictionaries
-- `try`/`catch`/`throw` error handling
+- `try`/`catch`/`throw` error handling (throw any value, not just strings)
 - Built-in math, string, array, I/O, JSON
 - NumPy-like numerical arrays (Rust-backed)
 - Native GUI module
+- ANSI colors and table formatting (`color`, `table` -- pure Ject, no native code)
 - REPL with history
 
 ---
@@ -288,7 +317,8 @@ The `math`, `string`, `array`, `io`, `json`, and `gui` modules extend this furth
 - [x] Core language
 - [x] Rich standard library
 - [x] Range syntax with steps
-- [x] Lambda functions
+- [x] Lambda / anonymous functions
+- [x] Pattern matching (`match`, with relational/range/multi-value patterns)
 - [x] Module system
 - [x] Struct system
 - [x] Advanced slicing (named, range, Python-style)
@@ -296,7 +326,8 @@ The `math`, `string`, `array`, `io`, `json`, and `gui` modules extend this furth
 - [x] REPL with history
 - [x] VS Code extension
 - [ ] Package manager
-- [ ] Performance optimizations
+- [ ] Performance optimizations (array/dict value semantics still copy-heavy)
+- [ ] Source-location tracking for runtime errors (currently parse/lint errors get precise line/column; runtime errors don't yet)
 
 ---
 
@@ -306,7 +337,7 @@ The `math`, `string`, `array`, `io`, `json`, and `gui` modules extend this furth
 cd vscode-ject
 npm install
 npm run package
-code --install-extension ject-vscode-0.1.0.vsix
+code --install-extension ject-vscode-0.3.0.vsix
 ```
 
 Supports `.ject` and `.jt` files: syntax highlighting, snippets, completions, hovers, formatting, run/check commands, and a REPL launcher.

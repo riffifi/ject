@@ -6,7 +6,6 @@ mod interpreter;
 mod stdlib;
 mod numpy;
 mod gui;
-mod error;
 mod linter;
 mod diagnostic;
 
@@ -218,19 +217,14 @@ fn execute_source(
                     ExecutionMode::Run => match interpreter.interpret(&statements) {
                         Ok(_) => {}
                         Err(error) => {
-                            // Display runtime error with colors
-                            use colored::*;
-                            eprintln!(
-                                "{}: {}",
-                                "Runtime Error".red().bold(),
-                                error.message.bold()
-                            );
-
-                            // Display suggestion if available
+                            let mut runtime_diagnostic =
+                                crate::diagnostic::Diagnostic::error(error.message.clone())
+                                    .with_code("E0003".to_string());
                             let suggestion = get_runtime_suggestion(&error.message);
                             if !suggestion.is_empty() {
-                                eprintln!("{} {}", "Tip:".blue().bold(), suggestion.trim().bold());
+                                runtime_diagnostic = runtime_diagnostic.with_help(suggestion.trim().to_string());
                             }
+                            renderer.render(&runtime_diagnostic, filename.as_deref(), Some(source));
                             if filename.is_some() {
                                 std::process::exit(1);
                             }
@@ -298,19 +292,15 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
                 match interpreter.interpret(&statements) {
                     Ok(_) => {}
                     Err(error) => {
-                        // Display runtime error with colors
-                        use colored::*;
-                        eprintln!(
-                            "{}: {}",
-                            "Runtime Error".red().bold(),
-                            error.message.bold()
-                        );
-
-                        // Display suggestion if available
+                        let mut runtime_diagnostic =
+                            crate::diagnostic::Diagnostic::error(error.message.clone())
+                                .with_code("E0003".to_string());
                         let suggestion = get_runtime_suggestion(&error.message);
                         if !suggestion.is_empty() {
-                            eprintln!("{} {}", "Tip:".blue().bold(), suggestion.trim().bold());
+                            runtime_diagnostic = runtime_diagnostic.with_help(suggestion.trim().to_string());
                         }
+                        let renderer = DiagnosticRenderer::new();
+                        renderer.render(&runtime_diagnostic, None, Some(source));
                     }
                 }
             }

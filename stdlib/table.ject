@@ -1,4 +1,4 @@
-# table.ject - format tabular data as an aligned ASCII table.
+# Table - format tabular data as an aligned ASCII table, written entirely in Ject.
 #
 #   import "table" as t
 #
@@ -57,7 +57,7 @@ fn data_line(cells, widths)
     return line
 end
 
-# Renders "headers" (array of strings) and "rows" (array of arrays, one per row,
+# Renders `headers` (array of strings) and `rows` (array of arrays, one per row,
 # same length as headers) as a bordered, column-aligned ASCII table string.
 export fn render(headers, rows)
     let widths = column_widths(headers, rows)

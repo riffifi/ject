@@ -1,8 +1,0 @@
-import {window, label, separator, button, input, run} from "gui"
-
-let app = window("GUI Spec Test", 320, 240)
-label(app, "Spec builder works")
-separator(app)
-input(app, "name", "Name:", "")
-button(app, "ok", "OK")
-run(app)

@@ -54,7 +54,16 @@ impl Parser {
     fn statement(&mut self) -> ParseResult<Stmt> {
         match &self.peek() {
             Token::Let => self.let_statement(),
-            Token::Fn => self.function_statement(),
+            Token::Fn => {
+                // `fn(...)` (no name) at statement position is an anonymous function
+                // used as a standalone expression statement -- `fn name(...)` is a
+                // named function declaration. Peek past `fn` to tell them apart.
+                if self.peek_ahead(1).map(|t| matches!(t, Token::LeftParen)).unwrap_or(false) {
+                    Ok(Stmt::Expression(self.expression()?))
+                } else {
+                    self.function_statement()
+                }
+            }
             Token::If => {
                 // `if` can be either a statement block or a conditional *expression*.
                 // Try the expression form first; if it fails, fall back to statement parsing.
