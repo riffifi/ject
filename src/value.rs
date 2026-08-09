@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use crate::ast::{Stmt, Parameter};
 use crate::numpy::NdArray;
@@ -10,7 +10,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Nil,
-    Array(Vec<Value>),
+    Array(std::rc::Rc<std::cell::RefCell<Vec<Value>>>),
     UniqueArray(Vec<Value>),  // Unique array (set-like)
     Dictionary(std::collections::HashMap<String, Value>),
     Collection(std::collections::HashSet<String>),
@@ -63,6 +63,7 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Nil => write!(f, "nil"),
             Value::Array(elements) => {
+                let elements = elements.borrow();
                 write!(f, "[")?;
                 for (i, elem) in elements.iter().enumerate() {
                     if i > 0 { write!(f, ", ")?; }
@@ -176,7 +177,6 @@ impl fmt::Display for Value {
 
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering;
         match (self, other) {
             // Numbers can be compared
             (Value::Integer(a), Value::Integer(b)) => a.partial_cmp(b),
@@ -191,7 +191,7 @@ impl PartialOrd for Value {
             (Value::Bool(a), Value::Bool(b)) => a.partial_cmp(b),
             
             // Arrays can be compared lexicographically
-            (Value::Array(a), Value::Array(b)) => a.partial_cmp(b),
+            (Value::Array(a), Value::Array(b)) => a.borrow().partial_cmp(&*b.borrow()),
             
             // For different types, use a consistent ordering
             (a, b) => {
@@ -222,6 +222,12 @@ impl PartialOrd for Value {
 }
 
 impl Value {
+    /// Wraps a `Vec<Value>` as an `Array`. Prefer this over
+    /// `Value::Array(Rc::new(RefCell::new(v)))` directly -- same result, less noise.
+    pub fn array(v: Vec<Value>) -> Value {
+        Value::Array(std::rc::Rc::new(std::cell::RefCell::new(v)))
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
@@ -229,7 +235,7 @@ impl Value {
             Value::Integer(0) => false,
             Value::Float(f) => *f != 0.0,
             Value::String(s) => !s.is_empty(),
-            Value::Array(arr) => !arr.is_empty(),
+            Value::Array(arr) => !arr.borrow().is_empty(),
             Value::UniqueArray(arr) => !arr.is_empty(),
             Value::Dictionary(dict) => !dict.is_empty(),
             Value::Collection(set) => !set.is_empty(),

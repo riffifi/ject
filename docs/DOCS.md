@@ -1,4 +1,4 @@
-# Ject Language Reference — v0.4.0
+# Ject Language Reference — v0.6.0
 
 ## Table of Contents
 
@@ -1359,6 +1359,12 @@ ject --version               Print version
 ject --introspect            Print native kernel metadata as JSON
 ject --help                  Show help
 ```
+
+### REPL
+
+- Bare expressions auto-print their result, like Python's REPL (`2 + 2` shows `4` with no `print` needed). `nil` results aren't echoed, so a bare `print(...)` call doesn't double-print.
+- Multi-line input: an unclosed `fn ... end`, an open paren/bracket, a trailing operator, etc. switches to a `.. ` continuation prompt and keeps accumulating lines until the statement is actually complete.
+- Ctrl+C cancels the line currently being typed, or interrupts a running script (e.g. an infinite `while true do ... end`) without killing the REPL. Ctrl+D exits.
 
 ---
 

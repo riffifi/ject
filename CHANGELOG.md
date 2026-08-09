@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.6.0
+
+### Performance & correctness: Array is now reference-counted
+- `Array` changed from a plain `Vec<Value>` (deep-copied on every clone/pass/return) to
+  `Rc<RefCell<Vec<Value>>>` -- passing or storing an array is now O(1) instead of an O(n) deep
+  copy, matching how Python/JS/Ruby handle lists. Verified: passing a 20,000-element array through
+  50,000 function calls (which would have required ~1 billion element copies under the old value
+  semantics) now completes in well under 100ms.
+- This also fixes real aliasing bugs that were present under value semantics: `let b = a; a[0] = 99`
+  now correctly updates `b` too (previously `b` silently stayed a stale independent copy), and the
+  same for nested index assignment (`a[0][0] = 99`) and mutating an array passed into a function
+  (the caller now sees the mutation after the call returns, as expected).
+- Functional operations (`push`, `map`, `filter`, `sort`, `reverse`, slicing, etc.) still correctly
+  return a new, independent array rather than mutating the original -- verified explicitly.
+- `for` loops over an array still iterate over a snapshot taken at the start of the loop, so
+  mutating the array from within the loop body doesn't affect what's being iterated -- same
+  behavior as before, verified explicitly.
+- `UniqueArray` and `Dictionary` are unchanged in this pass (still plain value types) -- staged
+  as a deliberately separate, smaller-scope follow-up rather than doing everything at once.
+
+### Project completeness
+- `Cargo.toml` now has real publish metadata (`description`, `license`, `repository`, `keywords`,
+  `categories`) -- previously missing entirely, which would have made `cargo publish` fail outright.
+- Zero `cargo build` warnings (was 11: unused imports, dead fields, an unused enum, a fully
+  unreachable method). Removed the genuinely dead code rather than silencing the warnings.
+- CI: cross-platform build matrix (Linux/macOS/Windows), warnings now fail the build (verified
+  clean), added a non-blocking clippy job (informational only -- not verified clean in this
+  environment yet, so it doesn't gate merges until someone confirms it).
+
+## 0.5.0
+
+### REPL rewrite
+- Bare expressions now auto-print their result (`2 + 2` -> `4`), the way Python's/Node's/Ruby's
+  REPLs do -- previously nothing was echoed unless you wrote `print(...)` explicitly. `nil`
+  results are not echoed, so a bare `print(...)` call doesn't double-print.
+- Multi-line input: an unclosed `fn ... end`/`if ... end`/`while ... end`/etc., an open
+  paren/bracket/brace, or a trailing operator (`1 +`, `let x =`, a dangling `,`) now switches to
+  a `.. ` continuation prompt and keeps accumulating lines until the statement is actually
+  complete, instead of erroring on the first incomplete line.
+- Ctrl+C now genuinely interrupts a *running* script (e.g. an infinite `while true do ... end`),
+  not just line input that hasn't been submitted yet -- via a shared interrupt flag the
+  interpreter checks once per loop iteration. Ctrl+C while typing still just cancels that line,
+  as before; Ctrl+D still exits.
+
+### Correctness fix
+- Fixed a real parser bug found while building the above: a block missing its closing `end`
+  (`fn foo(x)` with nothing after it, or similar for `if`/`while`/`for`/`try`/`match`) used to
+  parse *successfully* with a silently empty body, instead of erroring. Now it errors clearly.
+  This was also what made reliable "is this input incomplete" detection for the REPL possible in
+  the first place -- the parser needed to actually say so.
+
 ## 0.4.0
 
 ### Language features

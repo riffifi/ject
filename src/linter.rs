@@ -6,12 +6,10 @@ use crate::diagnostic::Diagnostic;
 struct Variable {
     name: String,
     used: bool,
-    declared_in_scope: usize,
 }
 
 #[derive(Debug, Clone)]
 struct FunctionSignature {
-    name: String,
     parameters: Vec<Parameter>,
 }
 
@@ -32,21 +30,12 @@ pub struct Linter {
     scopes: Vec<HashMap<String, Variable>>, // Stack of scopes with variable info
     warnings: Vec<LintWarning>,
     errors: Vec<LintError>,
-    current_scope_id: usize,
     functions: HashSet<String>,
     function_signatures: HashMap<String, FunctionSignature>, // Track function signatures
     in_function: bool,
     // Store positioned tokens to find locations of identifiers
     positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
     source: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum ScopeKind {
-    Global,
-    Function,
-    Block,
-    MatchArm,
 }
 
 impl Linter {
@@ -86,7 +75,6 @@ impl Linter {
             scopes: vec![HashMap::new()], // Global scope
             warnings: Vec::new(),
             errors: Vec::new(),
-            current_scope_id: 0,
             functions: HashSet::new(),
             function_signatures: HashMap::new(),
             in_function: false,
@@ -334,7 +322,6 @@ impl Linter {
         self.scopes.push(HashMap::new()); // Global scope
         self.warnings.clear();
         self.errors.clear();
-        self.current_scope_id = 0;
         
         // Re-add built-in functions (don't clear them)
         self.functions.clear();
@@ -449,7 +436,6 @@ impl Linter {
     }
 
     fn push_scope(&mut self) {
-        self.current_scope_id += 1;
         self.scopes.push(HashMap::new());
     }
 
@@ -488,7 +474,6 @@ impl Linter {
                 current_scope.insert(name.clone(), Variable {
                     name,
                     used: false,
-                    declared_in_scope: self.current_scope_id,
                 });
             }
         }
@@ -790,7 +775,6 @@ impl Linter {
                 
                 // Store function signature for validation
                 self.function_signatures.insert(name.clone(), FunctionSignature {
-                    name: name.clone(),
                     parameters: params.clone(),
                 });
                 
@@ -928,7 +912,6 @@ impl Linter {
 
                 // Store function signature for validation
                 self.function_signatures.insert(name.clone(), FunctionSignature {
-                    name: name.clone(),
                     parameters: params.clone(),
                 });
 

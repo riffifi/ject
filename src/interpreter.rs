@@ -82,6 +82,12 @@ pub struct Interpreter {
     // moment it's used from a different directory than the one it happened to be
     // authored/tested in, or is nested inside a subdirectory of a larger project.
     module_dir_stack: Vec<std::path::PathBuf>,
+    // Checked periodically inside loop bodies. A host (e.g. the REPL) can share this
+    // with a Ctrl+C handler to interrupt a runaway script -- e.g. an infinite `while
+    // true do ... end` -- without killing the whole process. Not set by anything
+    // unless a host explicitly wires it up via `set_interrupt_flag`; defaults to an
+    // always-false flag that's never touched.
+    interrupt_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -112,6 +118,26 @@ impl Interpreter {
             import_stack: Vec::new(),
             module_cache: HashMap::new(),
             module_dir_stack: vec![std::env::current_dir().unwrap_or_default()],
+            interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Shares an interrupt flag with this interpreter -- a host can set this (e.g.
+    /// from a Ctrl+C handler) to make a running loop stop cleanly with a runtime
+    /// error instead of hanging forever, without killing the process. The host is
+    /// responsible for resetting the flag back to `false` after handling the
+    /// resulting error, or every subsequent run would be interrupted immediately too.
+    pub fn set_interrupt_flag(&mut self, flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        self.interrupt_flag = flag;
+    }
+
+    fn check_interrupted(&self) -> RuntimeResult<()> {
+        if self.interrupt_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            Err(RuntimeError {
+                message: "Interrupted".to_string(),
+            })
+        } else {
+            Ok(())
         }
     }
 
@@ -190,6 +216,49 @@ impl Interpreter {
         }
         Ok(())
     }
+
+    /// Same as `interpret`, but if the final statement is a bare expression (not an
+    /// assignment, a `print`, etc.), its value is returned instead of being silently
+    /// discarded -- this is what lets a REPL echo `2 + 2` -> `4` the way Python's does,
+    /// without every function body needing to change how it behaves when run as a
+    /// script.
+    pub fn interpret_repl(&mut self, statements: &[Stmt]) -> RuntimeResult<Option<Value>> {
+        let Some((last, rest)) = statements.split_last() else {
+            return Ok(None);
+        };
+
+        for statement in rest {
+            match self.execute_statement(statement)? {
+                ControlFlow::Return(_) => return Ok(None),
+                ControlFlow::Throw(error) => {
+                    return Err(RuntimeError {
+                        message: format!("Uncaught error: {}", error),
+                    });
+                }
+                ControlFlow::Break | ControlFlow::Continue => {
+                    return Err(RuntimeError {
+                        message: "break/continue outside of loop".to_string(),
+                    });
+                }
+                ControlFlow::None => {}
+            }
+        }
+
+        if let Stmt::Expression(expr) = last {
+            Ok(Some(self.evaluate_expression(expr)?))
+        } else {
+            match self.execute_statement(last)? {
+                ControlFlow::Return(_) => Ok(None),
+                ControlFlow::Throw(error) => Err(RuntimeError {
+                    message: format!("Uncaught error: {}", error),
+                }),
+                ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                    message: "break/continue outside of loop".to_string(),
+                }),
+                ControlFlow::None => Ok(None),
+            }
+        }
+    }
     
     fn execute_statement(&mut self, stmt: &Stmt) -> RuntimeResult<ControlFlow> {
         match stmt {
@@ -223,16 +292,16 @@ impl Interpreter {
                         
                         let idx = self.evaluate_expression(&index)?;
                         
-                        if let Value::Array(mut arr) = obj {
+                        if let Value::Array(arr) = &obj {
                             if let Value::Integer(i) = idx {
-                                let actual_index = if i < 0 { arr.len() as i64 + i } else { i };
-                                if actual_index < 0 || actual_index >= arr.len() as i64 {
+                                let len = arr.borrow().len() as i64;
+                                let actual_index = if i < 0 { len + i } else { i };
+                                if actual_index < 0 || actual_index >= len {
                                     return Err(RuntimeError {
                                         message: format!("Array index out of bounds: {}", i),
                                     });
                                 }
-                                arr[actual_index as usize] = val;
-                                self.environment.set(&object, Value::Array(arr));
+                                arr.borrow_mut()[actual_index as usize] = val;
                                 Ok(ControlFlow::None)
                             } else {
                                 Err(RuntimeError { message: "Array index must be integer".to_string() })
@@ -306,6 +375,7 @@ impl Interpreter {
             }
             Stmt::While { condition, body } => {
                 while self.evaluate_expression(condition)?.is_truthy() {
+                    self.check_interrupted()?;
                     match self.execute_block(body)? {
                         ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
                         ControlFlow::Throw(error) => return Ok(ControlFlow::Throw(error)),
@@ -321,7 +391,9 @@ impl Interpreter {
 
                 match iter_value {
                     Value::Array(elements) => {
+                        let elements = elements.borrow().clone();
                         for element in elements {
+                            self.check_interrupted()?;
                             self.environment.push_scope();
                             self.environment.define(var.clone(), element);
 
@@ -348,6 +420,7 @@ impl Interpreter {
                     Value::String(s) => {
                         // Iterate over characters in string
                         for ch in s.chars() {
+                            self.check_interrupted()?;
                             self.environment.push_scope();
                             self.environment.define(var.clone(), Value::String(ch.to_string()));
 
@@ -648,7 +721,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 for element in elements {
                     values.push(self.evaluate_expression(element)?);
                 }
-                Ok(Value::Array(values))
+                Ok(Value::array(values))
             }
             Expr::UniqueArray(elements) => {
                 // Evaluate all elements and deduplicate
@@ -671,7 +744,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 
                 // Get elements from iterable (array, unique array, string chars, or range)
                 let elements = match iter_value {
-                    Value::Array(arr) => arr,
+                    Value::Array(arr) => arr.borrow().clone(),
                     Value::UniqueArray(arr) => arr,
                     Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
                     _ => return Err(RuntimeError { message: "Can only iterate over arrays, strings, or ranges".to_string() }),
@@ -704,7 +777,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     }
                 }
                 
-                Ok(Value::Array(result))
+                Ok(Value::array(result))
             }
             Expr::Generator { expr, var, iterable, condition } => {
                 // For now, generators evaluate eagerly like list comprehensions
@@ -712,7 +785,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let iter_value = self.evaluate_expression(iterable)?;
                 
                 let elements = match iter_value {
-                    Value::Array(arr) => arr,
+                    Value::Array(arr) => arr.borrow().clone(),
                     Value::UniqueArray(arr) => arr,
                     Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
                     _ => return Err(RuntimeError { message: "Can only iterate over arrays, strings, or ranges".to_string() }),
@@ -745,7 +818,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
                 
                 // Return as array for now (could be made lazy in future)
-                Ok(Value::Array(result))
+                Ok(Value::array(result))
             }
             Expr::Dictionary(pairs) => {
                 let mut map = std::collections::HashMap::new();
@@ -773,6 +846,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     let idx = self.evaluate_expression(&idx_expr)?;
                     current = match (current, idx) {
                     (Value::Array(arr), Value::Integer(i)) => {
+                        let arr = arr.borrow();
                         // Handle negative indices
                         let actual_index = if i < 0 {
                             (arr.len() as i64 + i) as usize
@@ -857,6 +931,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 // Perform slicing based on object type
                 match obj {
                     Value::Array(arr) => {
+                        let arr = arr.borrow();
                         let len = arr.len() as i64;
 
                         // Convert from/to to actual indices
@@ -903,7 +978,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                             }
                         }
 
-                        Ok(Value::Array(result))
+                        Ok(Value::array(result))
                     }
                     Value::String(s) => {
                         let chars: Vec<char> = s.chars().collect();
@@ -1093,7 +1168,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     }
                 }
 
-                Ok(Value::Array(result))
+                Ok(Value::array(result))
             }
             Expr::ConditionalExpr { condition, then_expr, elseif_branches, else_expr } => {
                 let cond_value = self.evaluate_expression(condition)?;
@@ -1183,9 +1258,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             (Value::String(a), BinaryOp::Add, b) => Ok(Value::String(format!("{}{}", a, b))),
             (a, BinaryOp::Add, Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
             (Value::Array(a), BinaryOp::Add, Value::Array(b)) => {
-                let mut result = a.clone();
-                result.extend(b.clone());
-                Ok(Value::Array(result))
+                let mut result = a.borrow().clone();
+                result.extend(b.borrow().iter().cloned());
+                Ok(Value::array(result))
             },
             
             (Value::Integer(a), BinaryOp::Subtract, Value::Integer(b)) => Ok(Value::Integer(a - b)),
@@ -1302,7 +1377,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             
             // In operator - check if left value is contained in right value
             (left_val, BinaryOp::In, Value::Array(arr)) => {
-                for item in arr {
+                for item in arr.borrow().iter() {
                     let equal = self.evaluate_binary_op(left_val, &BinaryOp::Equal, item)?;
                     if let Value::Bool(true) = equal {
                         return Ok(Value::Bool(true));
@@ -2079,7 +2154,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         }
         let idx = Self::normalize_array_index_cell(path[0], arr.len())?;
         let inner = match arr.get(idx) {
-            Some(Value::Array(a)) => a.clone(),
+            Some(Value::Array(a)) => a.borrow().clone(),
             Some(other) => {
                 return Err(RuntimeError {
                     message: format!(
@@ -2095,7 +2170,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
         };
         let new_inner = Self::set_array_at_int_path(inner, &path[1..], val)?;
-        arr[idx] = Value::Array(new_inner);
+        arr[idx] = Value::array(new_inner);
         Ok(arr)
     }
 
@@ -2128,9 +2203,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             });
         };
 
-        let new_root = Self::set_array_at_int_path(root_arr, &path_i64, val)?;
-        self.environment
-            .set(root_name, Value::Array(new_root));
+        let snapshot = root_arr.borrow().clone();
+        let new_root = Self::set_array_at_int_path(snapshot, &path_i64, val)?;
+        *root_arr.borrow_mut() = new_root;
         Ok(())
     }
 
@@ -2155,7 +2230,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
     /// with a consistent message if it's neither.
     fn expect_array_like(&self, value: Value, func_name: &str) -> RuntimeResult<(Vec<Value>, bool)> {
         match value {
-            Value::Array(arr) => Ok((arr, false)),
+            Value::Array(arr) => Ok((arr.borrow().clone(), false)),
             Value::UniqueArray(arr) => Ok((arr, true)),
             other => Err(RuntimeError {
                 message: format!("{}() requires an array or unique array, got {}", func_name, other.type_name()),
@@ -2214,7 +2289,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 if is_unique {
                     Ok(Value::UniqueArray(result))
                 } else {
-                    Ok(Value::Array(result))
+                    Ok(Value::array(result))
                 }
             }
             "filter" => {
@@ -2246,7 +2321,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 if is_unique {
                     Ok(Value::UniqueArray(result))
                 } else {
-                    Ok(Value::Array(result))
+                    Ok(Value::array(result))
                 }
             }
             "reduce" => {

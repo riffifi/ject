@@ -490,9 +490,9 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
-                    let mut new_arr = arr.clone();
+                    let mut new_arr = arr.borrow().clone();
                     new_arr.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                    Ok(Value::Array(new_arr))
+                    Ok(Value::array(new_arr))
                 }
                 _ => Err(RuntimeError {
                     message: "sort() requires an array".to_string(),
@@ -507,9 +507,9 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
-                    let mut new_arr = arr.clone();
+                    let mut new_arr = arr.borrow().clone();
                     new_arr.reverse();
-                    Ok(Value::Array(new_arr))
+                    Ok(Value::array(new_arr))
                 }
                 _ => Err(RuntimeError {
                     message: "reverse() requires an array".to_string(),
@@ -969,7 +969,7 @@ match name {
                 });
             }
             match &args[0] {
-                Value::Array(arr) => Ok(Value::Integer(arr.len() as i64)),
+                Value::Array(arr) => Ok(Value::Integer(arr.borrow().len() as i64)),
                 Value::String(s) => Ok(Value::Integer(s.chars().count() as i64)),
                 _ => Err(RuntimeError {
                     message: "len() requires an array or string".to_string(),
@@ -984,9 +984,10 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
+                    let arr = arr.borrow();
                     let mut sum = 0.0;
                     let mut is_int = true;
-                    for val in arr {
+                    for val in arr.iter() {
                         match val {
                             Value::Integer(n) => sum += *n as f64,
                             Value::Float(f) => {
@@ -1018,6 +1019,9 @@ match name {
                 });
             }
             match &args[0] {
+                // arr.clone() is already the right Rc<RefCell<...>> -- this stub just
+                // hands back the same array unchanged, the real logic lives in the
+                // interpreter's higher-order-function dispatch.
                 Value::Array(arr) => Ok(Value::Array(arr.clone())),
                 _ => Err(RuntimeError {
                     message: "map() requires an array".to_string(),
@@ -1106,7 +1110,7 @@ match name {
                     } else {
                         s.split(delim.as_str()).map(|part| Value::String(part.to_string())).collect()
                     };
-                    Ok(Value::Array(parts))
+                    Ok(Value::array(parts))
                 }
                 _ => Err(RuntimeError {
                     message: "split() requires a string and a string delimiter".to_string(),
@@ -1122,7 +1126,7 @@ match name {
 
             match (&args[0], &args[1]) {
                 (Value::Array(strings), Value::String(delim)) => {
-                    let joined = strings.iter().map(|v| match v {
+                    let joined = strings.borrow().iter().map(|v| match v {
                         Value::String(s) => s.clone(),
                         _ => v.to_string(),
                     }).collect::<Vec<String>>().join(delim);
@@ -1188,9 +1192,9 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
-                    let mut new_arr = arr.clone();
+                    let mut new_arr = arr.borrow().clone();
                     new_arr.push(args[1].clone());
-                    Ok(Value::Array(new_arr))
+                    Ok(Value::array(new_arr))
                 }
                 _ => Err(RuntimeError {
                     message: "push() requires an array as first argument".to_string(),
@@ -1205,12 +1209,12 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
-                    if arr.is_empty() {
+                    if arr.borrow().is_empty() {
                         return Err(RuntimeError {
                             message: "pop() cannot pop from empty array".to_string(),
                         });
                     }
-                    let mut new_arr = arr.clone();
+                    let mut new_arr = arr.borrow().clone();
                     let popped = new_arr.pop().unwrap();
                     Ok(popped)
                 }
@@ -1331,7 +1335,7 @@ match name {
                             for i in 0..*n {
                                 result.push(Value::Integer(i));
                             }
-                            Ok(Value::Array(result))
+                            Ok(Value::array(result))
                         }
                         _ => Err(RuntimeError {
                             message: "range() requires an integer".to_string(),
@@ -1346,7 +1350,7 @@ match name {
                             for i in *start..*end {
                                 result.push(Value::Integer(i));
                             }
-                            Ok(Value::Array(result))
+                            Ok(Value::array(result))
                         }
                         _ => Err(RuntimeError {
                             message: "range() requires integers".to_string(),
@@ -1379,7 +1383,7 @@ match name {
                                     })?;
                                 }
                             }
-                            Ok(Value::Array(result))
+                            Ok(Value::array(result))
                         }
                         _ => Err(RuntimeError {
                             message: "range() requires integers".to_string(),
@@ -1418,6 +1422,7 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
+                    let arr = arr.borrow();
                     if arr.is_empty() {
                         Ok(Value::Nil)
                     } else {
@@ -1437,6 +1442,7 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
+                    let arr = arr.borrow();
                     if arr.is_empty() {
                         Ok(Value::Nil)
                     } else {
@@ -1456,9 +1462,10 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Array(arr), Value::Integer(n)) => {
+                    let arr = arr.borrow();
                     let count = (*n).max(0) as usize;
                     let count = count.min(arr.len());
-                    Ok(Value::Array(arr[..count].to_vec()))
+                    Ok(Value::array(arr[..count].to_vec()))
                 }
                 _ => Err(RuntimeError {
                     message: "take() requires an array and an integer".to_string(),
@@ -1473,9 +1480,11 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Array(arr1), Value::Array(arr2)) => {
+                    let arr1 = arr1.borrow();
+                    let arr2 = arr2.borrow();
                     let min_len = arr1.len().min(arr2.len());
-                    let zipped: Vec<Value> = arr1.iter().zip(arr2.iter()).take(min_len).map(|(a, b)| Value::Array(vec![a.clone(), b.clone()])).collect();
-                    Ok(Value::Array(zipped))
+                    let zipped: Vec<Value> = arr1.iter().zip(arr2.iter()).take(min_len).map(|(a, b)| Value::array(vec![a.clone(), b.clone()])).collect();
+                    Ok(Value::array(zipped))
                 }
                 _ => Err(RuntimeError {
                     message: "zip() requires two arrays".to_string(),
@@ -1490,8 +1499,8 @@ match name {
             }
             match &args[0] {
                 Value::Array(arr) => {
-                    let enumerated: Vec<Value> = arr.iter().enumerate().map(|(i, v)| Value::Array(vec![Value::Integer(i as i64), v.clone()])).collect();
-                    Ok(Value::Array(enumerated))
+                    let enumerated: Vec<Value> = arr.borrow().iter().enumerate().map(|(i, v)| Value::array(vec![Value::Integer(i as i64), v.clone()])).collect();
+                    Ok(Value::array(enumerated))
                 }
                 _ => Err(RuntimeError {
                     message: "enumerate() requires an array".to_string(),
@@ -1508,13 +1517,13 @@ match name {
                 Value::Array(arr) => {
                     let mut seen = Vec::new();
                     let mut unique = Vec::new();
-                    for item in arr {
+                    for item in arr.borrow().iter() {
                         if !seen.contains(item) {
                             seen.push(item.clone());
                             unique.push(item.clone());
                         }
                     }
-                    Ok(Value::Array(unique))
+                    Ok(Value::array(unique))
                 }
                 _ => Err(RuntimeError {
                     message: "unique() requires an array".to_string(),
@@ -1532,7 +1541,7 @@ match name {
                     // Convert array to unique array (deduplicate)
                     let mut seen = std::collections::HashSet::new();
                     let mut unique = Vec::new();
-                    for item in arr {
+                    for item in arr.borrow().iter() {
                         let key = item.to_string();
                         if !seen.contains(&key) {
                             seen.insert(key);
@@ -1557,7 +1566,7 @@ match name {
                 });
             }
             match (&args[0], &args[1]) {
-                (Value::Array(arr), value) => Ok(Value::Bool(arr.contains(value))),
+                (Value::Array(arr), value) => Ok(Value::Bool(arr.borrow().contains(value))),
                 _ => Err(RuntimeError {
                     message: "contains() requires an array and a value".to_string(),
                 }),
@@ -1570,7 +1579,7 @@ match name {
                 });
             }
             match (&args[0], &args[1]) {
-                (Value::Array(arr), value) => Ok(Value::Integer(arr.iter().position(|x| x == value).map_or(-1, |i| i as i64))),
+                (Value::Array(arr), value) => Ok(Value::Integer(arr.borrow().iter().position(|x| x == value).map_or(-1, |i| i as i64))),
                 _ => Err(RuntimeError {
                     message: "index_of() requires an array and a value".to_string(),
                 }),
@@ -1584,10 +1593,11 @@ match name {
             }
             match (&args[0], &args[1], &args[2]) {
                 (Value::Array(arr), Value::Integer(start), Value::Integer(end)) => {
+                    let arr = arr.borrow();
                     let start = *start as usize;
                     let end = (*end as usize).min(arr.len());
                     if start <= end {
-                        Ok(Value::Array(arr[start..end].to_vec()))
+                        Ok(Value::array(arr[start..end].to_vec()))
                     } else {
                         Err(RuntimeError {
                             message: "slice() start index must be less than or equal to end index".to_string(),
@@ -1649,7 +1659,7 @@ match name {
             match &args[0] {
                 Value::String(s) => {
                     let lines: Vec<Value> = s.lines().map(|line| Value::String(line.to_string())).collect();
-                    Ok(Value::Array(lines))
+                    Ok(Value::array(lines))
                 }
                 _ => Err(RuntimeError {
                     message: "lines() requires a string".to_string(),
@@ -1843,9 +1853,10 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Array(arr), Value::Integer(n)) => {
+                    let arr = arr.borrow();
                     let count = (*n).max(0) as usize;
                     let count = count.min(arr.len());
-                    Ok(Value::Array(arr[count..].to_vec()))
+                    Ok(Value::array(arr[count..].to_vec()))
                 }
                 _ => Err(RuntimeError {
                     message: "drop() requires an array and an integer".to_string(),
@@ -1860,9 +1871,9 @@ match name {
             }
             match (&args[0], &args[1]) {
                 (Value::Array(arr1), Value::Array(arr2)) => {
-                    let mut result = arr1.clone();
-                    result.extend(arr2.clone());
-                    Ok(Value::Array(result))
+                    let mut result = arr1.borrow().clone();
+                    result.extend(arr2.borrow().iter().cloned());
+                    Ok(Value::array(result))
                 }
                 _ => Err(RuntimeError {
                     message: "concat() requires two arrays".to_string(),
@@ -1878,13 +1889,13 @@ match name {
             match &args[0] {
                 Value::Array(arr) => {
                     let mut result = Vec::new();
-                    for item in arr {
+                    for item in arr.borrow().iter() {
                         match item {
-                            Value::Array(inner) => result.extend(inner.clone()),
+                            Value::Array(inner) => result.extend(inner.borrow().iter().cloned()),
                             _ => result.push(item.clone()),
                         }
                     }
-                    Ok(Value::Array(result))
+                    Ok(Value::array(result))
                 }
                 _ => Err(RuntimeError {
                     message: "flatten() requires an array".to_string(),
@@ -1923,7 +1934,7 @@ match name {
             }
             match &args[0] {
                 Value::String(s) => Ok(Value::Bool(s.is_empty())),
-                Value::Array(arr) => Ok(Value::Bool(arr.is_empty())),
+                Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
                 _ => Ok(Value::Bool(false)),
             }
         },
@@ -2152,7 +2163,7 @@ match name {
                         .lines()
                         .map(|line| Value::String(line.to_string()))
                         .collect();
-                    Ok(Value::Array(lines))
+                    Ok(Value::array(lines))
                 }
                 _ => Err(RuntimeError {
                     message: "read_lines() requires a string path".to_string(),
@@ -2254,7 +2265,7 @@ match name {
                 Value::Dictionary(dict) => {
                     let mut keys: Vec<String> = dict.keys().cloned().collect();
                     keys.sort();
-                    Ok(Value::Array(keys.into_iter().map(Value::String).collect()))
+                    Ok(Value::array(keys.into_iter().map(Value::String).collect()))
                 }
                 _ => Err(RuntimeError {
                     message: "keys() requires a dictionary".to_string(),
@@ -2276,7 +2287,7 @@ match name {
                         .into_iter()
                         .filter_map(|k| dict.get(&k).cloned())
                         .collect();
-                    Ok(Value::Array(vals))
+                    Ok(Value::array(vals))
                 }
                 _ => Err(RuntimeError {
                     message: "values() requires a dictionary".to_string(),
@@ -2373,7 +2384,7 @@ match name {
             for arg in args {
                 match arg {
                     Value::Array(arr) => {
-                        for item in arr {
+                        for item in arr.borrow().iter() {
                             set.insert(item.to_string());
                         }
                     }
@@ -2492,7 +2503,7 @@ match name {
                     Ok(Value::Integer(set.len() as i64))
                 }
                 Value::Array(arr) => {
-                    Ok(Value::Integer(arr.len() as i64))
+                    Ok(Value::Integer(arr.borrow().len() as i64))
                 }
                 Value::String(s) => {
                     Ok(Value::Integer(s.chars().count() as i64))
@@ -2566,7 +2577,7 @@ match name {
                     let mut items: Vec<String> = set.iter().cloned().collect();
                     items.sort(); // Sort for consistent output
                     let values: Vec<Value> = items.into_iter().map(Value::String).collect();
-                    Ok(Value::Array(values))
+                    Ok(Value::array(values))
                 }
                 Value::UniqueArray(uarr) => {
                     // Convert unique array to regular array
@@ -2575,7 +2586,7 @@ match name {
                             message: "to_array() delimiter parameter only works with strings".to_string(),
                         });
                     }
-                    Ok(Value::Array(uarr.clone()))
+                    Ok(Value::array(uarr.clone()))
                 }
                 Value::String(s) => {
                     if args.len() == 2 {
@@ -2585,11 +2596,11 @@ match name {
                                 if delimiter.is_empty() {
                                     // Empty delimiter means split into characters (same as 1-arg version)
                                     let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
-                                    Ok(Value::Array(chars))
+                                    Ok(Value::array(chars))
                                 } else {
                                     // Split by delimiter
                                     let parts: Vec<Value> = s.split(delimiter).map(|part| Value::String(part.to_string())).collect();
-                                    Ok(Value::Array(parts))
+                                    Ok(Value::array(parts))
                                 }
                             }
                             _ => Err(RuntimeError {
@@ -2599,7 +2610,7 @@ match name {
                     } else {
                         // to_array(string) - split into characters
                         let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
-                        Ok(Value::Array(chars))
+                        Ok(Value::array(chars))
                     }
                 }
                 _ => Err(RuntimeError {
@@ -2680,7 +2691,7 @@ match name {
         },
         "args" => {
             let argv = std::env::args().skip(1).map(Value::String).collect();
-            Ok(Value::Array(argv))
+            Ok(Value::array(argv))
         },
         "cwd" => {
             let cwd = std::env::current_dir().map_err(|e| RuntimeError {
@@ -2712,14 +2723,14 @@ fn json_to_ject_value(json_value: serde_json::Value) -> Value {
         serde_json::Value::String(s) => Value::String(s),
         serde_json::Value::Array(arr) => {
             let ject_array: Vec<Value> = arr.into_iter().map(json_to_ject_value).collect();
-            Value::Array(ject_array)
+            Value::array(ject_array)
         }
         serde_json::Value::Object(obj) => {
             // Convert JSON object to Ject array of [key, value] pairs
             let pairs: Vec<Value> = obj.into_iter()
-                .map(|(k, v)| Value::Array(vec![Value::String(k), json_to_ject_value(v)]))
+                .map(|(k, v)| Value::array(vec![Value::String(k), json_to_ject_value(v)]))
                 .collect();
-            Value::Array(pairs)
+            Value::array(pairs)
         }
     }
 }
@@ -2760,7 +2771,7 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
         Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         Value::Array(arr) => {
             let json_array: Result<Vec<serde_json::Value>, RuntimeError> =
-                arr.iter().map(ject_value_to_json).collect();
+                arr.borrow().iter().map(ject_value_to_json).collect();
             match json_array {
                 Ok(json_arr) => Ok(serde_json::Value::Array(json_arr)),
                 Err(e) => Err(e),

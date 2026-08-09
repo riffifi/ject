@@ -308,7 +308,7 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `gui` modules
 - NumPy-like numerical arrays (Rust-backed)
 - Native GUI module
 - ANSI colors and table formatting (`color`, `table` -- pure Ject, no native code)
-- REPL with history
+- Smarter REPL: auto-prints expression results, multi-line input for unfinished blocks, Ctrl+C interrupts a running script (not just line input)
 
 ---
 

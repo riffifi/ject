@@ -514,20 +514,6 @@ impl Parser {
         }
     }
 
-    fn assignment_statement(&mut self) -> ParseResult<Stmt> {
-        // Parse the left side as an expression first
-        let expr = self.expression()?;
-        
-        self.consume(Token::Equal, "Expected '=' in assignment")?;
-        while self.match_token(&Token::Newline) {}
-        let value = self.expression()?;
-        
-        // Convert the expression to an assignment target
-        let target = self.lhs_expr_to_assign_target(expr)?;
-
-        Ok(Stmt::Assign { target, value })
-    }
-
     fn import_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Import, "Expected 'import'")?;
         
@@ -749,9 +735,12 @@ impl Parser {
             statements.push(self.statement()?);
         }
         
-        // Only consume 'end' if we stopped because of 'end'
         if self.check(&Token::End) {
             self.consume(Token::End, "Expected 'end'")?;
+        } else if !self.check(&Token::ElseIf) && !self.check(&Token::Else) {
+            // Ran out of input without finding 'end' (and this isn't an if-chain
+            // stopping at elseif/else, which is a legitimate, different exit).
+            return Err(self.error("Expected 'end' to close this block but got Eof".to_string()));
         }
         
         Ok(statements)
@@ -1135,14 +1124,12 @@ impl Parser {
         let mut pos = self.current;
         let mut found_dotdot = false;
         let mut found_colon_before_dotdot = false;
-        let mut found_any_colon = false;
         
         while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket) {
             if matches!(self.tokens[pos].0, Token::DotDot) {
                 found_dotdot = true;
             }
             if matches!(self.tokens[pos].0, Token::Colon) {
-                found_any_colon = true;
                 if !found_dotdot {
                     found_colon_before_dotdot = true;
                 }
@@ -1255,7 +1242,7 @@ impl Parser {
             while self.match_token(&Token::Newline) {}
             loop {
                 // Check for keyword argument (identifier followed by =)
-                if let Token::Identifier(name) = &self.peek() {
+                if let Token::Identifier(_name) = &self.peek() {
                     if self.peek_ahead(1).map(|t| matches!(t, Token::Equal)).unwrap_or(false) {
                         // This is a keyword argument
                         let param_name = if let Token::Identifier(name) = self.advance() {

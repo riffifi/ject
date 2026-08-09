@@ -136,9 +136,118 @@ fn check_file(filename: &str) {
     }
 }
 
+/// Heuristically decides whether `source` looks like an incomplete statement/block
+/// that should keep accumulating more input lines, rather than a genuine syntax
+/// error to show immediately. Used by the REPL to support multi-line input the way
+/// Python's REPL does -- typing `fn foo(x)` and pressing enter waits for a matching
+/// `end` instead of erroring immediately.
+fn input_seems_incomplete(source: &str) -> bool {
+    let mut lexer = Lexer::new(source);
+    let tokens: Vec<lexer::Token> = lexer
+        .tokenize_with_positions()
+        .into_iter()
+        .map(|lt| lt.token)
+        .collect();
+
+    let mut paren_depth: i32 = 0;
+    let mut bracket_depth: i32 = 0;
+    let mut brace_depth: i32 = 0;
+    let mut block_depth: i32 = 0;
+
+    let mut i = 0;
+    while i < tokens.len() {
+        match &tokens[i] {
+            lexer::Token::LeftParen => paren_depth += 1,
+            lexer::Token::RightParen => paren_depth -= 1,
+            lexer::Token::LeftBracket => bracket_depth += 1,
+            lexer::Token::RightBracket => bracket_depth -= 1,
+            lexer::Token::LeftBrace | lexer::Token::LeftBracePipe => brace_depth += 1,
+            lexer::Token::RightBrace | lexer::Token::RightPipeBrace => brace_depth -= 1,
+            lexer::Token::If
+            | lexer::Token::While
+            | lexer::Token::For
+            | lexer::Token::Try
+            | lexer::Token::Match => {
+                block_depth += 1;
+            }
+            lexer::Token::Fn => {
+                // `fn(...) -> expr` / `fn name(...) -> expr` need no matching `end`;
+                // `fn(...) ... end` / `fn name(...) ... end` do. Scan ahead past this
+                // header (skipping the optional name and the parameter list) to see
+                // which form it is.
+                let mut j = i + 1;
+                let mut header_paren_depth = 0i32;
+                let mut seen_paren = false;
+                let mut incomplete_header = false;
+                loop {
+                    if j >= tokens.len() {
+                        incomplete_header = true;
+                        break;
+                    }
+                    match &tokens[j] {
+                        lexer::Token::LeftParen => {
+                            header_paren_depth += 1;
+                            seen_paren = true;
+                        }
+                        lexer::Token::RightParen => {
+                            header_paren_depth -= 1;
+                            if seen_paren && header_paren_depth <= 0 {
+                                j += 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                if incomplete_header {
+                    return true;
+                }
+                if tokens.get(j) != Some(&lexer::Token::Arrow) {
+                    block_depth += 1;
+                }
+                i = j;
+                continue;
+            }
+            lexer::Token::End => {
+                block_depth -= 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    if paren_depth > 0 || bracket_depth > 0 || brace_depth > 0 || block_depth > 0 {
+        return true;
+    }
+
+    // A trailing token that clearly expects something to follow it (e.g. `let x =`,
+    // `1 +`, a dangling `,`) means there's more coming even though nothing's unbalanced.
+    let last_meaningful = tokens
+        .iter()
+        .rev()
+        .find(|t| !matches!(t, lexer::Token::Newline | lexer::Token::Eof));
+    if let Some(t) = last_meaningful {
+        use lexer::Token::*;
+        if matches!(
+            t,
+            Plus | Minus | Star | Slash | Percent
+                | Equal | EqualEqual | BangEqual
+                | Less | Greater | LessEqual | GreaterEqual
+                | And | Or | Comma | Arrow | Dot | DotDot
+                | Let | Import | From | As | Colon
+        ) {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn run_repl() {
     println!("Ject REPL - version {}", env!("CARGO_PKG_VERSION"));
     println!("Use arrow keys to access history");
+    println!("Ctrl+C cancels the current line, or interrupts a running script; Ctrl+D exits");
     println!("'exit' to, well, exit\n");
 
     let mut interpreter = Interpreter::new();
@@ -148,22 +257,63 @@ fn run_repl() {
     // Try to load history from file
     let _ = rl.load_history(".ject_history");
 
+    // Shared with a Ctrl+C handler below: lets a running script (e.g. an infinite
+    // `while true do ... end`) be interrupted cleanly instead of only being able to
+    // cancel line input that hasn't been submitted yet. If installing the handler
+    // fails for any reason, the REPL still works exactly as before -- Ctrl+C just
+    // won't be able to interrupt a script already running.
+    let interrupt_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    interpreter.set_interrupt_flag(interrupt_flag.clone());
+    {
+        let flag = interrupt_flag.clone();
+        let _ = ctrlc::set_handler(move || {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+    }
+
+    // Accumulates lines while input looks incomplete (an unclosed `fn ... end`, an
+    // open paren, a trailing `+`, etc.) -- mirrors Python's REPL waiting for more
+    // input instead of erroring on the first line of a multi-line statement.
+    let mut buffer = String::new();
+
     loop {
-        match rl.readline(">> ") {
+        let prompt = if buffer.is_empty() { ">> " } else { ".. " };
+        match rl.readline(prompt) {
             Ok(line) => {
-                let input = line.trim();
-                if input == "exit" {
-                    println!("Goodbye!");
-                    break;
+                if buffer.is_empty() {
+                    let trimmed = line.trim();
+                    if trimmed == "exit" {
+                        println!("Goodbye!");
+                        break;
+                    }
+                    if trimmed.is_empty() {
+                        continue;
+                    }
                 }
-                if !input.is_empty() {
-                    let _ = rl.add_history_entry(input);
-                    execute_source_repl(input, &mut interpreter, &mut linter);
+
+                if !buffer.is_empty() {
+                    buffer.push('\n');
                 }
+                buffer.push_str(&line);
+
+                // An empty line while continuing a multi-line block means "run what
+                // I've got" -- try executing even if the heuristic below would
+                // otherwise still want more (it can't always tell an
+                // intentionally-abandoned block from a genuinely unfinished one).
+                if !line.trim().is_empty() && input_seems_incomplete(&buffer) {
+                    continue;
+                }
+
+                let _ = rl.add_history_entry(buffer.trim());
+                interrupt_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+                execute_source_repl(&buffer, &mut interpreter, &mut linter);
+                interrupt_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+                buffer.clear();
             }
             Err(ReadlineError::Interrupted) => {
                 println!("\n^C");
-                continue; // Continue instead of break to allow Ctrl+C to cancel current line
+                buffer.clear(); // Cancel whatever multi-line input was being composed too.
+                continue;
             }
             Err(ReadlineError::Eof) => {
                 println!("\n^D");
@@ -289,8 +439,14 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
 
             // Only run interpreter if no errors were found
             if !has_errors {
-                match interpreter.interpret(&statements) {
+                match interpreter.interpret_repl(&statements) {
+                    Ok(Some(result)) if !matches!(result, value::Value::Nil) => {
+                        println!("{}", result.display());
+                    }
                     Ok(_) => {}
+                    Err(error) if error.message == "Interrupted" => {
+                        println!("\n^C");
+                    }
                     Err(error) => {
                         let mut runtime_diagnostic =
                             crate::diagnostic::Diagnostic::error(error.message.clone())

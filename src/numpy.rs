@@ -5,7 +5,7 @@
 use crate::value::Value;
 use crate::interpreter::RuntimeError;
 use std::collections::HashMap;
-use ndarray::{Array1, Array2, ArrayD, Dimension};
+use ndarray::ArrayD;
 
 /// N-dimensional array wrapper
 #[derive(Clone)]
@@ -361,7 +361,7 @@ fn np_array(args: Vec<Value>) -> Result<Value, RuntimeError> {
 
     match &args[0] {
         Value::Array(arr) => {
-            let data: Vec<f64> = arr.iter()
+            let data: Vec<f64> = arr.borrow().iter()
                 .map(|v| match v {
                     Value::Integer(i) => *i as f64,
                     Value::Float(f) => *f,
@@ -387,7 +387,7 @@ fn np_zeros(args: Vec<Value>) -> Result<Value, RuntimeError> {
 
     match &args[0] {
         Value::Array(shape_arr) => {
-            let shape: Vec<usize> = shape_arr.iter()
+            let shape: Vec<usize> = shape_arr.borrow().iter()
                 .filter_map(|v| match v {
                     Value::Integer(i) => Some(*i as usize),
                     _ => None,
@@ -426,7 +426,7 @@ fn np_ones(args: Vec<Value>) -> Result<Value, RuntimeError> {
 
     match &args[0] {
         Value::Array(shape_arr) => {
-            let shape: Vec<usize> = shape_arr.iter()
+            let shape: Vec<usize> = shape_arr.borrow().iter()
                 .filter_map(|v| match v {
                     Value::Integer(i) => Some(*i as usize),
                     _ => None,
@@ -557,7 +557,7 @@ fn np_full(args: Vec<Value>) -> Result<Value, RuntimeError> {
     }
 
     let shape = match &args[0] {
-        Value::Array(shape_arr) => shape_arr.iter()
+        Value::Array(shape_arr) => shape_arr.borrow().iter()
             .filter_map(|v| match v {
                 Value::Integer(i) => Some(*i as usize),
                 _ => None,
@@ -596,10 +596,10 @@ fn np_shape(args: Vec<Value>) -> Result<Value, RuntimeError> {
     match &args[0] {
         Value::NdArray(arr) => {
             let shape: Vec<Value> = arr.shape().iter().map(|&d| Value::Integer(d as i64)).collect();
-            Ok(Value::Array(shape))
+            Ok(Value::array(shape))
         }
         Value::Array(arr) => {
-            Ok(Value::Array(vec![Value::Integer(arr.len() as i64)]))
+            Ok(Value::array(vec![Value::Integer(arr.borrow().len() as i64)]))
         }
         _ => Err(RuntimeError {
             message: "shape() requires an array argument".to_string(),
@@ -632,7 +632,7 @@ fn np_size(args: Vec<Value>) -> Result<Value, RuntimeError> {
 
     match &args[0] {
         Value::NdArray(arr) => Ok(Value::Integer(arr.len() as i64)),
-        Value::Array(arr) => Ok(Value::Integer(arr.len() as i64)),
+        Value::Array(arr) => Ok(Value::Integer(arr.borrow().len() as i64)),
         _ => Err(RuntimeError {
             message: "size() requires an array argument".to_string(),
         }),
@@ -673,7 +673,7 @@ fn np_reshape(args: Vec<Value>) -> Result<Value, RuntimeError> {
     match &args[0] {
         Value::NdArray(arr) => {
             let new_shape = match &args[1] {
-                Value::Array(shape_arr) => shape_arr.iter()
+                Value::Array(shape_arr) => shape_arr.borrow().iter()
                     .filter_map(|v| match v {
                         Value::Integer(i) => Some(*i as usize),
                         _ => None,
@@ -829,13 +829,13 @@ fn np_concatenate(args: Vec<Value>) -> Result<Value, RuntimeError> {
     match &args[0] {
         Value::Array(arrays) => {
             let mut all_data = Vec::new();
-            for arr in arrays {
+            for arr in arrays.borrow().iter() {
                 match arr {
                     Value::NdArray(a) => {
                         all_data.extend(a.to_f64_vec()?);
                     }
                     Value::Array(a) => {
-                        for v in a {
+                        for v in a.borrow().iter() {
                             all_data.push(value_to_f64(v)?);
                         }
                     }
@@ -876,7 +876,7 @@ fn np_split(args: Vec<Value>) -> Result<Value, RuntimeError> {
         Value::NdArray(arr) => {
             let _data = arr.to_f64_vec()?;
             let result = vec![Value::NdArray(arr.clone())];
-            Ok(Value::Array(result))
+            Ok(Value::array(result))
         }
         _ => Err(RuntimeError {
             message: "split() requires an ndarray argument".to_string(),
@@ -1153,7 +1153,7 @@ fn np_sum(args: Vec<Value>) -> Result<Value, RuntimeError> {
             Ok(Value::Float(sum))
         }
         Value::Array(arr) => {
-            let sum: f64 = arr.iter().map(|v| value_to_f64(v).unwrap_or(0.0)).sum();
+            let sum: f64 = arr.borrow().iter().map(|v| value_to_f64(v).unwrap_or(0.0)).sum();
             Ok(Value::Float(sum))
         }
         _ => Err(RuntimeError {
@@ -1176,6 +1176,7 @@ fn np_mean(args: Vec<Value>) -> Result<Value, RuntimeError> {
             Ok(Value::Float(sum / data.len() as f64))
         }
         Value::Array(arr) => {
+            let arr = arr.borrow();
             let sum: f64 = arr.iter().map(|v| value_to_f64(v).unwrap_or(0.0)).sum();
             Ok(Value::Float(sum / arr.len() as f64))
         }
@@ -1205,7 +1206,7 @@ fn np_std(args: Vec<Value>) -> Result<Value, RuntimeError> {
             Ok(Value::Float(variance.sqrt()))
         }
         Value::Array(arr) => {
-            let data: Vec<f64> = arr.iter().map(|v| value_to_f64(v).unwrap_or(0.0)).collect();
+            let data: Vec<f64> = arr.borrow().iter().map(|v| value_to_f64(v).unwrap_or(0.0)).collect();
             let variance: f64 = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / data.len() as f64;
             Ok(Value::Float(variance.sqrt()))
         }
@@ -1239,6 +1240,7 @@ fn np_min(args: Vec<Value>) -> Result<Value, RuntimeError> {
             Ok(Value::Float(data.iter().cloned().fold(f64::INFINITY, f64::min)))
         }
         Value::Array(arr) => {
+            let arr = arr.borrow();
             if arr.is_empty() {
                 return Ok(Value::Float(f64::NAN));
             }
@@ -1273,6 +1275,7 @@ fn np_max(args: Vec<Value>) -> Result<Value, RuntimeError> {
             Ok(Value::Float(data.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
         }
         Value::Array(arr) => {
+            let arr = arr.borrow();
             if arr.is_empty() {
                 return Ok(Value::Float(f64::NAN));
             }
@@ -1629,7 +1632,7 @@ fn np_argsort(args: Vec<Value>) -> Result<Value, RuntimeError> {
             indices.sort_by(|&i, &j| data[i].partial_cmp(&data[j]).unwrap_or(std::cmp::Ordering::Equal));
             
             let result: Vec<Value> = indices.iter().map(|&i| Value::Integer(i as i64)).collect();
-            Ok(Value::Array(result))
+            Ok(Value::array(result))
         }
         _ => Err(RuntimeError {
             message: "argsort() requires an ndarray argument".to_string(),
@@ -1775,7 +1778,7 @@ fn np_rand(args: Vec<Value>) -> Result<Value, RuntimeError> {
         vec![1]
     } else {
         match &args[0] {
-            Value::Array(s) => s.iter().filter_map(|v| match v {
+            Value::Array(s) => s.borrow().iter().filter_map(|v| match v {
                 Value::Integer(i) => Some(*i as usize),
                 _ => None,
             }).collect(),
@@ -1801,7 +1804,7 @@ fn np_randint(args: Vec<Value>) -> Result<Value, RuntimeError> {
     let high = value_to_i64(&args[1])?;
     let shape = if args.len() >= 3 {
         match &args[2] {
-            Value::Array(s) => s.iter().filter_map(|v| match v {
+            Value::Array(s) => s.borrow().iter().filter_map(|v| match v {
                 Value::Integer(i) => Some(*i as usize),
                 _ => None,
             }).collect(),
