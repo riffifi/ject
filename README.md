@@ -346,7 +346,7 @@ Supports `.ject` and `.jt` files: syntax highlighting, snippets, completions, ho
 
 ## Documentation
 
-Full language reference: [DOCS.md](DOCS.md)
+Full language reference: [DOCS.md](docs/DOCS.md)
 
 ---
 
