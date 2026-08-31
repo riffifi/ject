@@ -25,3 +25,5 @@ rand = "0.8"
 eframe = "0.34.2"
 ject-native = { path = "crates/ject-native" }
 libloading = "0.8"
+tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread", "sync"] }
+tower-lsp = "0.20"

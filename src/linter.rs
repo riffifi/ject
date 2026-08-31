@@ -1084,6 +1084,9 @@ impl Linter {
             Stmt::Export { name, value } => {
                 self.analyze_expr(value);
                 self.declare_variable(name.clone());
+                // An export is consumed by other modules, outside this file's
+                // analysis boundary. Treat publication as a use.
+                self.use_variable(name);
             }
             Stmt::ExportFunction { name, params, body } => {
                 // Check for function redeclaration
@@ -1105,6 +1108,9 @@ impl Linter {
                 );
 
                 self.declare_variable(name.clone());
+                // Public functions are API surface even when this module does
+                // not call them internally.
+                self.use_variable(name);
                 self.push_scope();
 
                 let was_in_function = self.in_function;

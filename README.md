@@ -69,6 +69,13 @@ Parse and lint only (does **not** execute code — used by the VS Code extension
 ./target/release/ject --check hello.ject
 ```
 
+Editors can instead start the persistent compiler-backed language server over
+standard input/output. It analyzes unsaved in-memory documents without temporary files:
+
+```bash
+ject lsp
+```
+
 Print native-kernel metadata (for tooling; see `NATIVE_KERNEL.md`):
 
 ```bash

@@ -110,12 +110,12 @@ impl NativeRegistry {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Option<&dyn NativeModule> {
-        self.modules.get(name).map(|m| m.as_ref())
+    fn replace(&mut self, module: Box<dyn NativeModule>) {
+        self.modules.insert(module.name().to_string(), module);
     }
 
-    pub fn is_registered(&self, name: &str) -> bool {
-        self.modules.contains_key(name)
+    pub fn get(&self, name: &str) -> Option<&dyn NativeModule> {
+        self.modules.get(name).map(|m| m.as_ref())
     }
 }
 
@@ -171,10 +171,10 @@ pub fn register_dynamic(path: &Path, expected_name: Option<&str>) -> Result<Stri
     let mut registry = native_registry()
         .write()
         .map_err(|_| "native module registry is poisoned".to_string())?;
-    if registry.is_registered(&name) {
-        return Ok(name);
-    }
-    registry.register(Box::new(module))?;
+    // An explicitly installed package is authoritative over a bundled compatibility
+    // backend with the same name. This is what lets jgui/jnum evolve as ordinary
+    // mixed packages without requiring a new Ject executable for every release.
+    registry.replace(Box::new(module));
     Ok(name)
 }
 

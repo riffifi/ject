@@ -1305,6 +1305,7 @@ ject --check <file.ject> [...]
 ject --test <file.ject> [...]
 ject --version
 ject --introspect
+ject lsp
 ject --help
 
 ject new <name> [--lib | --native]
@@ -1330,6 +1331,7 @@ ject build [--release]
 | `ject test` | Run `tests/*.ject` |
 | `ject build` | Check source and build native dependencies |
 | `ject --introspect` | Print native-kernel metadata as JSON |
+| `ject lsp` | Start the Language Server Protocol server over standard input/output |
 
 Commands search the current directory and its parents for `Ject.toml`.
 

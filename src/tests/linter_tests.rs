@@ -40,6 +40,23 @@ mod tests {
     }
 
     #[test]
+    fn test_exported_api_is_not_reported_unused() {
+        let (errors, warnings) = lint(
+            r#"
+export VERSION = "1.0.0"
+export fn greet(name)
+    return "Hello, $name"
+end
+"#,
+        );
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        assert!(
+            warnings.is_empty(),
+            "exported API was considered unused: {warnings:?}"
+        );
+    }
+
+    #[test]
     fn test_used_variable_no_warning() {
         let (_, warnings) = lint(
             r#"

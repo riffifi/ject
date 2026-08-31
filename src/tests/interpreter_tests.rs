@@ -70,6 +70,45 @@ print x
     }
 
     #[test]
+    fn test_repl_style_interpreter_resolves_current_package_dependency() {
+        let base =
+            std::env::temp_dir().join(format!("ject-repl-package-test-{}", std::process::id()));
+        let app = base.join("app");
+        let helper = base.join("helper");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(app.join("src")).unwrap();
+        std::fs::create_dir_all(helper.join("src")).unwrap();
+        std::fs::write(
+            app.join("Ject.toml"),
+            "[package]\nname = \"app\"\n[dependencies]\nhi = { path = \"../helper\" }\n",
+        )
+        .unwrap();
+        std::fs::write(app.join("src/main.ject"), "").unwrap();
+        std::fs::write(
+            helper.join("Ject.toml"),
+            "[package]\nname = \"hi\"\nentry = \"src/lib.ject\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            helper.join("src/lib.ject"),
+            "export fn answer()\n    return 42\nend\n",
+        )
+        .unwrap();
+
+        let mut lexer = Lexer::new("import \"hi\" as hi\nhi.answer()");
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let statements = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.set_script_dir(app);
+        assert!(interpreter.interpret_repl(&statements).is_ok());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn test_variable_scope() {
         let result = run(r#"
 let x = 10

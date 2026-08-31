@@ -99,7 +99,26 @@ pub fn add_path_dependency(project: &Project, name: &str, path: &Path) -> Result
     } else {
         project.root.join(path)
     };
-    let dependency = load(&dependency_root).map_err(|e| {
+    let project_canonical = project.root.canonicalize().map_err(|e| {
+        format!(
+            "failed to resolve current package {}: {e}",
+            project.root.display()
+        )
+    })?;
+    let dependency_canonical = dependency_root.canonicalize().map_err(|e| {
+        format!(
+            "failed to resolve dependency path {}: {e}",
+            dependency_root.display()
+        )
+    })?;
+    if project_canonical == dependency_canonical {
+        return Err(format!(
+            "package '{}' cannot depend on itself; '{}' resolves to the current package",
+            project.name,
+            path.display()
+        ));
+    }
+    let dependency = load(&dependency_canonical).map_err(|e| {
         format!(
             "invalid dependency '{name}' at {}: {e}",
             dependency_root.display()
@@ -496,6 +515,20 @@ mod tests {
         let error =
             add_path_dependency(&load(&app).unwrap(), "wrong", Path::new("../helper")).unwrap_err();
         assert!(error.contains("named 'helper'"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn rejects_self_dependency_even_through_parent_path() {
+        let base =
+            std::env::temp_dir().join(format!("ject-self-dependency-test-{}", std::process::id()));
+        let app = base.join("hi");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&app).unwrap();
+        let project = init(&app, "hi", false, false).unwrap();
+        let error = add_path_dependency(&project, "hi", Path::new("../hi")).unwrap_err();
+        assert!(error.contains("cannot depend on itself"));
+        assert!(!load(&app).unwrap().dependencies.contains_key("hi"));
         fs::remove_dir_all(base).unwrap();
     }
 }

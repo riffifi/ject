@@ -150,6 +150,23 @@ the owning module ID, type name, and handle. Calls on a resource are always rout
 back to its owner, so the core `Value` enum stays independent of `jnum`, `jgui`, and
 future plugins.
 
+### Bundled libraries migrating to packages
+
+JGUI and JNUM should follow the same rule as third-party mixed libraries. Their
+user-facing constructors, validation, defaults, and convenience operations belong
+in `src/lib.ject`. Only rendering and operating-system integration for JGUI, and
+array storage and numerical kernels for JNUM, belong in Rust.
+
+An explicitly installed native package may replace a bundled compatibility backend
+with the same module name. This allows JGUI and JNUM to be upgraded as packages
+without rebuilding the Ject executable. The standalone JGUI proof at
+`/home/leo/dev/ject/packages/jgui` uses a deliberately small native boundary: Ject
+builds a declarative widget document and Rust exports only `run(document)`.
+
+The bundled backends remain temporarily for scripts that declare no dependencies.
+JNUM should be extracted through the same mechanism, while retaining opaque native
+array resources so ordinary operations do not serialize entire arrays on every call.
+
 ## Runtime architecture
 
 ```text

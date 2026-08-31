@@ -343,7 +343,17 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
             "E3002",
             Some("ensure the denominator is not zero before dividing"),
         )
-    } else if lower.contains("index") || lower.contains("out of bounds") {
+    } else if lower.contains("window failed") || lower.contains("jgui::") {
+        (
+            "E3202",
+            Some("run JGUI in a graphical desktop session and verify DISPLAY or WAYLAND_DISPLAY is available"),
+        )
+    } else if lower.contains("array index")
+        || lower.contains("invalid index")
+        || lower.contains("index out")
+        || lower.contains("index must")
+        || lower.contains("out of bounds")
+    {
         ("E3003", Some("check the collection length and index value"))
     } else if lower.contains("argument") {
         (
@@ -419,6 +429,12 @@ mod tests {
         assert_eq!(
             runtime_diagnostic("Division by zero").code.as_deref(),
             Some("E3002")
+        );
+        assert_eq!(
+            runtime_diagnostic("jgui::run: window failed in index.crates.io")
+                .code
+                .as_deref(),
+            Some("E3202")
         );
     }
 }

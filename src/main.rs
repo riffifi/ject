@@ -5,6 +5,7 @@ mod jgui;
 mod jnum;
 mod lexer;
 mod linter;
+mod lsp;
 mod native;
 mod package;
 mod parser;
@@ -46,6 +47,7 @@ fn main() {
         "--introspect" => {
             println!("{}", stdlib::introspect_native_kernel_json());
         }
+        "lsp" => lsp::run(),
         "run" | "check" | "build" => {
             let project = current_project_or_exit();
             if args[0] == "build" {
@@ -186,6 +188,7 @@ USAGE:
     ject add <name> --path <path>  Add a local source or mixed library
     ject remove <name>        Remove a dependency
     ject build                Validate the current source package
+    ject lsp                  Start the Language Server Protocol server over stdio
     ject --check <file> [...] Parse + lint only (no execution)
     ject --test <file> [...]  Run script(s); exit non-zero on failure
     ject --introspect         Print native kernel metadata (JSON)
@@ -431,7 +434,11 @@ fn check_file(filename: &str) {
 }
 
 fn prepare_native_for(path: &Path) {
-    let start = path.parent().unwrap_or(path);
+    let start = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
     let Ok(project) = package::discover(start) else {
         return;
     };
@@ -600,6 +607,13 @@ fn run_repl() {
     println!("'exit' to, well, exit\n");
 
     let mut interpreter = Interpreter::new();
+    // A REPL started inside a package has the same dependency and native-module
+    // context as `ject run`. Without this, manifest imports incorrectly fell
+    // through to stdlib lookup.
+    if let Ok(cwd) = env::current_dir() {
+        prepare_native_for(&cwd);
+        interpreter.set_script_dir(cwd);
+    }
     let mut linter = linter::Linter::new(); // Persistent linter for REPL
     let mut rl = DefaultEditor::new().expect("Failed to create readline editor");
 
