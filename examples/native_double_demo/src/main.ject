@@ -1,0 +1,8 @@
+import "native_double" as numbers
+
+assert(numbers.double(21) == 42, "native dependency returned the wrong result")
+print "native_double: 21 * 2 = ${numbers.double(21)}"
+
+let counter = numbers.counter(40)
+assert(type_of(counter) == "native_counter", "resource type should cross the ABI")
+assert(numbers.increment(counter) == 41, "native resource call failed")

@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
-use crate::ast::{Stmt, Expr, Parameter, Argument};
+use crate::ast::{Argument, Expr, Parameter, Stmt};
 use crate::diagnostic::Diagnostic;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 struct Variable {
@@ -43,31 +43,178 @@ impl Linter {
         if name.starts_with('_') {
             return true;
         }
-        matches!(name,
-            "PI" | "E" |
-            "type_of" | "to_int" | "to_float" | "to_string" | "to_bool" |
-            "len" | "range" | "push" | "pop" | "sum" | "contains" | "index_of" |
-            "first" | "last" | "sort" | "reverse" | "unique" | "map" | "filter" | "reduce" |
-            "abs" | "sqrt" | "pow" | "sin" | "cos" | "tan" | "floor" | "ceil" | "round" |
-            "min" | "max" | "random" | "upper" | "lower" | "trim" | "split" | "join" | "replace" |
-            "char_at" | "substring" | "input" | "print" | "read_file" | "write_file" |
-            "assert" | "log" | "log10" | "exp" | "log2" | "ln" | "degrees" | "radians" |
-            "deg_to_rad" | "rad_to_deg" | "clamp" | "sign" | "gcd" | "lcm" | "asin" | "acos" |
-            "atan" | "atan2" | "sinh" | "cosh" | "tanh" | "round_to" | "capitalize" | "title_case" |
-            "trim_left" | "trim_right" | "pad_left" | "pad_right" | "pad_center" | "starts_with" |
-            "ends_with" | "contains_str" | "count" | "find" | "replace_all" | "replace_first" | "remove" |
-            "repeat" | "reverse_str" | "left" | "right" | "truncate" | "is_empty" | "is_numeric" |
-            "is_alpha" | "is_alphanumeric" | "word_count" | "sentence_count" | "paragraph_count" | "lines" |
-            "extract_numbers" | "to_char_codes" | "from_char_codes" | "format" | "escape" | "unescape" |
-            "wrap_text" | "any" | "all" | "average" | "median" | "slice" | "take" | "drop" | "initial" |
-            "rest" | "concat" | "zip" | "union" | "intersection" | "difference" | "flatten" | "chunk" |
-            "group_by" | "partition" | "shuffle" | "rotate_left" | "rotate_right" | "insert_at" | "remove_at" |
-            "without" | "compact" | "compact_unique" | "enumerate" | "fill" | "range_arr" | "sample" |
-            "sort_by" | "to_uarray" | "to_array" | "parse_json" | "to_json" | "env" | "exit" | "now" |
-            "timestamp" | "sleep" | "to_binary" | "to_octal" | "to_hex" | "from_binary" | "from_octal" |
-            "from_hex" | "base_repr" | "from_base" | "random_int" | "random_float" | "println" | "exec" |
-            "file_exists" | "is_file" | "is_dir" | "list_dir" | "mkdir" | "remove_file" | "collection" |
-            "add_to" | "remove_from" | "has" | "intersect" | "size" | "is_subset" | "is_superset" | "clear_collection")
+        matches!(
+            name,
+            "PI" | "E"
+                | "type_of"
+                | "to_int"
+                | "to_float"
+                | "to_string"
+                | "to_bool"
+                | "len"
+                | "range"
+                | "push"
+                | "pop"
+                | "sum"
+                | "contains"
+                | "index_of"
+                | "first"
+                | "last"
+                | "sort"
+                | "reverse"
+                | "unique"
+                | "map"
+                | "filter"
+                | "reduce"
+                | "abs"
+                | "sqrt"
+                | "pow"
+                | "sin"
+                | "cos"
+                | "tan"
+                | "floor"
+                | "ceil"
+                | "round"
+                | "min"
+                | "max"
+                | "random"
+                | "upper"
+                | "lower"
+                | "trim"
+                | "split"
+                | "join"
+                | "replace"
+                | "char_at"
+                | "substring"
+                | "input"
+                | "print"
+                | "read_file"
+                | "write_file"
+                | "assert"
+                | "log"
+                | "log10"
+                | "exp"
+                | "log2"
+                | "ln"
+                | "degrees"
+                | "radians"
+                | "deg_to_rad"
+                | "rad_to_deg"
+                | "clamp"
+                | "sign"
+                | "gcd"
+                | "lcm"
+                | "asin"
+                | "acos"
+                | "atan"
+                | "atan2"
+                | "sinh"
+                | "cosh"
+                | "tanh"
+                | "round_to"
+                | "capitalize"
+                | "title_case"
+                | "trim_left"
+                | "trim_right"
+                | "pad_left"
+                | "pad_right"
+                | "pad_center"
+                | "starts_with"
+                | "ends_with"
+                | "contains_str"
+                | "count"
+                | "find"
+                | "replace_all"
+                | "replace_first"
+                | "remove"
+                | "repeat"
+                | "reverse_str"
+                | "left"
+                | "right"
+                | "truncate"
+                | "is_empty"
+                | "is_numeric"
+                | "is_alpha"
+                | "is_alphanumeric"
+                | "word_count"
+                | "sentence_count"
+                | "paragraph_count"
+                | "lines"
+                | "extract_numbers"
+                | "to_char_codes"
+                | "from_char_codes"
+                | "format"
+                | "escape"
+                | "unescape"
+                | "wrap_text"
+                | "any"
+                | "all"
+                | "average"
+                | "median"
+                | "slice"
+                | "take"
+                | "drop"
+                | "initial"
+                | "rest"
+                | "concat"
+                | "zip"
+                | "union"
+                | "intersection"
+                | "difference"
+                | "flatten"
+                | "chunk"
+                | "group_by"
+                | "partition"
+                | "shuffle"
+                | "rotate_left"
+                | "rotate_right"
+                | "insert_at"
+                | "remove_at"
+                | "without"
+                | "compact"
+                | "compact_unique"
+                | "enumerate"
+                | "fill"
+                | "range_arr"
+                | "sample"
+                | "sort_by"
+                | "to_uarray"
+                | "to_array"
+                | "parse_json"
+                | "to_json"
+                | "env"
+                | "exit"
+                | "now"
+                | "timestamp"
+                | "sleep"
+                | "to_binary"
+                | "to_octal"
+                | "to_hex"
+                | "from_binary"
+                | "from_octal"
+                | "from_hex"
+                | "base_repr"
+                | "from_base"
+                | "random_int"
+                | "random_float"
+                | "println"
+                | "exec"
+                | "file_exists"
+                | "is_file"
+                | "is_dir"
+                | "list_dir"
+                | "mkdir"
+                | "remove_file"
+                | "collection"
+                | "add_to"
+                | "remove_from"
+                | "has"
+                | "intersect"
+                | "size"
+                | "is_subset"
+                | "is_superset"
+                | "clear_collection"
+        )
     }
 
     pub fn new() -> Self {
@@ -81,15 +228,15 @@ impl Linter {
             positioned_tokens: Vec::new(),
             source: String::new(),
         };
-        
+
         // Add built-in functions to the functions set
         linter.add_builtin_functions();
         linter
     }
-    
+
     fn add_builtin_functions(&mut self) {
         // ========== CorLib Functions (always available) ==========
-        
+
         // Type inspection & conversion
         self.functions.insert("type_of".to_string());
         self.functions.insert("to_int".to_string());
@@ -163,7 +310,7 @@ impl Linter {
         self.declare_variable("E".to_string());
 
         // ========== Module Functions (available via import) ==========
-        
+
         // Math module (import "math")
         self.functions.insert("log".to_string());
         self.functions.insert("log10".to_string());
@@ -310,8 +457,12 @@ impl Linter {
         self.functions.insert("is_superset".to_string());
         self.functions.insert("clear_collection".to_string());
     }
-    
-    pub fn with_tokens_and_source(mut self, positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>, source: String) -> Self {
+
+    pub fn with_tokens_and_source(
+        mut self,
+        positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
+        source: String,
+    ) -> Self {
         self.positioned_tokens = positioned_tokens;
         self.source = source;
         self
@@ -322,11 +473,11 @@ impl Linter {
         self.scopes.push(HashMap::new()); // Global scope
         self.warnings.clear();
         self.errors.clear();
-        
+
         // Re-add built-in functions (don't clear them)
         self.functions.clear();
         self.add_builtin_functions();
-        
+
         self.function_signatures.clear();
         self.in_function = false;
 
@@ -351,10 +502,11 @@ impl Linter {
         // Convert to diagnostics
         let mut diagnostics = Vec::new();
         let mut has_errors = false;
-        
+
         for error in &self.errors {
             has_errors = true;
-            let mut diagnostic = Diagnostic::error(error.message.clone()).with_code("E0001".to_string());
+            let mut diagnostic =
+                Diagnostic::error(error.message.clone()).with_code("E2001".to_string());
             if let Some(pos) = &error.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
                 // Add source line context
@@ -364,9 +516,10 @@ impl Linter {
             }
             diagnostics.push(diagnostic);
         }
-        
+
         for warning in &self.warnings {
-            let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W0001".to_string());
+            let mut diagnostic =
+                Diagnostic::warning(warning.message.clone()).with_code("W2001".to_string());
             if let Some(pos) = &warning.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
                 // Add source line context
@@ -376,24 +529,24 @@ impl Linter {
             }
             diagnostics.push(diagnostic);
         }
-        
+
         (diagnostics, has_errors)
     }
-    
+
     // REPL-specific linting that maintains state between statements
     pub fn lint_repl(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
         // Only clear warnings and errors, keep global scope variables and functions
         self.warnings.clear();
         self.errors.clear();
-        
+
         // Ensure we have at least the global scope
         if self.scopes.is_empty() {
             self.scopes.push(HashMap::new());
         }
-        
+
         // Make sure built-in functions are always available
         self.add_builtin_functions();
-        
+
         self.in_function = false;
 
         // Single pass: analyze all statements
@@ -402,14 +555,15 @@ impl Linter {
         }
 
         // Don't check for unused variables in REPL mode - they might be used later
-        
+
         // Convert to diagnostics
         let mut diagnostics = Vec::new();
         let mut has_errors = false;
-        
+
         for error in &self.errors {
             has_errors = true;
-            let mut diagnostic = Diagnostic::error(error.message.clone()).with_code("E0001".to_string());
+            let mut diagnostic =
+                Diagnostic::error(error.message.clone()).with_code("E2001".to_string());
             if let Some(pos) = &error.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
                 // Add source line context
@@ -419,9 +573,10 @@ impl Linter {
             }
             diagnostics.push(diagnostic);
         }
-        
+
         for warning in &self.warnings {
-            let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W0001".to_string());
+            let mut diagnostic =
+                Diagnostic::warning(warning.message.clone()).with_code("W2001".to_string());
             if let Some(pos) = &warning.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
                 // Add source line context
@@ -431,7 +586,7 @@ impl Linter {
             }
             diagnostics.push(diagnostic);
         }
-        
+
         (diagnostics, has_errors)
     }
 
@@ -462,19 +617,19 @@ impl Linter {
                 // Don't warn about redeclaration of builtin constants in REPL mode
                 // They may be re-initialized by the interpreter
                 if name == "PI" || name == "E" {
-                    return;  // Silently ignore PI/E redeclaration
+                    return; // Silently ignore PI/E redeclaration
                 }
-                
+
                 let position = self.find_identifier_position(&name);
                 self.warnings.push(LintWarning {
-                    message: format!("warning: variable `{}` is already declared in this scope", name),
+                    message: format!(
+                        "warning: variable `{}` is already declared in this scope",
+                        name
+                    ),
                     position,
                 });
             } else {
-                current_scope.insert(name.clone(), Variable {
-                    name,
-                    used: false,
-                });
+                current_scope.insert(name.clone(), Variable { name, used: false });
             }
         }
     }
@@ -501,7 +656,7 @@ impl Linter {
             None
         }
     }
-    
+
     fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, ()> {
         use std::fs;
         use std::path::Path;
@@ -513,7 +668,8 @@ impl Linter {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         // Try to find project root (go up from target/release or target/debug)
-        let project_root = exe_dir.parent()
+        let project_root = exe_dir
+            .parent()
             .and_then(|p| p.parent())
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| exe_dir.clone());
@@ -592,8 +748,10 @@ impl Linter {
             } else {
                 module_path.to_string()
             };
-            
-            let stdlib_path = project_root.join("stdlib").join(format!("{}.ject", module_name));
+
+            let stdlib_path = project_root
+                .join("stdlib")
+                .join(format!("{}.ject", module_name));
             if stdlib_path.exists() {
                 stdlib_path.to_string_lossy().to_string()
             } else {
@@ -601,7 +759,8 @@ impl Linter {
                 if cwd_stdlib.exists() {
                     cwd_stdlib.to_string_lossy().to_string()
                 } else {
-                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name) {
+                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name)
+                    {
                         embedded_module_content = Some(source.to_string());
                         format!("<embedded:{module_name}>")
                     } else {
@@ -627,7 +786,8 @@ impl Linter {
 
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
-        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+        let tokens: Vec<crate::lexer::Token> =
+            located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = crate::parser::Parser::new_simple(tokens);
 
         let statements = match parser.parse() {
@@ -651,7 +811,7 @@ impl Linter {
 
         Ok(exports)
     }
-    
+
     fn find_variable(&self, name: &str) -> bool {
         for scope in self.scopes.iter().rev() {
             if scope.contains_key(name) {
@@ -660,11 +820,11 @@ impl Linter {
         }
         false
     }
-    
+
     fn find_similar_variables(&self, name: &str) -> Vec<String> {
         let mut suggestions = Vec::new();
         let name_lower = name.to_lowercase();
-        
+
         // Check all scopes for similar variable names
         for scope in &self.scopes {
             for var_name in scope.keys() {
@@ -687,7 +847,7 @@ impl Linter {
                 }
             }
         }
-        
+
         // Also check function names
         for func_name in &self.functions {
             let func_lower = func_name.to_lowercase();
@@ -695,7 +855,7 @@ impl Linter {
                 suggestions.push(func_name.clone());
             }
         }
-        
+
         suggestions.sort();
         suggestions.dedup();
         suggestions
@@ -728,7 +888,10 @@ impl Linter {
                         if !self.use_variable(&object) {
                             let position = self.find_identifier_position(&object);
                             self.errors.push(LintError {
-                                message: format!("cannot index into undeclared variable `{}`", object),
+                                message: format!(
+                                    "cannot index into undeclared variable `{}`",
+                                    object
+                                ),
                                 position,
                             });
                         }
@@ -755,7 +918,10 @@ impl Linter {
                         if !self.use_variable(&object) {
                             let position = self.find_identifier_position(&object);
                             self.errors.push(LintError {
-                                message: format!("cannot assign field on undeclared variable `{}`", object),
+                                message: format!(
+                                    "cannot assign field on undeclared variable `{}`",
+                                    object
+                                ),
                                 position,
                             });
                         }
@@ -772,19 +938,22 @@ impl Linter {
                     });
                 }
                 self.functions.insert(name.clone());
-                
+
                 // Store function signature for validation
-                self.function_signatures.insert(name.clone(), FunctionSignature {
-                    parameters: params.clone(),
-                });
-                
+                self.function_signatures.insert(
+                    name.clone(),
+                    FunctionSignature {
+                        parameters: params.clone(),
+                    },
+                );
+
                 // Declare the function as a function, not as a variable
-                
+
                 // Create new scope for function
                 self.push_scope();
                 let was_in_function = self.in_function;
                 self.in_function = true;
-                
+
                 // Add parameters to function scope and analyze default values
                 for param in params {
                     // Analyze default value first (before declaring the parameter)
@@ -793,25 +962,30 @@ impl Linter {
                     }
                     self.declare_variable(param.name.clone());
                 }
-                
+
                 // Analyze function body
                 for stmt in body {
                     self.analyze_statement(stmt);
                 }
-                
+
                 self.in_function = was_in_function;
                 self.pop_scope();
             }
-            Stmt::If { condition, then_branch, elseif_branches, else_branch } => {
+            Stmt::If {
+                condition,
+                then_branch,
+                elseif_branches,
+                else_branch,
+            } => {
                 self.analyze_expr(condition);
-                
+
                 // Each branch gets its own scope
                 self.push_scope();
                 for stmt in then_branch {
                     self.analyze_statement(stmt);
                 }
                 self.pop_scope();
-                
+
                 for branch in elseif_branches {
                     self.analyze_expr(&branch.condition);
                     self.push_scope();
@@ -820,7 +994,7 @@ impl Linter {
                     }
                     self.pop_scope();
                 }
-                
+
                 if let Some(else_body) = else_branch {
                     self.push_scope();
                     for stmt in else_body {
@@ -837,7 +1011,11 @@ impl Linter {
                 }
                 self.pop_scope();
             }
-            Stmt::For { var, iterable, body } => {
+            Stmt::For {
+                var,
+                iterable,
+                body,
+            } => {
                 self.analyze_expr(iterable);
                 // For loop creates its own scope with the loop variable
                 self.push_scope();
@@ -868,13 +1046,21 @@ impl Linter {
                 for value in values {
                     self.analyze_expr(value);
                 }
-                if let Some(s) = sep { self.analyze_expr(s); }
-                if let Some(e) = end { self.analyze_expr(e); }
+                if let Some(s) = sep {
+                    self.analyze_expr(s);
+                }
+                if let Some(e) = end {
+                    self.analyze_expr(e);
+                }
             }
             Stmt::Expression(expr) => {
                 self.analyze_expr(expr);
             }
-            Stmt::Import { module_path, items, alias } => {
+            Stmt::Import {
+                module_path,
+                items,
+                alias,
+            } => {
                 // Handle selective imports
                 if let Some(item_list) = items {
                     for item in item_list {
@@ -911,9 +1097,12 @@ impl Linter {
                 self.functions.insert(name.clone());
 
                 // Store function signature for validation
-                self.function_signatures.insert(name.clone(), FunctionSignature {
-                    parameters: params.clone(),
-                });
+                self.function_signatures.insert(
+                    name.clone(),
+                    FunctionSignature {
+                        parameters: params.clone(),
+                    },
+                );
 
                 self.declare_variable(name.clone());
                 self.push_scope();
@@ -948,13 +1137,17 @@ impl Linter {
                     }
                 }
             }
-            Stmt::Try { body, catch_var, catch_body } => {
+            Stmt::Try {
+                body,
+                catch_var,
+                catch_body,
+            } => {
                 self.push_scope();
                 for stmt in body {
                     self.analyze_statement(stmt);
                 }
                 self.pop_scope();
-                
+
                 self.push_scope();
                 if let Some(var_name) = catch_var {
                     self.declare_variable(var_name.clone());
@@ -983,14 +1176,15 @@ impl Linter {
                 // Prefer lexical variable bindings over builtins (e.g. param `min` vs `min()`)
                 if !self.use_variable(name) && !self.functions.contains(name) {
                     let position = self.find_identifier_position(name);
-                    
+
                     // Try to find similar variable names for suggestions
                     let suggestions = self.find_similar_variables(name);
                     let mut message = format!("undefined variable `{}`", name);
-                    
+
                     if !suggestions.is_empty() {
                         if suggestions.len() == 1 {
-                            message.push_str(&format!("\n  help: did you mean `{}`?", suggestions[0]));
+                            message
+                                .push_str(&format!("\n  help: did you mean `{}`?", suggestions[0]));
                         } else {
                             message.push_str("\n  help: did you mean one of these?");
                             for sug in &suggestions[..suggestions.len().min(3)] {
@@ -999,16 +1193,18 @@ impl Linter {
                         }
                     } else {
                         if let Some(module_name) = self.find_module_exporting_symbol(name) {
-                            message.push_str(&format!("\n  help: import it first: import {{{}}} from \"{}\"", name, module_name));
+                            message.push_str(&format!(
+                                "\n  help: import it first: import {{{}}} from \"{}\"",
+                                name, module_name
+                            ));
                         } else {
-                            message.push_str("\n  help: variables must be declared with `let` before use");
+                            message.push_str(
+                                "\n  help: variables must be declared with `let` before use",
+                            );
                         }
                     }
-                    
-                    self.errors.push(LintError {
-                        message,
-                        position,
-                    });
+
+                    self.errors.push(LintError { message, position });
                 }
             }
             Expr::Binary { left, right, .. } => {
@@ -1026,7 +1222,7 @@ impl Linter {
                         crate::ast::Argument::Keyword { value, .. } => self.analyze_expr(value),
                     }
                 }
-                
+
                 // Validate function call if it's a direct function call
                 if let Expr::Identifier(func_name) = callee.as_ref() {
                     self.validate_function_call(func_name, args);
@@ -1042,7 +1238,10 @@ impl Linter {
             Expr::StructAccess { object, .. } => {
                 self.analyze_expr(object);
             }
-            Expr::StructInit { struct_name, fields } => {
+            Expr::StructInit {
+                struct_name,
+                fields,
+            } => {
                 // Check if struct is defined
                 if !self.find_variable(struct_name) {
                     let position = self.find_identifier_position(struct_name);
@@ -1061,7 +1260,12 @@ impl Linter {
                     self.analyze_expr(elem);
                 }
             }
-            Expr::ListComprehension { expr, var, iterable, condition } => {
+            Expr::ListComprehension {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 self.analyze_expr(iterable);
                 self.push_scope();
                 self.declare_variable(var.clone());
@@ -1071,7 +1275,12 @@ impl Linter {
                 }
                 self.pop_scope();
             }
-            Expr::Generator { expr, var, iterable, condition } => {
+            Expr::Generator {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 self.analyze_expr(iterable);
                 self.push_scope();
                 self.declare_variable(var.clone());
@@ -1100,7 +1309,7 @@ impl Linter {
                 for param in params {
                     self.declare_variable(param.clone());
                 }
-                
+
                 match body {
                     crate::ast::LambdaBody::Block(stmts) => {
                         for stmt in stmts {
@@ -1153,7 +1362,8 @@ impl Linter {
                         // discover which variables they reference (marking them used).
                         let mut lexer = crate::lexer::Lexer::new(expr_str);
                         let located_tokens = lexer.tokenize_with_positions();
-                        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+                        let tokens: Vec<crate::lexer::Token> =
+                            located_tokens.into_iter().map(|lt| lt.token).collect();
                         let mut parser = crate::parser::Parser::new_simple(tokens);
                         if let Ok(statements) = parser.parse() {
                             for stmt in &statements {
@@ -1167,9 +1377,8 @@ impl Linter {
             }
 
             // Literals don't need analysis
-            Expr::Integer(_) | Expr::Float(_) | Expr::String(_) | 
-            Expr::Bool(_) | Expr::Nil => {}
-            
+            Expr::Integer(_) | Expr::Float(_) | Expr::String(_) | Expr::Bool(_) | Expr::Nil => {}
+
             _ => {}
         }
     }
@@ -1195,7 +1404,7 @@ impl Linter {
             }
         }
     }
-    
+
     // Helper method to find the position of an identifier in the positioned tokens
     fn find_identifier_position(&self, identifier: &str) -> Option<crate::lexer::SourcePosition> {
         for (token, position) in &self.positioned_tokens {
@@ -1210,7 +1419,15 @@ impl Linter {
 
     fn find_module_exporting_symbol(&self, symbol: &str) -> Option<String> {
         let common_modules = [
-            "math", "string", "array", "io", "json", "system", "datetime", "util", "collections",
+            "math",
+            "string",
+            "array",
+            "io",
+            "json",
+            "system",
+            "datetime",
+            "util",
+            "collections",
         ];
         for module in common_modules {
             if let Ok(exports) = self.get_module_exports(module) {
@@ -1221,13 +1438,13 @@ impl Linter {
         }
         None
     }
-    
+
     fn validate_function_call(&mut self, func_name: &str, args: &[Argument]) {
         if let Some(signature) = self.function_signatures.get(func_name).cloned() {
             // Simulate the argument resolution logic from the interpreter
             let mut resolved_args = vec![false; signature.parameters.len()]; // track which args are provided
             let mut positional_count = 0;
-            
+
             // First pass: handle positional arguments
             for arg in args {
                 match arg {
@@ -1248,19 +1465,22 @@ impl Linter {
                     }
                 }
             }
-            
+
             // Second pass: handle keyword arguments
             for arg in args {
                 if let Argument::Keyword { name, .. } = arg {
                     // Find the parameter with this name
                     let param_index = signature.parameters.iter().position(|p| p.name == *name);
-                    
+
                     match param_index {
                         Some(index) => {
                             if resolved_args[index] {
                                 let position = self.find_identifier_position(func_name);
                                 self.errors.push(LintError {
-                                    message: format!("argument `{}` specified multiple times in call to `{}`", name, func_name),
+                                    message: format!(
+                                        "argument `{}` specified multiple times in call to `{}`",
+                                        name, func_name
+                                    ),
                                     position,
                                 });
                                 return;
@@ -1270,7 +1490,10 @@ impl Linter {
                         None => {
                             let position = self.find_identifier_position(func_name);
                             self.errors.push(LintError {
-                                message: format!("unknown parameter `{}` for function `{}`", name, func_name),
+                                message: format!(
+                                    "unknown parameter `{}` for function `{}`",
+                                    name, func_name
+                                ),
                                 position,
                             });
                             return;
@@ -1278,13 +1501,16 @@ impl Linter {
                     }
                 }
             }
-            
+
             // Third pass: check for missing required arguments
             for (i, param) in signature.parameters.iter().enumerate() {
                 if !resolved_args[i] && param.default_value.is_none() {
                     let position = self.find_identifier_position(func_name);
                     self.errors.push(LintError {
-                        message: format!("missing required argument `{}` for function `{}`", param.name, func_name),
+                        message: format!(
+                            "missing required argument `{}` for function `{}`",
+                            param.name, func_name
+                        ),
                         position,
                     });
                 }
@@ -1292,5 +1518,4 @@ impl Linter {
         }
         // If function signature not found, we already reported "undeclared variable" error
     }
-
 }

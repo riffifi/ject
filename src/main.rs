@@ -1,22 +1,24 @@
-mod lexer;
-mod parser;
 mod ast;
-mod value;
-mod interpreter;
-mod stdlib;
-mod numpy;
-mod gui;
-mod linter;
 mod diagnostic;
+mod interpreter;
+mod jgui;
+mod jnum;
+mod lexer;
+mod linter;
+mod native;
+mod package;
+mod parser;
+mod stdlib;
+mod value;
 
+use diagnostic::{parse_diagnostic, runtime_diagnostic, DiagnosticRenderer};
+use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
-use interpreter::{Interpreter, get_runtime_suggestion};
-use diagnostic::DiagnosticRenderer;
-use std::{env, fs};
-use std::path::Path;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use std::path::Path;
+use std::{env, fs};
 
 #[derive(Clone, Copy)]
 enum ExecutionMode {
@@ -44,10 +46,86 @@ fn main() {
         "--introspect" => {
             println!("{}", stdlib::introspect_native_kernel_json());
         }
+        "run" | "check" | "build" => {
+            let project = current_project_or_exit();
+            if args[0] == "build" {
+                let release = args.iter().any(|arg| arg == "--release");
+                match package::build_native_graph(&project, release) {
+                    Ok(artifacts) => {
+                        for artifact in artifacts {
+                            println!("Built native artifact {}", artifact.display());
+                        }
+                    }
+                    Err(error) => {
+                        emit_cli_error(
+                            "E4101",
+                            error,
+                            Some(
+                                "fix the native build error shown above and run `ject build` again",
+                            ),
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+            if !project.entry.is_file() {
+                emit_cli_error(
+                    "E4004",
+                    format!(
+                        "package '{}' entry does not exist: {}",
+                        project.name,
+                        project.entry.display()
+                    ),
+                    Some("set `[package].entry` in Ject.toml to an existing .ject file"),
+                );
+                std::process::exit(1);
+            }
+            let entry = project.entry.to_string_lossy().into_owned();
+            if args[0] == "run" {
+                run_file(&entry);
+            } else {
+                check_file(&entry);
+                if args[0] == "build" {
+                    println!("Built package '{}' (source checked)", project.name);
+                }
+            }
+        }
+        "test" => run_project_tests(),
+        "install" => install_project(),
+        "add" => add_dependency(&args[1..]),
+        "remove" => remove_dependency(&args[1..]),
+        "init" => {
+            let library = args.iter().any(|arg| arg == "--lib");
+            let native = args.iter().any(|arg| arg == "--native");
+            let root = env::current_dir().unwrap_or_else(|e| {
+                emit_cli_error("E4004", format!("cannot read current directory: {e}"), None);
+                std::process::exit(1);
+            });
+            let name = root
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("ject_project");
+            match package::init(&root, name, library, native) {
+                Ok(project) => println!("Created package '{}'", project.name),
+                Err(e) => {
+                    emit_cli_error(
+                        "E4005",
+                        e,
+                        Some("check the package name and directory permissions"),
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        "new" => create_project(&args[1..]),
         "--check" => {
             let files: Vec<&String> = args.iter().skip(1).collect();
             if files.is_empty() {
-                eprintln!("error: --check requires at least one .ject file");
+                emit_cli_error(
+                    "E4002",
+                    "--check requires at least one .ject file",
+                    Some("try `ject --check path/to/file.ject`"),
+                );
                 std::process::exit(2);
             }
             for path in files {
@@ -57,7 +135,11 @@ fn main() {
         "--test" => {
             let files: Vec<&String> = args.iter().skip(1).collect();
             if files.is_empty() {
-                eprintln!("Usage: ject --test <file.ject> [file2.ject ...]");
+                emit_cli_error(
+                    "E4002",
+                    "--test requires at least one .ject file",
+                    Some("try `ject --test path/to/test.ject`"),
+                );
                 std::process::exit(2);
             }
             for path in files {
@@ -65,7 +147,11 @@ fn main() {
             }
         }
         flag if flag.starts_with('-') => {
-            eprintln!("Unknown option: {}. Try --help.", flag);
+            emit_cli_error(
+                "E4001",
+                format!("unknown option `{flag}`"),
+                Some("run `ject --help` to see supported commands and options"),
+            );
             std::process::exit(2);
         }
         _ => {
@@ -73,6 +159,14 @@ fn main() {
             run_file(&args[0]);
         }
     }
+}
+
+fn emit_cli_error(code: &str, message: impl Into<String>, help: Option<&str>) {
+    let mut diagnostic = diagnostic::Diagnostic::error(message.into()).with_code(code.to_string());
+    if let Some(help) = help {
+        diagnostic = diagnostic.with_help(help.to_string());
+    }
+    DiagnosticRenderer::new().render(&diagnostic, None, None);
 }
 
 fn print_help() {
@@ -83,6 +177,15 @@ Ject language interpreter
 USAGE:
     ject                      Start REPL
     ject <file.ject>          Run a script
+    ject new <name> [--lib|--native]  Create a package
+    ject init [--lib|--native]        Create a package in the current directory
+    ject run                  Run the current package
+    ject check                Check the current package
+    ject test                 Run tests/*.ject in the current package
+    ject install              Resolve, lock, and build dependencies
+    ject add <name> --path <path>  Add a local source or mixed library
+    ject remove <name>        Remove a dependency
+    ject build                Validate the current source package
     ject --check <file> [...] Parse + lint only (no execution)
     ject --test <file> [...]  Run script(s); exit non-zero on failure
     ject --introspect         Print native kernel metadata (JSON)
@@ -90,7 +193,189 @@ USAGE:
     );
 }
 
+fn install_project() {
+    let project = current_project_or_exit();
+    match package::install(&project) {
+        Ok(dependencies) => {
+            println!("Locked {} package(s) in Ject.lock", dependencies.len() + 1);
+            match package::build_native_graph(&project, false) {
+                Ok(artifacts) => {
+                    for artifact in artifacts {
+                        println!("Built native artifact {}", artifact.display());
+                    }
+                }
+                Err(error) => {
+                    emit_cli_error(
+                        "E4101",
+                        error,
+                        Some("fix the native build error and run `ject install` again"),
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        Err(error) => {
+            emit_cli_error(
+                "E4102",
+                error,
+                Some("check dependency names and paths in Ject.toml"),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn add_dependency(args: &[String]) {
+    let Some(name) = args.first().filter(|name| !name.starts_with('-')) else {
+        emit_cli_error(
+            "E4002",
+            "ject add requires a package name",
+            Some("try `ject add my_lib --path ../my_lib`"),
+        );
+        std::process::exit(2);
+    };
+    let path = args
+        .windows(2)
+        .find(|pair| pair[0] == "--path")
+        .map(|pair| Path::new(&pair[1]));
+    let Some(path) = path else {
+        emit_cli_error(
+            "E4002",
+            "local installation requires `--path <path>`",
+            Some("registry packages are not available yet; use `ject add name --path ../name`"),
+        );
+        std::process::exit(2);
+    };
+    let project = current_project_or_exit();
+    match package::add_path_dependency(&project, name, path)
+        .and_then(|updated| package::install(&updated).map(|_| updated))
+    {
+        Ok(_) => println!("Added {name} from {}", path.display()),
+        Err(error) => {
+            emit_cli_error(
+                "E4103",
+                error,
+                Some("the path must contain a valid Ject.toml whose package name matches"),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn remove_dependency(args: &[String]) {
+    let Some(name) = args.first().filter(|name| !name.starts_with('-')) else {
+        emit_cli_error(
+            "E4002",
+            "ject remove requires a package name",
+            Some("try `ject remove my_lib`"),
+        );
+        std::process::exit(2);
+    };
+    let project = current_project_or_exit();
+    match package::remove_dependency(&project, name)
+        .and_then(|updated| package::install(&updated).map(|_| updated))
+    {
+        Ok(_) => println!("Removed {name}"),
+        Err(error) => {
+            emit_cli_error(
+                "E4104",
+                error,
+                Some("run `ject install` after correcting Ject.toml"),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn current_project_or_exit() -> package::Project {
+    let cwd = env::current_dir().unwrap_or_else(|e| {
+        emit_cli_error("E4004", format!("cannot read current directory: {e}"), None);
+        std::process::exit(1);
+    });
+    package::discover(&cwd).unwrap_or_else(|e| {
+        emit_cli_error(
+            "E4003",
+            e,
+            Some("run this command inside a package containing Ject.toml"),
+        );
+        std::process::exit(1);
+    })
+}
+
+fn create_project(args: &[String]) {
+    let Some(name) = args.iter().find(|arg| !arg.starts_with('-')) else {
+        emit_cli_error(
+            "E4002",
+            "ject new requires a package name",
+            Some("try `ject new my_package`"),
+        );
+        std::process::exit(2);
+    };
+    if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+        emit_cli_error(
+            "E4002",
+            "package name must be a single directory name",
+            Some("use a name such as `my_package`, without `/`, `\\`, `.` or `..`"),
+        );
+        std::process::exit(2);
+    }
+    let library = args.iter().any(|arg| arg == "--lib");
+    let native = args.iter().any(|arg| arg == "--native");
+    let root = Path::new(name);
+    if root.exists() {
+        emit_cli_error(
+            "E4005",
+            format!("{} already exists", root.display()),
+            Some("choose another package name or use `ject init` inside that directory"),
+        );
+        std::process::exit(1);
+    }
+    fs::create_dir(root).unwrap_or_else(|e| {
+        emit_cli_error(
+            "E4005",
+            format!("failed to create {}: {e}", root.display()),
+            Some("check the parent directory permissions"),
+        );
+        std::process::exit(1);
+    });
+    match package::init(root, name, library, native) {
+        Ok(_) => println!("Created package '{}'", name),
+        Err(e) => {
+            emit_cli_error(
+                "E4005",
+                e,
+                Some("check the package name and directory permissions"),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_project_tests() {
+    let project = current_project_or_exit();
+    let tests_dir = project.root.join("tests");
+    let mut tests = fs::read_dir(&tests_dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("ject"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    tests.sort();
+    if tests.is_empty() {
+        println!("No tests found in {}", tests_dir.display());
+        return;
+    }
+    for test in tests {
+        println!("test {}", test.display());
+        run_file(&test.to_string_lossy());
+    }
+}
+
 fn run_file(filename: &str) {
+    prepare_native_for(Path::new(filename));
     match fs::read_to_string(filename) {
         Ok(source) => {
             let mut interpreter = Interpreter::new();
@@ -107,13 +392,18 @@ fn run_file(filename: &str) {
             );
         }
         Err(error) => {
-            eprintln!("Error reading file '{}': {}", filename, error);
+            emit_cli_error(
+                "E4004",
+                format!("could not read `{filename}`: {error}"),
+                Some("check that the path exists and is readable"),
+            );
             std::process::exit(1);
         }
     }
 }
 
 fn check_file(filename: &str) {
+    prepare_native_for(Path::new(filename));
     match fs::read_to_string(filename) {
         Ok(source) => {
             let mut interpreter = Interpreter::new();
@@ -130,8 +420,50 @@ fn check_file(filename: &str) {
             );
         }
         Err(error) => {
-            eprintln!("Error reading file '{}': {}", filename, error);
+            emit_cli_error(
+                "E4004",
+                format!("could not read `{filename}`: {error}"),
+                Some("check that the path exists and is readable"),
+            );
             std::process::exit(1);
+        }
+    }
+}
+
+fn prepare_native_for(path: &Path) {
+    let start = path.parent().unwrap_or(path);
+    let Ok(project) = package::discover(start) else {
+        return;
+    };
+    let mut projects = match package::dependency_projects(&project) {
+        Ok(projects) => projects,
+        Err(error) => {
+            emit_cli_error(
+                "E4102",
+                error,
+                Some("check each path dependency in Ject.toml"),
+            );
+            std::process::exit(1);
+        }
+    };
+    projects.push(project);
+    for project in projects {
+        match package::find_native_artifact(&project) {
+            Ok(Some(artifact)) => {
+                if let Err(error) = native::register_dynamic(&artifact, Some(&project.name)) {
+                    emit_cli_error("E4201", format!("failed to load native package '{}': {error}", project.name), Some("run `ject build` and ensure the native package uses the current ject-native ABI"));
+                    std::process::exit(1);
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                emit_cli_error(
+                    "E4202",
+                    error,
+                    Some("rebuild the native package with `ject build`"),
+                );
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -231,11 +563,28 @@ fn input_seems_incomplete(source: &str) -> bool {
         use lexer::Token::*;
         if matches!(
             t,
-            Plus | Minus | Star | Slash | Percent
-                | Equal | EqualEqual | BangEqual
-                | Less | Greater | LessEqual | GreaterEqual
-                | And | Or | Comma | Arrow | Dot | DotDot
-                | Let | Import | From | As | Colon
+            Plus | Minus
+                | Star
+                | Slash
+                | Percent
+                | Equal
+                | EqualEqual
+                | BangEqual
+                | Less
+                | Greater
+                | LessEqual
+                | GreaterEqual
+                | And
+                | Or
+                | Comma
+                | Arrow
+                | Dot
+                | DotDot
+                | Let
+                | Import
+                | From
+                | As
+                | Colon
         ) {
             return true;
         }
@@ -320,7 +669,11 @@ fn run_repl() {
                 break;
             }
             Err(err) => {
-                println!("Error: {:?}", err);
+                emit_cli_error(
+                    "E4006",
+                    format!("REPL input failed: {err}"),
+                    Some("restart the REPL; remove .ject_history if the history file is corrupt"),
+                );
                 break;
             }
         }
@@ -338,8 +691,10 @@ fn execute_source(
 ) {
     let mut lexer = Lexer::new(source);
     let located_tokens = lexer.tokenize_with_positions();
-    let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> =
-        located_tokens.into_iter().map(|lt| (lt.token, lt.position)).collect();
+    let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> = located_tokens
+        .into_iter()
+        .map(|lt| (lt.token, lt.position))
+        .collect();
 
     // Clone positioned tokens for linter before parser consumes them
     let positioned_tokens_for_linter = positioned_tokens.clone();
@@ -359,6 +714,15 @@ fn execute_source(
             for diagnostic in &diagnostics {
                 renderer.render(diagnostic, filename.as_deref(), Some(source));
             }
+            let errors = diagnostics
+                .iter()
+                .filter(|d| d.level == diagnostic::DiagnosticLevel::Error)
+                .count();
+            let warnings = diagnostics
+                .iter()
+                .filter(|d| d.level == diagnostic::DiagnosticLevel::Warning)
+                .count();
+            DiagnosticRenderer::render_summary(errors, warnings);
 
             // Only run interpreter if no errors were found
             if !has_errors {
@@ -367,13 +731,7 @@ fn execute_source(
                     ExecutionMode::Run => match interpreter.interpret(&statements) {
                         Ok(_) => {}
                         Err(error) => {
-                            let mut runtime_diagnostic =
-                                crate::diagnostic::Diagnostic::error(error.message.clone())
-                                    .with_code("E0003".to_string());
-                            let suggestion = get_runtime_suggestion(&error.message);
-                            if !suggestion.is_empty() {
-                                runtime_diagnostic = runtime_diagnostic.with_help(suggestion.trim().to_string());
-                            }
+                            let runtime_diagnostic = runtime_diagnostic(&error.message);
                             renderer.render(&runtime_diagnostic, filename.as_deref(), Some(source));
                             if filename.is_some() {
                                 std::process::exit(1);
@@ -391,13 +749,7 @@ fn execute_source(
         Err(error) => {
             // Create diagnostic renderer for parse errors
             let renderer = DiagnosticRenderer::new();
-            let mut parse_diagnostic =
-                crate::diagnostic::Diagnostic::error(error.message.clone()).with_code("E0002".to_string());
-
-            // Use position information if available
-            if let (Some(line), Some(column)) = (error.line, error.column) {
-                parse_diagnostic = parse_diagnostic.with_location(line, column);
-            }
+            let parse_diagnostic = parse_diagnostic(&error.message, error.line, error.column);
 
             renderer.render(&parse_diagnostic, filename.as_deref(), Some(source));
 
@@ -411,8 +763,10 @@ fn execute_source(
 fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut linter::Linter) {
     let mut lexer = Lexer::new(source);
     let located_tokens = lexer.tokenize_with_positions();
-    let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> =
-        located_tokens.into_iter().map(|lt| (lt.token, lt.position)).collect();
+    let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> = located_tokens
+        .into_iter()
+        .map(|lt| (lt.token, lt.position))
+        .collect();
 
     // Clone positioned tokens for linter before parser consumes them
     let positioned_tokens_for_linter = positioned_tokens.clone();
@@ -448,13 +802,7 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
                         println!("\n^C");
                     }
                     Err(error) => {
-                        let mut runtime_diagnostic =
-                            crate::diagnostic::Diagnostic::error(error.message.clone())
-                                .with_code("E0003".to_string());
-                        let suggestion = get_runtime_suggestion(&error.message);
-                        if !suggestion.is_empty() {
-                            runtime_diagnostic = runtime_diagnostic.with_help(suggestion.trim().to_string());
-                        }
+                        let runtime_diagnostic = runtime_diagnostic(&error.message);
                         let renderer = DiagnosticRenderer::new();
                         renderer.render(&runtime_diagnostic, None, Some(source));
                     }
@@ -464,13 +812,7 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
         Err(error) => {
             // Create diagnostic renderer for parse errors
             let renderer = DiagnosticRenderer::new();
-            let mut parse_diagnostic =
-                crate::diagnostic::Diagnostic::error(error.message.clone()).with_code("E0002".to_string());
-
-            // Use position information if available
-            if let (Some(line), Some(column)) = (error.line, error.column) {
-                parse_diagnostic = parse_diagnostic.with_location(line, column);
-            }
+            let parse_diagnostic = parse_diagnostic(&error.message, error.line, error.column);
 
             renderer.render(&parse_diagnostic, None, Some(source));
         }

@@ -9,7 +9,11 @@ pub struct SourcePosition {
 
 impl SourcePosition {
     pub fn new(line: usize, column: usize, position: usize) -> Self {
-        SourcePosition { line, column, position }
+        SourcePosition {
+            line,
+            column,
+            position,
+        }
     }
 }
 
@@ -39,10 +43,10 @@ pub enum Token {
     String(String),
     InterpolatedString(Vec<InterpolationPart>),
     Bool(bool),
-    
+
     // Identifiers
     Identifier(String),
-    
+
     // Keywords
     Let,
     Fn,
@@ -93,17 +97,17 @@ pub enum Token {
     And,
     Or,
     Bang,
-    
+
     // Compound Assignment Operators
-    PlusEqual,      // +=
-    MinusEqual,     // -=
-    StarEqual,      // *=
-    SlashEqual,     // /=
-    PercentEqual,   // %=
-    
+    PlusEqual,    // +=
+    MinusEqual,   // -=
+    StarEqual,    // *=
+    SlashEqual,   // /=
+    PercentEqual, // %=
+
     // Increment/Decrement
-    PlusPlus,       // ++
-    MinusMinus,     // --
+    PlusPlus,   // ++
+    MinusMinus, // --
 
     // Delimiters
     LeftParen,
@@ -112,8 +116,8 @@ pub enum Token {
     RightBracket,
     LeftBrace,
     RightBrace,
-    LeftBracePipe,   // {|
-    RightPipeBrace,  // |}
+    LeftBracePipe,  // {|
+    RightPipeBrace, // |}
     Comma,
     Dot,
     DotDot,
@@ -124,6 +128,7 @@ pub enum Token {
 
     // Special
     Invalid(char),
+    UnterminatedString,
     Newline,
     Eof,
 }
@@ -154,7 +159,7 @@ impl Lexer {
     pub fn new(input: &str) -> Self {
         let chars: Vec<char> = input.chars().collect();
         let current_char = chars.get(0).copied();
-        
+
         Lexer {
             input: chars,
             position: 0,
@@ -164,11 +169,11 @@ impl Lexer {
             emitted_non_trivia: false,
         }
     }
-    
+
     fn current_position(&self) -> SourcePosition {
         SourcePosition::new(self.line, self.column, self.position)
     }
-    
+
     fn advance(&mut self) {
         if let Some('\n') = self.current_char {
             self.line += 1;
@@ -176,15 +181,15 @@ impl Lexer {
         } else {
             self.column += 1;
         }
-        
+
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
     }
-    
+
     fn peek(&self) -> Option<char> {
         self.input.get(self.position + 1).copied()
     }
-    
+
     fn skip_whitespace(&mut self) {
         while let Some(ch) = self.current_char {
             if ch == ' ' || ch == '\t' || ch == '\r' {
@@ -194,7 +199,7 @@ impl Lexer {
             }
         }
     }
-    
+
     fn skip_comment(&mut self) {
         while let Some(ch) = self.current_char {
             if ch == '\n' {
@@ -203,7 +208,7 @@ impl Lexer {
             self.advance();
         }
     }
-    
+
     fn skip_multiline_comment(&mut self) {
         // Skip #*
         self.advance();
@@ -228,7 +233,7 @@ impl Lexer {
             self.line, start_line, start_column
         );
     }
-    
+
     fn read_number(&mut self) -> Token {
         let mut number = String::new();
         let mut is_float = false;
@@ -278,15 +283,17 @@ impl Lexer {
             Token::Integer(number.parse().unwrap_or(0))
         }
     }
-    
+
     fn read_string(&mut self) -> Token {
         let mut parts = Vec::new();
         let mut current_text = String::new();
+        let mut terminated = false;
         self.advance(); // Skip opening quote
-        
+
         while let Some(ch) = self.current_char {
             if ch == '"' {
                 self.advance(); // Skip closing quote
+                terminated = true;
                 break;
             } else if ch == '\\' {
                 self.advance();
@@ -347,9 +354,9 @@ impl Lexer {
                     parts.push(InterpolationPart::Text(current_text.clone()));
                     current_text.clear();
                 }
-                
+
                 self.advance(); // Skip '$'
-                
+
                 if let Some('{') = self.current_char {
                     // ${expression} syntax
                     self.advance(); // Skip '{'
@@ -365,19 +372,23 @@ impl Lexer {
                 self.advance();
             }
         }
-        
+
+        if !terminated {
+            return Token::UnterminatedString;
+        }
+
         // Add remaining text
         if !current_text.is_empty() {
             parts.push(InterpolationPart::Text(current_text));
         }
-        
+
         // If no interpolation parts, return regular string
         if parts.len() == 1 {
             if let InterpolationPart::Text(text) = &parts[0] {
                 return Token::String(text.clone());
             }
         }
-        
+
         // Return interpolated string if we have parts
         if parts.is_empty() {
             Token::String(String::new())
@@ -385,11 +396,11 @@ impl Lexer {
             Token::InterpolatedString(parts)
         }
     }
-    
+
     fn read_interpolation_expression(&mut self) -> String {
         let mut expr = String::new();
         let mut brace_count = 1;
-        
+
         while let Some(ch) = self.current_char {
             if ch == '{' {
                 brace_count += 1;
@@ -409,13 +420,13 @@ impl Lexer {
                 self.advance();
             }
         }
-        
+
         expr
     }
-    
+
     fn read_interpolation_identifier(&mut self) -> String {
         let mut identifier = String::new();
-        
+
         while let Some(ch) = self.current_char {
             if ch.is_alphanumeric() || ch == '_' {
                 identifier.push(ch);
@@ -424,13 +435,13 @@ impl Lexer {
                 break;
             }
         }
-        
+
         identifier
     }
-    
+
     fn read_identifier(&mut self) -> Token {
         let mut identifier = String::new();
-        
+
         while let Some(ch) = self.current_char {
             if ch.is_alphanumeric() || ch == '_' {
                 identifier.push(ch);
@@ -439,7 +450,7 @@ impl Lexer {
                 break;
             }
         }
-        
+
         match identifier.as_str() {
             "let" => Token::Let,
             "fn" => Token::Fn,
@@ -477,7 +488,7 @@ impl Lexer {
             _ => Token::Identifier(identifier),
         }
     }
-    
+
     pub fn next_token(&mut self) -> LocatedToken {
         loop {
             let start_pos = self.current_position();
@@ -696,23 +707,17 @@ impl Lexer {
                     continue;
                 }
                 Some(ch) => {
-                    // Default behavior: skip unexpected characters (lexer_tests expectation).
-                    // But if the unexpected character is the *first* meaningful thing we see,
-                    // surface it to the parser so `parse("@invalid")` can fail.
                     self.advance();
-                    if !self.emitted_non_trivia {
-                        self.emitted_non_trivia = true;
-                        return LocatedToken::new(Token::Invalid(ch), start_pos);
-                    }
-                    continue;
+                    self.emitted_non_trivia = true;
+                    return LocatedToken::new(Token::Invalid(ch), start_pos);
                 }
             }
         }
     }
-    
+
     pub fn tokenize(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
-        
+
         loop {
             let located_token = self.next_token();
             let is_eof = matches!(located_token.token, Token::Eof);
@@ -721,13 +726,13 @@ impl Lexer {
                 break;
             }
         }
-        
+
         tokens
     }
-    
+
     pub fn tokenize_with_positions(&mut self) -> Vec<LocatedToken> {
         let mut tokens = Vec::new();
-        
+
         loop {
             let located_token = self.next_token();
             let is_eof = matches!(located_token.token, Token::Eof);
@@ -736,7 +741,7 @@ impl Lexer {
                 break;
             }
         }
-        
+
         tokens
     }
 }

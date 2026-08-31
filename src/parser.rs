@@ -1,5 +1,5 @@
+use crate::ast::{BinaryOp, Expr, Stmt, UnaryOp};
 use crate::lexer::Token;
-use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp};
 
 pub struct Parser {
     tokens: Vec<(Token, crate::lexer::SourcePosition)>,
@@ -27,18 +27,22 @@ impl Parser {
     pub fn new(tokens: Vec<(Token, crate::lexer::SourcePosition)>) -> Self {
         Parser { tokens, current: 0 }
     }
-    
+
     pub fn new_simple(tokens: Vec<Token>) -> Self {
         // Convert simple tokens to positioned tokens with default position
-        let positioned_tokens = tokens.into_iter().map(|token| {
-            (token, crate::lexer::SourcePosition::new(1, 1, 0))
-        }).collect();
-        Parser { tokens: positioned_tokens, current: 0 }
+        let positioned_tokens = tokens
+            .into_iter()
+            .map(|token| (token, crate::lexer::SourcePosition::new(1, 1, 0)))
+            .collect();
+        Parser {
+            tokens: positioned_tokens,
+            current: 0,
+        }
     }
-    
+
     pub fn parse(&mut self) -> ParseResult<Vec<Stmt>> {
         let mut statements = Vec::new();
-        
+
         while !self.is_at_end() {
             // Skip newlines and semicolons at the top level
             if self.match_token(&Token::Newline) || self.match_token(&Token::Semicolon) {
@@ -50,7 +54,7 @@ impl Parser {
 
         Ok(statements)
     }
-    
+
     fn statement(&mut self) -> ParseResult<Stmt> {
         match &self.peek() {
             Token::Let => self.let_statement(),
@@ -58,7 +62,11 @@ impl Parser {
                 // `fn(...)` (no name) at statement position is an anonymous function
                 // used as a standalone expression statement -- `fn name(...)` is a
                 // named function declaration. Peek past `fn` to tell them apart.
-                if self.peek_ahead(1).map(|t| matches!(t, Token::LeftParen)).unwrap_or(false) {
+                if self
+                    .peek_ahead(1)
+                    .map(|t| matches!(t, Token::LeftParen))
+                    .unwrap_or(false)
+                {
                     Ok(Stmt::Expression(self.expression()?))
                 } else {
                     self.function_statement()
@@ -128,43 +136,46 @@ impl Parser {
                         value
                     };
 
-                    Ok(Stmt::Assign { target, value: final_value })
+                    Ok(Stmt::Assign {
+                        target,
+                        value: final_value,
+                    })
                 } else {
                     // Just an expression statement
                     Ok(Stmt::Expression(expr))
                 }
-            },
+            }
             _ => Ok(Stmt::Expression(self.expression()?)),
         }
     }
-    
+
     fn let_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Let, "Expected 'let'")?;
-        
+
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
             return Err(self.error("Expected identifier after 'let'".to_string()));
         };
-        
+
         self.consume(Token::Equal, "Expected '=' after variable name")?;
         while self.match_token(&Token::Newline) {}
         let value = self.expression()?;
-        
+
         Ok(Stmt::Let { name, value })
     }
-    
+
     fn function_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Fn, "Expected 'fn'")?;
-        
+
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
             return Err(self.error("Expected function name".to_string()));
         };
-        
+
         self.consume(Token::LeftParen, "Expected '(' after function name")?;
-        
+
         let mut params = Vec::new();
         if !self.check(&Token::RightParen) {
             loop {
@@ -175,7 +186,7 @@ impl Parser {
                     } else {
                         None
                     };
-                    
+
                     params.push(crate::ast::Parameter {
                         name: param_name,
                         default_value,
@@ -183,68 +194,72 @@ impl Parser {
                 } else {
                     return Err(self.error("Expected parameter name".to_string()));
                 }
-                
+
                 if !self.match_token(&Token::Comma) {
                     break;
                 }
             }
         }
-        
+
         self.consume(Token::RightParen, "Expected ')' after parameters")?;
-        
+
         // Expression-body sugar: `fn name(args) -> expr` desugars to a single
         // `return expr`, no `end` needed -- mirrors the anonymous `fn(args) -> expr`
         // form below, just with a name attached.
         if self.match_token(&Token::Arrow) {
             let expr = self.expression()?;
-            return Ok(Stmt::Function { name, params, body: vec![Stmt::Return(Some(expr))] });
+            return Ok(Stmt::Function {
+                name,
+                params,
+                body: vec![Stmt::Return(Some(expr))],
+            });
         }
-        
+
         // Skip optional newlines before body
         while self.match_token(&Token::Newline) {}
-        
+
         let body = self.block()?;
-        
+
         Ok(Stmt::Function { name, params, body })
     }
-    
+
     fn if_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::If, "Expected 'if'")?;
         let condition = self.expression()?;
-        
+
         // Optional 'then' keyword
         self.match_token(&Token::Then);
-        
+
         // Skip optional newlines before body
         while self.match_token(&Token::Newline) {}
-        
+
         let then_branch = self.if_block()?;
-        
+
         // Parse elseif branches
         let mut elseif_branches = Vec::new();
         while self.match_token(&Token::ElseIf) {
             let elseif_condition = self.expression()?;
-            
+
             // Optional 'then' keyword
             self.match_token(&Token::Then);
-            
+
             // Skip optional newlines before body
             while self.match_token(&Token::Newline) {}
-            
+
             let elseif_body = self.if_block()?;
-            
+
             elseif_branches.push(crate::ast::ElseIfBranch {
                 condition: elseif_condition,
                 body: elseif_body,
             });
         }
-        
+
         // Handle traditional "else if" pattern for backward compatibility
         let mut needs_end_token = true;
         if self.match_token(&Token::Else) {
             // Skip optional newlines before else body
             while self.match_token(&Token::Newline) {}
-            
+
             // Check for "else if" pattern
             // Only convert to elseif if it's a simple else-if without nested end
             // Otherwise, treat it as a nested if statement
@@ -254,7 +269,7 @@ impl Parser {
                 let mut pos = self.current + 1; // Skip the 'if' token
                 let mut depth = 1; // We're inside the nested if
                 let mut found_nested_end = false;
-                
+
                 // Look ahead to find the nested if's 'end'
                 while pos < self.tokens.len() {
                     match &self.tokens[pos].0 {
@@ -268,7 +283,10 @@ impl Parser {
                                 if pos + 1 < self.tokens.len() {
                                     let next_after_end = &self.tokens[pos + 1].0;
                                     // If next token is 'end', 'elseif', 'else', or end of block, it's a nested if
-                                    if matches!(next_after_end, Token::End | Token::ElseIf | Token::Else | Token::Eof) {
+                                    if matches!(
+                                        next_after_end,
+                                        Token::End | Token::ElseIf | Token::Else | Token::Eof
+                                    ) {
                                         found_nested_end = true;
                                         break;
                                     }
@@ -279,7 +297,7 @@ impl Parser {
                     }
                     pos += 1;
                 }
-                
+
                 if found_nested_end {
                     // This is a nested if statement - parse as regular else block
                     let else_body = self.if_block()?;
@@ -293,16 +311,22 @@ impl Parser {
                 } else {
                     // This is an "else if" chain - recursively parse remaining elseifs and else
                     let remaining_if = self.if_statement()?;
-                    if let Stmt::If { condition: nested_condition, then_branch: nested_then, elseif_branches: mut nested_elseifs, else_branch: nested_else } = remaining_if {
+                    if let Stmt::If {
+                        condition: nested_condition,
+                        then_branch: nested_then,
+                        elseif_branches: mut nested_elseifs,
+                        else_branch: nested_else,
+                    } = remaining_if
+                    {
                         // Convert the nested if into an elseif branch
                         elseif_branches.push(crate::ast::ElseIfBranch {
                             condition: nested_condition,
                             body: nested_then,
                         });
-                        
+
                         // Add all nested elseif branches
                         elseif_branches.append(&mut nested_elseifs);
-                        
+
                         // Set the final else branch
                         return Ok(Stmt::If {
                             condition,
@@ -326,16 +350,19 @@ impl Parser {
                 });
             }
         }
-        
+
         // Consume the final 'end' token if needed
         if needs_end_token {
             // Check if we're at the end of file or encountered a token that shouldn't be here
             if self.is_at_end() {
-                return Err(self.error("Expected 'end' to close if statement but reached end of file".to_string()));
+                return Err(self.error(
+                    "Expected 'end' to close if statement but reached end of file".to_string(),
+                ));
             }
-            
+
             // Provide a better error message based on what we found instead of 'end'
-            if let Err(parse_error) = self.consume(Token::End, "Expected 'end' after if statement") {
+            if let Err(parse_error) = self.consume(Token::End, "Expected 'end' after if statement")
+            {
                 let current_token = self.peek();
                 let better_message = match current_token {
                     Token::Return => "Expected 'end' to close if statement, but found another 'return'. Did you forget an 'end'?".to_string(),
@@ -345,7 +372,7 @@ impl Parser {
                 return Err(self.error(better_message));
             }
         }
-        
+
         Ok(Stmt::If {
             condition,
             then_branch,
@@ -353,70 +380,78 @@ impl Parser {
             else_branch: None,
         })
     }
-    
+
     fn while_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::While, "Expected 'while'")?;
         let condition = self.expression()?;
-        
+
         // Optional 'do' keyword
         self.match_token(&Token::Do);
-        
+
         // Skip optional newlines before body
         while self.match_token(&Token::Newline) {}
-        
+
         let body = self.block()?;
-        
+
         Ok(Stmt::While { condition, body })
     }
-    
+
     fn for_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::For, "Expected 'for'")?;
-        
+
         let var = if let Token::Identifier(name) = self.advance() {
             name
         } else {
             return Err(self.error("Expected variable name in for loop".to_string()));
         };
-        
+
         self.consume(Token::In, "Expected 'in' after for variable")?;
         let iterable = self.expression()?;
-        
+
         // Optional 'do' keyword
         self.match_token(&Token::Do);
-        
+
         // Skip optional newlines before body
         while self.match_token(&Token::Newline) {}
-        
+
         let body = self.block()?;
-        
-        Ok(Stmt::For { var, iterable, body })
+
+        Ok(Stmt::For {
+            var,
+            iterable,
+            body,
+        })
     }
-    
+
     fn return_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Return, "Expected 'return'")?;
-        
+
         let value = if self.check(&Token::Newline) || self.check(&Token::End) || self.is_at_end() {
             None
         } else {
             Some(self.expression()?)
         };
-        
+
         Ok(Stmt::Return(value))
     }
-    
+
     fn print_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Print, "Expected 'print'")?;
-        
+
         let mut values = Vec::new();
         let mut sep = None;
         let mut end = None;
-        
+
         // Parse values and keyword arguments
         'args: while !self.check(&Token::Newline) && !self.check(&Token::End) && !self.is_at_end() {
             // Check for keyword argument at current position
             if let Token::Identifier(name) = self.peek() {
-                if (name == "sep" || name == "end") && 
-                   self.peek_ahead(1).map(|t| matches!(t, Token::Colon)).unwrap_or(false) {
+                if (name == "sep" || name == "end")
+                    && self
+                        .peek_ahead(1)
+                        .map(|t| matches!(t, Token::Colon))
+                        .unwrap_or(false)
+                {
                     // This is a keyword argument
                     let kw_name = name;
                     self.advance(); // consume identifier
@@ -434,19 +469,19 @@ impl Parser {
                     break 'args;
                 }
             }
-            
+
             // Regular value expression
             values.push(self.expression()?);
-            
+
             // Check for more arguments
             if !self.match_token(&Token::Comma) {
                 break;
             }
         }
-        
+
         Ok(Stmt::Print { values, sep, end })
     }
-    
+
     fn throw_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Throw, "Expected 'throw'")?;
         let error_expr = self.expression()?;
@@ -516,34 +551,34 @@ impl Parser {
 
     fn import_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Import, "Expected 'import'")?;
-        
+
         let (module_path, items, alias) = if self.match_token(&Token::LeftBrace) {
             // import {item1, item2} from "module"
             let mut items = Vec::new();
-            
+
             if !self.check(&Token::RightBrace) {
                 loop {
                     if let Token::Identifier(item) = self.advance() {
                         items.push(item);
                     } else {
-                return Err(self.error("Expected identifier in import list".to_string()));
+                        return Err(self.error("Expected identifier in import list".to_string()));
                     }
-                    
+
                     if !self.match_token(&Token::Comma) {
                         break;
                     }
                 }
             }
-            
+
             self.consume(Token::RightBrace, "Expected '}' after import list")?;
             self.consume(Token::From, "Expected 'from' after import list")?;
-            
+
             let module_path = if let Token::String(path) = self.advance() {
                 path
             } else {
                 return Err(self.error("Expected string after 'from'".to_string()));
             };
-            
+
             (module_path, Some(items), None)
         } else {
             // import "module" or import "module" as alias
@@ -552,26 +587,30 @@ impl Parser {
             } else {
                 return Err(self.error("Expected module path string after 'import'".to_string()));
             };
-            
+
             let alias = if self.match_token(&Token::As) {
                 if let Token::Identifier(alias_name) = self.advance() {
                     Some(alias_name)
                 } else {
-                return Err(self.error("Expected identifier after 'as'".to_string()));
+                    return Err(self.error("Expected identifier after 'as'".to_string()));
                 }
             } else {
                 None
             };
-            
+
             (module_path, None, alias)
         };
-        
-        Ok(Stmt::Import { module_path, items, alias })
+
+        Ok(Stmt::Import {
+            module_path,
+            items,
+            alias,
+        })
     }
-    
+
     fn export_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Export, "Expected 'export'")?;
-        
+
         // Check if this is "export fn"
         if self.match_token(&Token::Fn) {
             let name = if let Token::Identifier(name) = self.advance() {
@@ -579,9 +618,9 @@ impl Parser {
             } else {
                 return Err(self.error("Expected function name after 'export fn'".to_string()));
             };
-            
+
             self.consume(Token::LeftParen, "Expected '(' after function name")?;
-            
+
             let mut params = Vec::new();
             if !self.check(&Token::RightParen) {
                 loop {
@@ -592,7 +631,7 @@ impl Parser {
                         } else {
                             None
                         };
-                        
+
                         params.push(crate::ast::Parameter {
                             name: param_name,
                             default_value,
@@ -600,90 +639,90 @@ impl Parser {
                     } else {
                         return Err(self.error("Expected parameter name".to_string()));
                     }
-                    
+
                     if !self.match_token(&Token::Comma) {
                         break;
                     }
                 }
             }
-            
+
             self.consume(Token::RightParen, "Expected ')' after parameters")?;
-            
+
             // Skip optional newlines before body
             while self.match_token(&Token::Newline) {}
-            
+
             let body = self.block()?;
-            
+
             return Ok(Stmt::ExportFunction { name, params, body });
         }
-        
+
         // Regular "export name = value" syntax
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
             return Err(self.error("Expected identifier after 'export'".to_string()));
         };
-        
+
         self.consume(Token::Equal, "Expected '=' after export name")?;
         let value = self.expression()?;
-        
+
         Ok(Stmt::Export { name, value })
     }
-    
+
     fn struct_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Struct, "Expected 'struct'")?;
-        
+
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
             return Err(self.error("Expected struct name".to_string()));
         };
-        
+
         self.consume(Token::LeftBrace, "Expected '{' after struct name")?;
-        
+
         // Skip optional newlines
         while self.match_token(&Token::Newline) {}
-        
+
         let mut fields = Vec::new();
         if !self.check(&Token::RightBrace) {
             loop {
                 // Skip optional newlines before field
                 while self.match_token(&Token::Newline) {}
-                
+
                 if let Token::Identifier(field_name) = self.advance() {
                     fields.push(field_name);
                 } else {
                     return Err(self.error("Expected field name".to_string()));
                 }
-                
+
                 // Skip optional newlines after field
                 while self.match_token(&Token::Newline) {}
-                
+
                 if !self.match_token(&Token::Comma) {
                     // Skip optional newlines before checking for closing brace
                     while self.match_token(&Token::Newline) {}
                     break;
                 }
-                
+
                 // Skip optional newlines after comma
                 while self.match_token(&Token::Newline) {}
             }
         }
-        
+
         // Skip optional newlines before closing brace
         while self.match_token(&Token::Newline) {}
-        
+
         self.consume(Token::RightBrace, "Expected '}' after struct fields")?;
-        
+
         Ok(Stmt::Struct { name, fields })
     }
-    
+
     fn try_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(Token::Try, "Expected 'try'")?;
-        
+
         // Skip optional newlines
         while self.match_token(&Token::Newline) {}
-        
+
         let mut body = Vec::new();
         while !self.check(&Token::End) && !self.check(&Token::Catch) && !self.is_at_end() {
             if self.match_token(&Token::Newline) {
@@ -691,15 +730,15 @@ impl Parser {
             }
             body.push(self.statement()?);
         }
-        
+
         // Consume 'end' if present
         if self.check(&Token::End) {
             self.consume(Token::End, "Expected 'end'")?;
         }
-        
+
         // Expect catch
         self.consume(Token::Catch, "Expected 'catch' after 'try' block")?;
-        
+
         // Optional catch variable
         let catch_var = if matches!(self.peek(), Token::Identifier(_)) {
             if let Token::Identifier(name) = self.advance() {
@@ -710,31 +749,35 @@ impl Parser {
         } else {
             None
         };
-        
+
         // Skip optional newlines
         while self.match_token(&Token::Newline) {}
-        
+
         let catch_body = self.block()?;
-        
+
         Ok(Stmt::Try {
             body,
             catch_var,
             catch_body,
         })
     }
-    
+
     fn block(&mut self) -> ParseResult<Vec<Stmt>> {
         let mut statements = Vec::new();
-        
-        while !self.check(&Token::End) && !self.check(&Token::ElseIf) && !self.check(&Token::Else) && !self.is_at_end() {
+
+        while !self.check(&Token::End)
+            && !self.check(&Token::ElseIf)
+            && !self.check(&Token::Else)
+            && !self.is_at_end()
+        {
             // Skip newlines within blocks
             if self.match_token(&Token::Newline) {
                 continue;
             }
-            
+
             statements.push(self.statement()?);
         }
-        
+
         if self.check(&Token::End) {
             self.consume(Token::End, "Expected 'end'")?;
         } else if !self.check(&Token::ElseIf) && !self.check(&Token::Else) {
@@ -742,42 +785,48 @@ impl Parser {
             // stopping at elseif/else, which is a legitimate, different exit).
             return Err(self.error("Expected 'end' to close this block but got Eof".to_string()));
         }
-        
+
         Ok(statements)
     }
-    
+
     // Special block method for if statements - doesn't consume 'end'
     fn if_block(&mut self) -> ParseResult<Vec<Stmt>> {
         let mut statements = Vec::new();
-        
-        while !self.check(&Token::End) && !self.check(&Token::ElseIf) && !self.check(&Token::Else) && !self.is_at_end() {
+
+        while !self.check(&Token::End)
+            && !self.check(&Token::ElseIf)
+            && !self.check(&Token::Else)
+            && !self.is_at_end()
+        {
             // Skip newlines within blocks
             if self.match_token(&Token::Newline) {
                 continue;
             }
-            
+
             // Before parsing the next statement, check for patterns that suggest missing 'end'
             if self.is_likely_missing_end(&statements) {
                 return Err(self.error("Missing 'end' keyword for if statement".to_string()));
             }
-            
+
             let stmt = self.statement()?;
             statements.push(stmt);
         }
-        
+
         Ok(statements)
     }
-    
+
     // Check if the current context suggests a missing 'end' keyword
     fn is_likely_missing_end(&self, statements: &[Stmt]) -> bool {
         // Only check if we've already parsed some statements in this block
         if statements.is_empty() {
             return false;
         }
-        
+
         // Check if the last statement was a return
-        let has_return = statements.iter().any(|stmt| matches!(stmt, crate::ast::Stmt::Return(_)));
-        
+        let has_return = statements
+            .iter()
+            .any(|stmt| matches!(stmt, crate::ast::Stmt::Return(_)));
+
         if has_return {
             // Look at the current token - if it's something that typically appears at top level
             // after an if block, it's likely we're missing an 'end'
@@ -801,13 +850,13 @@ impl Parser {
             false
         }
     }
-    
+
     // Check if we see a pattern of consecutive top-level statements
     fn is_consecutive_top_level_pattern(&self) -> bool {
         let mut pos = self.current;
         let mut return_count = 0;
         let mut other_statements = 0;
-        
+
         // Look ahead at the next few tokens to detect patterns
         while pos < self.tokens.len() && return_count + other_statements < 3 {
             match &self.tokens[pos].0 {
@@ -815,7 +864,17 @@ impl Parser {
                     return_count += 1;
                     pos += 1;
                     // Skip until we find the next statement or newline
-                    while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::Newline | Token::Return | Token::Print | Token::Fn | Token::End | Token::Eof) {
+                    while pos < self.tokens.len()
+                        && !matches!(
+                            self.tokens[pos].0,
+                            Token::Newline
+                                | Token::Return
+                                | Token::Print
+                                | Token::Fn
+                                | Token::End
+                                | Token::Eof
+                        )
+                    {
                         pos += 1;
                     }
                 }
@@ -834,19 +893,19 @@ impl Parser {
                 }
             }
         }
-        
+
         // If we see multiple statements at what appears to be the top level,
         // it's likely we're missing an 'end'
         return_count >= 1 && (return_count + other_statements) >= 2
     }
-    
+
     fn expression(&mut self) -> ParseResult<Expr> {
         self.or()
     }
-    
+
     fn or(&mut self) -> ParseResult<Expr> {
         let mut expr = self.and()?;
-        
+
         while self.match_token(&Token::Or) {
             let right = self.and()?;
             expr = Expr::Binary {
@@ -855,13 +914,13 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(expr)
     }
-    
+
     fn and(&mut self) -> ParseResult<Expr> {
         let mut expr = self.range()?;
-        
+
         while self.match_token(&Token::And) {
             let right = self.range()?;
             expr = Expr::Binary {
@@ -870,36 +929,36 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(expr)
     }
-    
+
     fn range(&mut self) -> ParseResult<Expr> {
         let mut expr = self.equality()?;
-        
+
         if self.match_token(&Token::DotDot) {
             let end = self.equality()?;
-            
+
             // Check for optional step with colon syntax
             let step = if self.match_token(&Token::Colon) {
                 Some(Box::new(self.equality()?))
             } else {
                 None
             };
-            
+
             expr = Expr::Range {
                 start: Box::new(expr),
                 end: Box::new(end),
                 step,
             };
         }
-        
+
         Ok(expr)
     }
-    
+
     fn equality(&mut self) -> ParseResult<Expr> {
         let mut expr = self.comparison()?;
-        
+
         while let Some(op) = self.match_equality_op() {
             let right = self.comparison()?;
             expr = Expr::Binary {
@@ -908,13 +967,13 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(expr)
     }
-    
+
     fn comparison(&mut self) -> ParseResult<Expr> {
         let mut expr = self.term()?;
-        
+
         while let Some(op) = self.match_comparison_op() {
             let right = self.term()?;
             expr = Expr::Binary {
@@ -923,13 +982,13 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(expr)
     }
-    
+
     fn term(&mut self) -> ParseResult<Expr> {
         let mut expr = self.factor()?;
-        
+
         while let Some(op) = self.match_term_op() {
             // Skip newlines after binary operators
             while self.match_token(&Token::Newline) {}
@@ -940,13 +999,13 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(expr)
     }
-    
+
     fn factor(&mut self) -> ParseResult<Expr> {
         let mut expr = self.unary()?;
-        
+
         while let Some(op) = self.match_factor_op() {
             // Skip newlines after binary operators
             while self.match_token(&Token::Newline) {}
@@ -957,7 +1016,7 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(expr)
     }
 
@@ -977,7 +1036,7 @@ impl Parser {
                 prefix: true,
             });
         }
-        
+
         if let Some(op) = self.match_unary_op() {
             let operand = self.unary()?;
             return Ok(Expr::Unary {
@@ -1041,24 +1100,25 @@ impl Parser {
     fn parse_index_or_slice(&mut self, object: Expr) -> ParseResult<Expr> {
         // Check what's inside the brackets
         // Could be: simple index, range (..), or slice with named params (from:/to:/step:)
-        
+
         // Check for empty brackets []
         if self.check(&Token::RightBracket) {
             self.advance(); // consume ]
-            return Err(self.error("Empty brackets are not allowed. Use array methods instead.".to_string()));
+            return Err(self
+                .error("Empty brackets are not allowed. Use array methods instead.".to_string()));
         }
 
         while self.match_token(&Token::Newline) {}
-        
+
         // Save current position to look ahead
         let start_pos = self.current;
-        
+
         // Try to parse as named slice syntax: from:X to:Y step:Z
         let mut from_expr = None;
         let mut to_expr = None;
         let mut step_expr = None;
         let mut is_named_slice = false;
-        
+
         // Check for "from" keyword
         if self.check(&Token::From) {
             is_named_slice = true;
@@ -1071,7 +1131,7 @@ impl Parser {
                 return Err(self.error("Expected ':' after 'from' in slice".to_string()));
             }
         }
-        
+
         // Check for "to" keyword
         if self.check(&Token::To) {
             is_named_slice = true;
@@ -1084,7 +1144,7 @@ impl Parser {
                 return Err(self.error("Expected ':' after 'to' in slice".to_string()));
             }
         }
-        
+
         // Check for "step" keyword
         if let Token::Identifier(s) = self.peek().clone() {
             if s == "step" {
@@ -1099,7 +1159,7 @@ impl Parser {
                 }
             }
         }
-        
+
         // If we parsed any named parameters, this is a named slice
         if is_named_slice {
             while self.match_token(&Token::Newline) {}
@@ -1111,7 +1171,7 @@ impl Parser {
                 step: step_expr,
             });
         }
-        
+
         // Not a named slice, try range syntax: start..end:step or Python-style start:stop:step
         // Reset position
         self.current = start_pos;
@@ -1119,12 +1179,12 @@ impl Parser {
         // Check for Python-style slice: start:stop:step (using colons)
         // This handles: [:], [start:], [:stop], [start:stop], [start:stop:step], [::step]
         // We need to look ahead to see if there's a colon BEFORE any ..
-        
+
         // First, let's see what tokens are inside the brackets
         let mut pos = self.current;
         let mut found_dotdot = false;
         let mut found_colon_before_dotdot = false;
-        
+
         while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket) {
             if matches!(self.tokens[pos].0, Token::DotDot) {
                 found_dotdot = true;
@@ -1136,7 +1196,7 @@ impl Parser {
             }
             pos += 1;
         }
-        
+
         // Also check if we're currently at a colon (for cases like [:3] or [5:])
         let at_colon_now = self.check(&Token::Colon);
 
@@ -1145,28 +1205,28 @@ impl Parser {
         if found_colon_before_dotdot || at_colon_now {
             // Python-style slice with colons
             // Format: [start:stop:step] where any part can be omitted
-            
+
             let mut start_val = None;
             let mut stop_val = None;
             let mut step_val = None;
-            
+
             // Parse first part (before first colon or before closing bracket)
             if !self.check(&Token::Colon) && !self.check(&Token::RightBracket) {
                 // There's a value before the first colon
                 start_val = Some(Box::new(self.expression()?));
             }
-            
+
             // Expect first colon
             if !self.match_token(&Token::Colon) {
                 // No colon found, this shouldn't happen if we got here
                 return Err(self.error("Expected ':' in slice".to_string()));
             }
-            
+
             // Parse second part (between first and second colon, or after second colon)
             if !self.check(&Token::Colon) && !self.check(&Token::RightBracket) {
                 // There's a value here - but is it stop or step?
                 let val = self.expression()?;
-                
+
                 if self.check(&Token::Colon) {
                     // There's another colon, so this is the stop value
                     stop_val = Some(Box::new(val));
@@ -1178,7 +1238,7 @@ impl Parser {
                     stop_val = Some(Box::new(val));
                 }
             }
-            
+
             // Check for second colon (for step)
             if self.match_token(&Token::Colon) {
                 // Parse step value
@@ -1186,10 +1246,10 @@ impl Parser {
                     step_val = Some(Box::new(self.expression()?));
                 }
             }
-            
+
             while self.match_token(&Token::Newline) {}
             self.consume(Token::RightBracket, "Expected ']' after slice")?;
-            
+
             return Ok(Expr::Slice {
                 object: Box::new(object),
                 from: start_val,
@@ -1221,7 +1281,10 @@ impl Parser {
         // Compatibility: tests expect `matrix[0][1]` to nest with the *last* index inside.
         // That is, the second bracket becomes the inner `Index`.
         match object {
-            Expr::Index { object: inner_object, index: inner_index } => Ok(Expr::Index {
+            Expr::Index {
+                object: inner_object,
+                index: inner_index,
+            } => Ok(Expr::Index {
                 object: Box::new(Expr::Index {
                     object: inner_object,
                     index: Box::new(expr),
@@ -1237,23 +1300,27 @@ impl Parser {
 
     fn parse_call_args(&mut self) -> ParseResult<Vec<crate::ast::Argument>> {
         let mut args = Vec::new();
-        
+
         if !self.check(&Token::RightParen) {
             while self.match_token(&Token::Newline) {}
             loop {
                 // Check for keyword argument (identifier followed by =)
                 if let Token::Identifier(_name) = &self.peek() {
-                    if self.peek_ahead(1).map(|t| matches!(t, Token::Equal)).unwrap_or(false) {
+                    if self
+                        .peek_ahead(1)
+                        .map(|t| matches!(t, Token::Equal))
+                        .unwrap_or(false)
+                    {
                         // This is a keyword argument
                         let param_name = if let Token::Identifier(name) = self.advance() {
                             name
                         } else {
                             unreachable!()
                         };
-                        
+
                         self.consume(Token::Equal, "Expected '=' after parameter name")?;
                         let value = self.expression()?;
-                        
+
                         args.push(crate::ast::Argument::Keyword {
                             name: param_name,
                             value,
@@ -1266,14 +1333,14 @@ impl Parser {
                     // This is a positional argument
                     args.push(crate::ast::Argument::Positional(self.expression()?));
                 }
-                
+
                 if !self.match_token(&Token::Comma) {
                     break;
                 }
                 while self.match_token(&Token::Newline) {}
             }
         }
-        
+
         while self.match_token(&Token::Newline) {}
         self.consume(Token::RightParen, "Expected ')' after arguments")?;
         Ok(args)
@@ -1281,7 +1348,7 @@ impl Parser {
 
     fn finish_call(&mut self, callee: Expr) -> ParseResult<Expr> {
         let args = self.parse_call_args()?;
-        
+
         let call = Expr::Call {
             callee: Box::new(callee),
             args,
@@ -1307,7 +1374,7 @@ impl Parser {
             other => Ok(other),
         }
     }
-    
+
     fn primary(&mut self) -> ParseResult<Expr> {
         match self.advance() {
             Token::Match => self.match_expression(),
@@ -1333,10 +1400,11 @@ impl Parser {
                 // Look ahead to see if we have 'for' keyword after first expression
                 let mut pos = self.current;
                 let mut found_for = false;
-                
+
                 // Skip first expression
                 // Allow newlines so `[` / `expr` on separate lines is not mistaken for a list comprehension
-                while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket) {
+                while pos < self.tokens.len() && !matches!(self.tokens[pos].0, Token::RightBracket)
+                {
                     if matches!(self.tokens[pos].0, Token::For) {
                         found_for = true;
                         break;
@@ -1347,36 +1415,39 @@ impl Parser {
                     }
                     pos += 1;
                 }
-                
+
                 if found_for {
                     // Parse list comprehension
                     let expr = self.expression()?;
-                    
+
                     // Expect 'for' keyword
                     self.consume(Token::For, "Expected 'for' in list comprehension")?;
-                    
+
                     // Expect variable name
                     let var = if let Token::Identifier(name) = self.advance() {
                         name
                     } else {
                         return Err(self.error("Expected variable name after 'for'".to_string()));
                     };
-                    
+
                     // Expect 'in' keyword
-                    self.consume(Token::In, "Expected 'in' after variable in list comprehension")?;
-                    
+                    self.consume(
+                        Token::In,
+                        "Expected 'in' after variable in list comprehension",
+                    )?;
+
                     // Parse iterable
                     let iterable = self.expression()?;
-                    
+
                     // Optional 'if' condition
                     let condition = if self.match_token(&Token::If) {
                         Some(Box::new(self.expression()?))
                     } else {
                         None
                     };
-                    
+
                     self.consume(Token::RightBracket, "Expected ']' after list comprehension")?;
-                    
+
                     return Ok(Expr::ListComprehension {
                         expr: Box::new(expr),
                         var,
@@ -1384,7 +1455,7 @@ impl Parser {
                         condition,
                     });
                 }
-                
+
                 // Regular array
                 let mut elements = Vec::new();
 
@@ -1412,7 +1483,7 @@ impl Parser {
 
                 self.consume(Token::RightBracket, "Expected ']' after array elements")?;
                 Ok(Expr::Array(elements))
-            },
+            }
             Token::LeftBracePipe => {
                 let mut elements = Vec::new();
 
@@ -1426,7 +1497,8 @@ impl Parser {
                         while self.match_token(&Token::Newline) {}
                         if self.match_token(&Token::Comma) {
                             while self.match_token(&Token::Newline) {}
-                            if self.check(&Token::RightPipeBrace) || self.check(&Token::RightBrace) {
+                            if self.check(&Token::RightPipeBrace) || self.check(&Token::RightBrace)
+                            {
                                 break;
                             }
                         } else {
@@ -1447,7 +1519,7 @@ impl Parser {
             }
             Token::LeftBrace => {
                 let mut pairs = Vec::new();
-                
+
                 // Allow optional newlines right after '{'
                 while self.match_token(&Token::Newline) {}
 
@@ -1461,14 +1533,16 @@ impl Parser {
                             Token::Identifier(name) => name,
                             Token::String(s) => s,
                             _ => {
-                                return Err(self.error("Expected string or identifier as dictionary key".to_string()));
+                                return Err(self.error(
+                                    "Expected string or identifier as dictionary key".to_string(),
+                                ));
                             }
                         };
-                        
+
                         self.consume(Token::Colon, "Expected ':' after dictionary key")?;
                         let value = self.expression()?;
                         pairs.push((key, value));
-                        
+
                         // Optional trailing comma and/or newlines
                         while self.match_token(&Token::Newline) {}
 
@@ -1483,16 +1557,17 @@ impl Parser {
                         }
                     }
                 }
-                
+
                 while self.match_token(&Token::Newline) {}
                 self.consume(Token::RightBrace, "Expected '}' after dictionary elements")?;
                 Ok(Expr::Dictionary(pairs))
             }
             Token::Invalid(ch) => Err(self.error(format!("Unexpected character: {}", ch))),
+            Token::UnterminatedString => Err(self.error("Unterminated string literal".to_string())),
             token => Err(self.error(format!("Unexpected token: {:?}", token))),
         }
     }
-    
+
     // Helper methods
     fn lambda_expression(&mut self) -> ParseResult<Expr> {
         self.consume(Token::LeftParen, "Expected '(' after 'fn'")?;
@@ -1514,7 +1589,7 @@ impl Parser {
 
         let body = if self.match_token(&Token::LeftBrace) {
             let mut statements = Vec::new();
-            
+
             while !self.check(&Token::RightBrace) && !self.is_at_end() {
                 // Skip newlines within blocks
                 if self.match_token(&Token::Newline) {
@@ -1522,7 +1597,7 @@ impl Parser {
                 }
                 statements.push(self.statement()?);
             }
-            
+
             self.consume(Token::RightBrace, "Expected '}' after lambda block")?;
             crate::ast::LambdaBody::Block(statements)
         } else {
@@ -1567,35 +1642,35 @@ impl Parser {
 
         Ok(Expr::Lambda { params, body })
     }
-    
+
     fn conditional_expression(&mut self) -> ParseResult<Expr> {
         // We already consumed 'if', now parse condition
         let condition = self.expression()?;
-        
+
         // Optional 'then' keyword
         self.match_token(&Token::Then);
-        
+
         // Skip optional newlines
         while self.match_token(&Token::Newline) {}
-        
+
         // Parse then expression
         let then_expr = self.expression()?;
 
         while self.match_token(&Token::Newline) {}
-        
+
         // Parse elseif branches
         let mut elseif_branches = Vec::new();
         while self.match_token(&Token::ElseIf) {
             let elseif_condition = self.expression()?;
-            
+
             // Optional 'then' keyword
             self.match_token(&Token::Then);
-            
+
             // Skip optional newlines
             while self.match_token(&Token::Newline) {}
-            
+
             let elseif_then_expr = self.expression()?;
-            
+
             elseif_branches.push(crate::ast::ConditionalElseIfBranch {
                 condition: elseif_condition,
                 then_expr: elseif_then_expr,
@@ -1605,7 +1680,7 @@ impl Parser {
         }
 
         while self.match_token(&Token::Newline) {}
-        
+
         // Parse else branch if present
         let else_expr = if self.match_token(&Token::Else) {
             // Skip optional newlines
@@ -1614,12 +1689,12 @@ impl Parser {
         } else {
             None
         };
-        
+
         while self.match_token(&Token::Newline) {}
 
         // Consume 'end'
         self.consume(Token::End, "Expected 'end' after conditional expression")?;
-        
+
         Ok(Expr::ConditionalExpr {
             condition: Box::new(condition),
             then_expr: Box::new(then_expr),
@@ -1627,61 +1702,61 @@ impl Parser {
             else_expr,
         })
     }
-    
+
     fn struct_init_expression(&mut self) -> ParseResult<Expr> {
         let struct_name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
             return Err(self.error("Expected struct name after 'new'".to_string()));
         };
-        
+
         self.consume(Token::LeftBrace, "Expected '{' after struct name")?;
-        
+
         // Skip optional newlines
         while self.match_token(&Token::Newline) {}
-        
+
         let mut fields = Vec::new();
         if !self.check(&Token::RightBrace) {
             loop {
                 // Skip optional newlines before field
                 while self.match_token(&Token::Newline) {}
-                
+
                 let field_name = if let Token::Identifier(name) = self.advance() {
                     name
                 } else {
                     return Err(self.error("Expected field name".to_string()));
                 };
-                
+
                 self.consume(Token::Colon, "Expected ':' after field name")?;
                 let field_value = self.expression()?;
-                
+
                 fields.push((field_name, field_value));
-                
+
                 // Skip optional newlines after field value
                 while self.match_token(&Token::Newline) {}
-                
+
                 if !self.match_token(&Token::Comma) {
                     // Skip optional newlines before checking for closing brace
                     while self.match_token(&Token::Newline) {}
                     break;
                 }
-                
+
                 // Skip optional newlines after comma
                 while self.match_token(&Token::Newline) {}
             }
         }
-        
+
         // Skip optional newlines before closing brace
         while self.match_token(&Token::Newline) {}
-        
+
         self.consume(Token::RightBrace, "Expected '}' after struct fields")?;
-        
+
         Ok(Expr::StructInit {
             struct_name,
             fields,
         })
     }
-    
+
     fn match_expression(&mut self) -> ParseResult<Expr> {
         let expr = self.expression()?;
         self.match_arms_and_end(expr)
@@ -1694,25 +1769,25 @@ impl Parser {
     fn match_arms_and_end(&mut self, expr: Expr) -> ParseResult<Expr> {
         // Skip optional newlines before match arms
         while self.match_token(&Token::Newline) {}
-        
+
         let mut arms = Vec::new();
-        
+
         while !self.check(&Token::End) && !self.is_at_end() {
             // Skip newlines between arms
             if self.match_token(&Token::Newline) {
                 continue;
             }
-            
+
             // Parse one or more comma-separated patterns (any of them matching fires this arm)
             let mut patterns = vec![self.parse_pattern()?];
             while self.match_token(&Token::Comma) {
                 while self.match_token(&Token::Newline) {}
                 patterns.push(self.parse_pattern()?);
             }
-            
+
             // Expect arrow
             self.consume(Token::Arrow, "Expected '->' after match pattern")?;
-            
+
             // Body: if the arrow is immediately followed by a newline, it's a block body
             // (one or more statements, terminated by the next arm or `end`); otherwise
             // it's a single expression on the same line.
@@ -1735,31 +1810,40 @@ impl Parser {
             } else if self.check(&Token::Print) {
                 let stmt = self.print_statement()?;
                 match stmt {
-                    Stmt::Print { values, sep, end } => crate::ast::MatchArmBody::Expression(Expr::Print {
-                        values,
-                        sep: sep.map(Box::new),
-                        end: end.map(Box::new),
-                    }),
-                    _ => return Err(self.error("Expected print statement in match arm".to_string())),
+                    Stmt::Print { values, sep, end } => {
+                        crate::ast::MatchArmBody::Expression(Expr::Print {
+                            values,
+                            sep: sep.map(Box::new),
+                            end: end.map(Box::new),
+                        })
+                    }
+                    _ => {
+                        return Err(self.error("Expected print statement in match arm".to_string()))
+                    }
                 }
             } else {
                 crate::ast::MatchArmBody::Expression(self.expression()?)
             };
-            
+
             arms.push(crate::ast::MatchArm { patterns, body });
         }
-        
+
         self.consume(Token::End, "Expected 'end' after match expression")?;
 
         // The wildcard, if present, must be the final arm -- anything past it would be
         // unreachable, and its whole point is to be the catch-all.
         for (i, arm) in arms.iter().enumerate() {
-            let has_wildcard = arm.patterns.iter().any(|p| matches!(p, crate::ast::Pattern::Wildcard));
+            let has_wildcard = arm
+                .patterns
+                .iter()
+                .any(|p| matches!(p, crate::ast::Pattern::Wildcard));
             if has_wildcard && i != arms.len() - 1 {
-                return Err(self.error("Wildcard pattern '_' must be the last arm in a match".to_string()));
+                return Err(
+                    self.error("Wildcard pattern '_' must be the last arm in a match".to_string())
+                );
             }
         }
-        
+
         Ok(Expr::Match {
             expr: Box::new(expr),
             arms,
@@ -1788,7 +1872,7 @@ impl Parser {
         self.current = save;
         matched
     }
-    
+
     fn parse_pattern(&mut self) -> ParseResult<crate::ast::Pattern> {
         // Relational pattern: `> expr`, `< expr`, `>= expr`, `<= expr`, `== expr`, `!= expr`.
         // The comparison is against the match subject, filled in at evaluation time
@@ -1828,7 +1912,9 @@ impl Parser {
                         crate::ast::Pattern::Identifier(name)
                     }
                 }
-                token => return Err(self.error(format!("Unexpected token in pattern: {:?}", token))),
+                token => {
+                    return Err(self.error(format!("Unexpected token in pattern: {:?}", token)))
+                }
             }
         };
 
@@ -1844,7 +1930,7 @@ impl Parser {
 
         Ok(base)
     }
-    
+
     fn match_equality_op(&mut self) -> Option<BinaryOp> {
         if self.match_token(&Token::EqualEqual) {
             Some(BinaryOp::Equal)
@@ -1854,7 +1940,7 @@ impl Parser {
             None
         }
     }
-    
+
     fn match_comparison_op(&mut self) -> Option<BinaryOp> {
         if self.match_token(&Token::Greater) {
             Some(BinaryOp::Greater)
@@ -1870,7 +1956,7 @@ impl Parser {
             None
         }
     }
-    
+
     fn match_term_op(&mut self) -> Option<BinaryOp> {
         if self.match_token(&Token::Minus) {
             Some(BinaryOp::Subtract)
@@ -1880,7 +1966,7 @@ impl Parser {
             None
         }
     }
-    
+
     fn match_factor_op(&mut self) -> Option<BinaryOp> {
         if self.match_token(&Token::Slash) {
             Some(BinaryOp::Divide)
@@ -1892,7 +1978,7 @@ impl Parser {
             None
         }
     }
-    
+
     fn match_unary_op(&mut self) -> Option<UnaryOp> {
         if self.match_token(&Token::Bang) {
             Some(UnaryOp::Not)
@@ -1902,7 +1988,7 @@ impl Parser {
             None
         }
     }
-    
+
     fn match_token(&mut self, token: &Token) -> bool {
         if self.check(token) {
             self.advance();
@@ -1911,7 +1997,7 @@ impl Parser {
             false
         }
     }
-    
+
     fn check(&self, token: &Token) -> bool {
         if self.is_at_end() {
             false
@@ -1919,30 +2005,32 @@ impl Parser {
             std::mem::discriminant(&self.peek()) == std::mem::discriminant(token)
         }
     }
-    
+
     fn advance(&mut self) -> Token {
         if !self.is_at_end() {
             self.current += 1;
         }
         self.previous()
     }
-    
+
     fn is_at_end(&self) -> bool {
         matches!(self.peek(), Token::Eof)
     }
-    
+
     fn peek(&self) -> Token {
         self.tokens[self.current].0.clone()
     }
-    
+
     fn peek_ahead(&self, offset: usize) -> Option<Token> {
-        self.tokens.get(self.current + offset).map(|(token, _)| token.clone())
+        self.tokens
+            .get(self.current + offset)
+            .map(|(token, _)| token.clone())
     }
-    
+
     fn previous(&self) -> Token {
         self.tokens[self.current - 1].0.clone()
     }
-    
+
     fn current_position(&self) -> crate::lexer::SourcePosition {
         if self.current < self.tokens.len() {
             self.tokens[self.current].1.clone()
@@ -1952,7 +2040,7 @@ impl Parser {
             crate::lexer::SourcePosition::new(1, 1, 0)
         }
     }
-    
+
     fn error(&self, message: String) -> ParseError {
         let pos = self.current_position();
         ParseError {
@@ -1961,7 +2049,7 @@ impl Parser {
             column: Some(pos.column),
         }
     }
-    
+
     fn consume(&mut self, token: Token, message: &str) -> ParseResult<Token> {
         if self.check(&token) {
             Ok(self.advance())

@@ -35,6 +35,34 @@ Run a file:
 ./target/release/ject hello.ject
 ```
 
+Or create and run a Ject package:
+
+```bash
+ject new hello
+cd hello
+ject run
+ject check
+ject test
+```
+
+Create a mixed Ject/Rust library with the same executable:
+
+```bash
+ject new my_native_lib --native
+cd my_native_lib
+ject build
+```
+
+The generated Ject facade imports its private `@native/my_native_lib` backend. Consumers
+only import `"my_native_lib"`; local dependencies use
+`my_native_lib = { path = "../my_native_lib" }` in `Ject.toml`.
+
+Packages use `Ject.toml` and `src/main.ject` (or `src/lib.ject` for `ject new --lib`).
+Install a local source or mixed library with `ject add name --path ../name`, then use
+`ject install` to lock the transitive graph and build native components.
+The package/native-extension architecture and delivery plan are described in
+[docs/PACKAGES.md](docs/PACKAGES.md).
+
 Parse and lint only (does **not** execute code — used by the VS Code extension):
 
 ```bash
@@ -288,7 +316,7 @@ let output = exec("ls")
 let home = env("HOME")
 ```
 
-The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `gui` modules extend this further. See [DOCS.md](DOCS.md) for the full reference.
+The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `jgui` modules extend this further. See [DOCS.md](DOCS.md) for the full reference.
 
 ---
 
@@ -306,7 +334,7 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `gui` modules
 - `try`/`catch`/`throw` error handling (throw any value, not just strings)
 - Built-in math, string, array, I/O, JSON
 - NumPy-like numerical arrays (Rust-backed)
-- Native GUI module
+- Native JGUI module
 - ANSI colors and table formatting (`color`, `table` -- pure Ject, no native code)
 - Smarter REPL: auto-prints expression results, multi-line input for unfinished blocks, Ctrl+C interrupts a running script (not just line input)
 
@@ -325,9 +353,10 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `gui` modules
 - [x] String interpolation
 - [x] REPL with history
 - [x] VS Code extension
-- [ ] Package manager
+- [x] Local package manager (`add --path`, `remove`, `install`, lockfiles, native builds)
+- [ ] Remote package registry and publishing
 - [ ] Performance optimizations (array/dict value semantics still copy-heavy)
-- [ ] Source-location tracking for runtime errors (currently parse/lint errors get precise line/column; runtime errors don't yet)
+- [ ] AST source spans and runtime stack traces (runtime errors have stable codes and help, but not expression-level locations yet)
 
 ---
 

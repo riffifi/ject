@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::interpreter::Interpreter;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
-    use crate::interpreter::Interpreter;
 
     fn run(input: &str) -> Result<(), String> {
         let mut lexer = Lexer::new(input);
@@ -10,10 +10,10 @@ mod tests {
         let tokens: Vec<_> = located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = Parser::new_simple(tokens);
         let statements = parser.parse().map_err(|e| e.message)?;
-        
+
         let mut interpreter = Interpreter::new();
         interpreter.interpret(&statements).map_err(|e| e.message)?;
-        
+
         Ok(())
     }
 
@@ -774,7 +774,11 @@ assert(text == "hello world", "append_file should append content")
     #[test]
     fn test_inject_system_module_includes_exec() {
         let m = crate::stdlib::inject_module_file_builtins("system");
-        assert!(m.contains_key("exec"), "missing exec: {:?}", m.keys().collect::<Vec<_>>());
+        assert!(
+            m.contains_key("exec"),
+            "missing exec: {:?}",
+            m.keys().collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -788,11 +792,31 @@ assert(type_of(s.exec) == "builtin", "module should export exec builtin")
 
     #[test]
     fn test_native_only_module_flags() {
-        assert!(crate::stdlib::is_native_only_module("numpy"));
-        assert!(crate::stdlib::is_native_only_module("gui"));
+        assert!(!crate::stdlib::is_native_only_module("jnum"));
+        assert!(!crate::stdlib::is_native_only_module("jgui"));
+        assert!(crate::stdlib::is_native_only_module("@native/jnum"));
+        assert!(crate::stdlib::is_native_only_module("@native/jgui"));
         assert!(crate::stdlib::is_native_only_module("base"));
         assert!(!crate::stdlib::is_native_only_module("math"));
         assert!(!crate::stdlib::is_native_only_module("string"));
+    }
+
+    #[test]
+    fn test_mixed_builtin_facades() {
+        let result = run(r#"
+import "jnum" as numbers
+assert(numbers.sum(numbers.array([1, 2, 3])) == 6.0, "jnum facade")
+import "jgui" as gui
+assert(type_of(gui.message) == "function", "jgui Ject facade")
+"#);
+        assert!(result.is_ok(), "{:?}", result);
+    }
+
+    #[test]
+    fn test_private_native_backend_cannot_be_imported_directly() {
+        let result = run("import \"@native/jnum\" as implementation");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("private"));
     }
 
     #[test]
@@ -817,7 +841,7 @@ assert(s.capitalize("hello") == "Hello", "capitalize from stdlib/string.ject")
     fn test_introspect_emits_json() {
         let j = crate::stdlib::introspect_native_kernel_json();
         assert!(j.contains("native_modules"));
-        assert!(j.contains("numpy"));
+        assert!(j.contains("jnum"));
         assert!(j.contains("corlib"));
     }
 }

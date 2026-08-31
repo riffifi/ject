@@ -1,0 +1,13 @@
+[package]
+name = "native_double"
+version = "0.1.0"
+edition = "2026"
+entry = "src/lib.ject"
+
+[native]
+language = "rust"
+path = "native"
+abi = "ject-native-1"
+library = "native_double"
+
+[dependencies]

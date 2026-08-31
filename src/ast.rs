@@ -1,25 +1,16 @@
-use std::fmt;
 use crate::lexer::InterpolationPart;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssignTarget {
     /// Simple variable: x = value
     Identifier(String),
     /// Array/dictionary index: arr[i] = value (object must be identifier)
-    Index {
-        object: String,
-        index: Box<Expr>,
-    },
+    Index { object: String, index: Box<Expr> },
     /// Nested indices: `grid[y][x] = v` (root must be an identifier)
-    IndexChain {
-        object: String,
-        indices: Vec<Expr>,
-    },
+    IndexChain { object: String, indices: Vec<Expr> },
     /// Struct/dictionary field: obj.field = value (object must be identifier)
-    Field {
-        object: String,
-        field: String,
-    },
+    Field { object: String, field: String },
 }
 
 /// Flatten `grid[y][x]` into `( "grid", [y, x] )` for assignment targets.
@@ -105,18 +96,18 @@ pub enum Expr {
     },
     Increment {
         target: Box<Expr>,
-        prefix: bool,  // true for ++x, false for x++
+        prefix: bool, // true for ++x, false for x++
     },
     Decrement {
         target: Box<Expr>,
-        prefix: bool,  // true for --x, false for x--
+        prefix: bool, // true for --x, false for x--
     },
     Call {
         callee: Box<Expr>,
         args: Vec<Argument>,
     },
     Array(Vec<Expr>),
-    UniqueArray(Vec<Expr>),  // {|1, 2, 3|} - array with unique values only
+    UniqueArray(Vec<Expr>), // {|1, 2, 3|} - array with unique values only
     ListComprehension {
         expr: Box<Expr>,
         var: String,
@@ -341,7 +332,11 @@ impl fmt::Display for Expr {
             Expr::Bool(b) => write!(f, "{}", b),
             Expr::Nil => write!(f, "nil"),
             Expr::Identifier(name) => write!(f, "{}", name),
-            Expr::Binary { left, operator, right } => {
+            Expr::Binary {
+                left,
+                operator,
+                right,
+            } => {
                 write!(f, "({} {} {})", left, operator, right)
             }
             Expr::Unary { operator, operand } => {
@@ -364,7 +359,9 @@ impl fmt::Display for Expr {
             Expr::Call { callee, args } => {
                 write!(f, "{}(", callee)?;
                 for (i, arg) in args.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ")")
@@ -372,7 +369,9 @@ impl fmt::Display for Expr {
             Expr::Array(elements) => {
                 write!(f, "[")?;
                 for (i, elem) in elements.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", elem)?;
                 }
                 write!(f, "]")
@@ -380,19 +379,31 @@ impl fmt::Display for Expr {
             Expr::UniqueArray(elements) => {
                 write!(f, "{{|")?;
                 for (i, elem) in elements.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", elem)?;
                 }
                 write!(f, "|}}")
             }
-            Expr::ListComprehension { expr, var, iterable, condition } => {
+            Expr::ListComprehension {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 write!(f, "[{} for {} in {}", expr, var, iterable)?;
                 if let Some(cond) = condition {
                     write!(f, " if {}", cond)?;
                 }
                 write!(f, "]")
             }
-            Expr::Generator { expr, var, iterable, condition } => {
+            Expr::Generator {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 write!(f, "<{} for {} in {}", expr, var, iterable)?;
                 if let Some(cond) = condition {
                     write!(f, " if {}", cond)?;
@@ -402,7 +413,9 @@ impl fmt::Display for Expr {
             Expr::Dictionary(pairs) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in pairs.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}: {}", key, value)?;
                 }
                 write!(f, "}}")
@@ -410,7 +423,12 @@ impl fmt::Display for Expr {
             Expr::Index { object, index } => {
                 write!(f, "{}[{}]", object, index)
             }
-            Expr::Slice { object, from, to, step } => {
+            Expr::Slice {
+                object,
+                from,
+                to,
+                step,
+            } => {
                 write!(f, "{}[", object)?;
                 let mut parts = Vec::new();
                 if let Some(from_expr) = from {
@@ -431,24 +449,29 @@ impl fmt::Display for Expr {
             Expr::StructAccess { object, field } => {
                 write!(f, "{}.{}", object, field)
             }
-            Expr::StructInit { struct_name, fields } => {
+            Expr::StructInit {
+                struct_name,
+                fields,
+            } => {
                 write!(f, "new {} {{", struct_name)?;
                 for (i, (key, value)) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}: {}", key, value)?;
                 }
                 write!(f, "}}")
             }
-            Expr::Range { start, end, step } => {
-                match step {
-                    Some(step) => write!(f, "{}..{}:{}", start, end, step),
-                    None => write!(f, "{}..{}", start, end),
-                }
-            }
+            Expr::Range { start, end, step } => match step {
+                Some(step) => write!(f, "{}..{}:{}", start, end, step),
+                None => write!(f, "{}..{}", start, end),
+            },
             Expr::Lambda { params, body } => {
                 write!(f, "fn(")?;
                 for (i, param) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")?;
@@ -460,12 +483,19 @@ impl fmt::Display for Expr {
             Expr::Match { expr, arms } => {
                 write!(f, "match {} {{ ", expr)?;
                 for (i, arm) in arms.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{:?} => {:?}", arm.patterns, arm.body)?;
                 }
                 write!(f, " }}")
             }
-            Expr::ConditionalExpr { condition, then_expr, elseif_branches, else_expr } => {
+            Expr::ConditionalExpr {
+                condition,
+                then_expr,
+                elseif_branches,
+                else_expr,
+            } => {
                 write!(f, "if {} then {}", condition, then_expr)?;
                 for branch in elseif_branches {
                     write!(f, " elseif {} then {}", branch.condition, branch.then_expr)?;
@@ -479,7 +509,9 @@ impl fmt::Display for Expr {
                 // Mirror statement formatting for readability.
                 write!(f, "print ")?;
                 for (i, val) in values.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", val)?;
                 }
                 if let Some(sep) = sep {
@@ -550,24 +582,28 @@ impl fmt::Display for Stmt {
         match self {
             Stmt::Expression(expr) => write!(f, "{}", expr),
             Stmt::Let { name, value } => write!(f, "let {} = {}", name, value),
-            Stmt::Assign { target, value } => {
-                match target {
-                    AssignTarget::Identifier(name) => write!(f, "{} = {}", name, value),
-                    AssignTarget::Index { object, index } => write!(f, "{}[{}] = {}", object, index, value),
-                    AssignTarget::IndexChain { object, indices } => {
-                        write!(f, "{}", object)?;
-                        for ix in indices {
-                            write!(f, "[{}]", ix)?;
-                        }
-                        write!(f, " = {}", value)
-                    }
-                    AssignTarget::Field { object, field } => write!(f, "{}.{} = {}", object, field, value),
+            Stmt::Assign { target, value } => match target {
+                AssignTarget::Identifier(name) => write!(f, "{} = {}", name, value),
+                AssignTarget::Index { object, index } => {
+                    write!(f, "{}[{}] = {}", object, index, value)
                 }
-            }
+                AssignTarget::IndexChain { object, indices } => {
+                    write!(f, "{}", object)?;
+                    for ix in indices {
+                        write!(f, "[{}]", ix)?;
+                    }
+                    write!(f, " = {}", value)
+                }
+                AssignTarget::Field { object, field } => {
+                    write!(f, "{}.{} = {}", object, field, value)
+                }
+            },
             Stmt::Function { name, params, .. } => {
                 write!(f, "fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")
@@ -575,12 +611,18 @@ impl fmt::Display for Stmt {
             Stmt::If { condition, .. } => write!(f, "if {}", condition),
             Stmt::While { condition, .. } => write!(f, "while {}", condition),
             Stmt::For { var, iterable, .. } => write!(f, "for {} in {}", var, iterable),
-            Stmt::Import { module_path, items, alias } => {
+            Stmt::Import {
+                module_path,
+                items,
+                alias,
+            } => {
                 write!(f, "import")?;
                 if let Some(items) = items {
                     write!(f, " {{")?;
                     for (i, item) in items.iter().enumerate() {
-                        if i > 0 { write!(f, ", ")?; }
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
                         write!(f, "{}", item)?;
                     }
                     write!(f, "}} from")?;
@@ -595,7 +637,9 @@ impl fmt::Display for Stmt {
             Stmt::ExportFunction { name, params, .. } => {
                 write!(f, "export fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")
@@ -605,25 +649,39 @@ impl fmt::Display for Stmt {
             Stmt::Print { values, sep, end } => {
                 write!(f, "print(")?;
                 for (i, val) in values.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", val)?;
                 }
                 if sep.is_some() || end.is_some() {
-                    if !values.is_empty() { write!(f, ", ")?; }
-                    if let Some(s) = sep { write!(f, "sep={}, ", s)?; }
-                    if let Some(e) = end { write!(f, "end={}", e)?; }
+                    if !values.is_empty() {
+                        write!(f, ", ")?;
+                    }
+                    if let Some(s) = sep {
+                        write!(f, "sep={}, ", s)?;
+                    }
+                    if let Some(e) = end {
+                        write!(f, "end={}", e)?;
+                    }
                 }
                 write!(f, ")")
-            },
+            }
             Stmt::Struct { name, fields } => {
                 write!(f, "struct {} {{", name)?;
                 for (i, field) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", field)?;
                 }
                 write!(f, "}}")
             }
-            Stmt::Try { body: _, catch_var, catch_body: _ } => {
+            Stmt::Try {
+                body: _,
+                catch_var,
+                catch_body: _,
+            } => {
                 write!(f, "try")?;
                 if let Some(var) = catch_var {
                     write!(f, " catch {}", var)?;

@@ -1,0 +1,54 @@
+# Public JGUI facade. Only this file is part of the user-facing API; operating
+# system windows and rendering remain in the private Rust backend.
+import "@native/jgui" as native
+
+export fn window(title, width = 640, height = 480)
+    assert(type_of(title) == "string", "window title must be a string")
+    assert(width > 0 and height > 0, "window dimensions must be positive")
+    return native.window(title, width, height)
+end
+
+export fn label(app, text)
+    assert(type_of(text) == "string", "label text must be a string")
+    return native.label(app, text)
+end
+
+export fn separator(app)
+    return native.separator(app)
+end
+
+export fn button(app, id, text)
+    assert(type_of(id) == "string", "button id must be a string")
+    assert(type_of(text) == "string", "button text must be a string")
+    return native.button(app, id, text)
+end
+
+export fn input(app, id, label_text, initial = "")
+    assert(type_of(id) == "string", "input id must be a string")
+    assert(type_of(label_text) == "string", "input label must be a string")
+    assert(type_of(initial) == "string", "input initial value must be a string")
+    return native.input(app, id, label_text, initial)
+end
+
+export fn run(app)
+    return native.run(app)
+end
+
+# Higher-level components stay in Ject. Native code only owns the window and
+# renderer, so packages can add components without changing or recompiling it.
+export fn message(title, text, width = 420, height = 180)
+    let app = window(title, width, height)
+    label(app, text)
+    separator(app)
+    button(app, "ok", "OK")
+    return run(app)
+end
+
+export fn confirm(title, question, width = 420, height = 200)
+    let app = window(title, width, height)
+    label(app, question)
+    separator(app)
+    button(app, "yes", "Yes")
+    button(app, "no", "No")
+    return run(app)
+end

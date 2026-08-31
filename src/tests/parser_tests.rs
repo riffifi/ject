@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::ast::{BinaryOp, Expr, Pattern, Stmt, UnaryOp};
     use crate::lexer::Lexer;
     use crate::parser::Parser;
-    use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp, Pattern};
 
     fn parse(input: &str) -> Result<Vec<Stmt>, String> {
         let mut lexer = Lexer::new(input);
@@ -211,7 +211,12 @@ if true then 1 else 2 end";
         // 1 + 2 * 3 should be parsed as 1 + (2 * 3)
         let stmts = parse("1 + 2 * 3").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Expression(Expr::Binary { left, operator, right }) = &stmts[0] {
+        if let Stmt::Expression(Expr::Binary {
+            left,
+            operator,
+            right,
+        }) = &stmts[0]
+        {
             assert_eq!(operator, &BinaryOp::Add);
             // Left should be 1
             if let Expr::Integer(n) = **left {
@@ -220,7 +225,12 @@ if true then 1 else 2 end";
                 panic!("Expected left to be 1");
             }
             // Right should be 2 * 3
-            if let Expr::Binary { left: inner_left, operator: inner_op, right: inner_right } = &**right {
+            if let Expr::Binary {
+                left: inner_left,
+                operator: inner_op,
+                right: inner_right,
+            } = &**right
+            {
                 assert_eq!(inner_op, &BinaryOp::Multiply);
                 if let Expr::Integer(n) = **inner_left {
                     assert_eq!(n, 2);
@@ -241,10 +251,18 @@ if true then 1 else 2 end";
         // (1 + 2) * 3
         let stmts = parse("(1 + 2) * 3").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Expression(Expr::Binary { left, operator, right }) = &stmts[0] {
+        if let Stmt::Expression(Expr::Binary {
+            left,
+            operator,
+            right,
+        }) = &stmts[0]
+        {
             assert_eq!(operator, &BinaryOp::Multiply);
             // Left should be (1 + 2)
-            if let Expr::Binary { operator: inner_op, .. } = &**left {
+            if let Expr::Binary {
+                operator: inner_op, ..
+            } = &**left
+            {
                 assert_eq!(inner_op, &BinaryOp::Add);
             } else {
                 panic!("Expected left to be addition");
@@ -286,7 +304,10 @@ if true then 1 else 2 end";
         assert_eq!(stmts.len(), 1);
         if let Stmt::Expression(Expr::Unary { operator, operand }) = &stmts[0] {
             assert_eq!(operator, &UnaryOp::Negate);
-            if let Expr::Unary { operator: inner_op, .. } = &**operand {
+            if let Expr::Unary {
+                operator: inner_op, ..
+            } = &**operand
+            {
                 assert_eq!(inner_op, &UnaryOp::Negate);
             } else {
                 panic!("Expected nested Unary");
@@ -403,8 +424,20 @@ if true then 1 else 2 end";
     fn test_if_statement() {
         let stmts = parse("if x > 0 then\n    print \"positive\"\nend").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::If { condition, then_branch, elseif_branches, else_branch } = &stmts[0] {
-            assert!(matches!(condition, Expr::Binary { operator: BinaryOp::Greater, .. }));
+        if let Stmt::If {
+            condition,
+            then_branch,
+            elseif_branches,
+            else_branch,
+        } = &stmts[0]
+        {
+            assert!(matches!(
+                condition,
+                Expr::Binary {
+                    operator: BinaryOp::Greater,
+                    ..
+                }
+            ));
             assert_eq!(then_branch.len(), 1);
             assert!(matches!(then_branch[0], Stmt::Print { .. }));
             assert!(elseif_branches.is_empty());
@@ -416,9 +449,17 @@ if true then 1 else 2 end";
 
     #[test]
     fn test_if_else_statement() {
-        let stmts = parse("if x > 0 then\n    print \"positive\"\nelse\n    print \"negative\"\nend").unwrap();
+        let stmts =
+            parse("if x > 0 then\n    print \"positive\"\nelse\n    print \"negative\"\nend")
+                .unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::If { condition, then_branch, elseif_branches, else_branch } = &stmts[0] {
+        if let Stmt::If {
+            condition,
+            then_branch,
+            elseif_branches,
+            else_branch,
+        } = &stmts[0]
+        {
             assert!(elseif_branches.is_empty());
             assert!(else_branch.is_some());
             let else_body = else_branch.as_ref().unwrap();
@@ -433,7 +474,13 @@ if true then 1 else 2 end";
     fn test_if_elseif_else_statement() {
         let stmts = parse("if x > 0 then\n    print \"positive\"\nelseif x < 0 then\n    print \"negative\"\nelse\n    print \"zero\"\nend").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::If { condition, then_branch, elseif_branches, else_branch } = &stmts[0] {
+        if let Stmt::If {
+            condition,
+            then_branch,
+            elseif_branches,
+            else_branch,
+        } = &stmts[0]
+        {
             assert_eq!(elseif_branches.len(), 1);
             assert!(else_branch.is_some());
         } else {
@@ -446,7 +493,13 @@ if true then 1 else 2 end";
         let stmts = parse("while x < 10 do\n    x = x + 1\nend").unwrap();
         assert_eq!(stmts.len(), 1);
         if let Stmt::While { condition, body } = &stmts[0] {
-            assert!(matches!(condition, Expr::Binary { operator: BinaryOp::Less, .. }));
+            assert!(matches!(
+                condition,
+                Expr::Binary {
+                    operator: BinaryOp::Less,
+                    ..
+                }
+            ));
             assert_eq!(body.len(), 1);
             assert!(matches!(body[0], Stmt::Assign { .. }));
         } else {
@@ -458,7 +511,12 @@ if true then 1 else 2 end";
     fn test_for_statement() {
         let stmts = parse("for i in 1..10 do\n    print i\nend").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::For { var, iterable, body } = &stmts[0] {
+        if let Stmt::For {
+            var,
+            iterable,
+            body,
+        } = &stmts[0]
+        {
             assert_eq!(var, "i");
             assert!(matches!(iterable, Expr::Range { .. }));
             assert_eq!(body.len(), 1);
@@ -472,7 +530,12 @@ if true then 1 else 2 end";
     fn test_for_in_array() {
         let stmts = parse("for item in [1, 2, 3] do\n    print item\nend").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::For { var, iterable, body } = &stmts[0] {
+        if let Stmt::For {
+            var,
+            iterable,
+            body,
+        } = &stmts[0]
+        {
             assert_eq!(var, "item");
             assert!(matches!(iterable, Expr::Array(_)));
             assert_eq!(body.len(), 1);
@@ -578,7 +641,13 @@ if true then 1 else 2 end";
             assert_eq!(params.len(), 1);
             assert_eq!(params[0], "x");
             if let crate::ast::LambdaBody::Expression(expr) = body {
-                assert!(matches!(&**expr, Expr::Binary { operator: BinaryOp::Multiply, .. }));
+                assert!(matches!(
+                    &**expr,
+                    Expr::Binary {
+                        operator: BinaryOp::Multiply,
+                        ..
+                    }
+                ));
             } else {
                 panic!("Expected Lambda expression body");
             }
@@ -659,7 +728,11 @@ if true then 1 else 2 end";
         assert_eq!(stmts.len(), 1);
         if let Stmt::Expression(Expr::Index { object, index }) = &stmts[0] {
             // object should be another Index expression
-            if let Expr::Index { object: inner_obj, index: inner_idx } = &**object {
+            if let Expr::Index {
+                object: inner_obj,
+                index: inner_idx,
+            } = &**object
+            {
                 if let Expr::Integer(n) = &**inner_idx {
                     assert_eq!(n, &1);
                 }
@@ -769,7 +842,11 @@ if true then 1 else 2 end";
     fn test_struct_init() {
         let stmts = parse("new Point { x: 10, y: 20 }").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Expression(Expr::StructInit { struct_name, fields }) = &stmts[0] {
+        if let Stmt::Expression(Expr::StructInit {
+            struct_name,
+            fields,
+        }) = &stmts[0]
+        {
             assert_eq!(struct_name, "Point");
             assert_eq!(fields.len(), 2);
             assert_eq!(fields[0].0, "x");
@@ -785,7 +862,12 @@ if true then 1 else 2 end";
     fn test_import_statement() {
         let stmts = parse("import \"math\"").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Import { module_path, items, alias } = &stmts[0] {
+        if let Stmt::Import {
+            module_path,
+            items,
+            alias,
+        } = &stmts[0]
+        {
             assert_eq!(module_path, "math");
             assert!(items.is_none());
             assert!(alias.is_none());
@@ -798,7 +880,10 @@ if true then 1 else 2 end";
     fn test_import_with_alias() {
         let stmts = parse("import \"math\" as m").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Import { module_path, alias, .. } = &stmts[0] {
+        if let Stmt::Import {
+            module_path, alias, ..
+        } = &stmts[0]
+        {
             assert_eq!(module_path, "math");
             assert_eq!(alias, &Some("m".to_string()));
         } else {
@@ -810,7 +895,10 @@ if true then 1 else 2 end";
     fn test_selective_import() {
         let stmts = parse("import {PI, sqrt} from \"math\"").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Import { module_path, items, .. } = &stmts[0] {
+        if let Stmt::Import {
+            module_path, items, ..
+        } = &stmts[0]
+        {
             assert_eq!(module_path, "math");
             assert!(items.is_some());
             let items = items.as_ref().unwrap();
@@ -849,19 +937,20 @@ if true then 1 else 2 end";
 
     #[test]
     fn test_match_expression() {
-        let stmts = parse("match x\n    1 -> \"one\"\n    2 -> \"two\"\n    _ -> \"other\"\nend").unwrap();
+        let stmts =
+            parse("match x\n    1 -> \"one\"\n    2 -> \"two\"\n    _ -> \"other\"\nend").unwrap();
         assert_eq!(stmts.len(), 1);
         if let Stmt::Expression(Expr::Match { expr, arms }) = &stmts[0] {
             assert!(matches!(&**expr, Expr::Identifier(_)));
             assert_eq!(arms.len(), 3);
-            
+
             // First arm: literal pattern
             if let Pattern::Literal(Expr::Integer(n)) = &arms[0].patterns[0] {
                 assert_eq!(n, &1);
             } else {
                 panic!("Expected literal pattern");
             }
-            
+
             // Last arm: wildcard pattern
             if let Pattern::Wildcard = &arms[2].patterns[0] {
                 // Success
@@ -879,8 +968,20 @@ if true then 1 else 2 end";
     fn test_conditional_expression() {
         let stmts = parse("if x > 0 then \"positive\" else \"negative\" end").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Expression(Expr::ConditionalExpr { condition, then_expr, else_expr, .. }) = &stmts[0] {
-            assert!(matches!(&**condition, Expr::Binary { operator: BinaryOp::Greater, .. }));
+        if let Stmt::Expression(Expr::ConditionalExpr {
+            condition,
+            then_expr,
+            else_expr,
+            ..
+        }) = &stmts[0]
+        {
+            assert!(matches!(
+                &**condition,
+                Expr::Binary {
+                    operator: BinaryOp::Greater,
+                    ..
+                }
+            ));
             if let Expr::String(s) = &**then_expr {
                 assert_eq!(s, "positive");
             }
@@ -902,7 +1003,12 @@ if true then 1 else 2 end";
     fn test_try_catch() {
         let stmts = parse("try\n    risky_operation()\ncatch err\n    print err\nend").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Try { body, catch_var, catch_body } = &stmts[0] {
+        if let Stmt::Try {
+            body,
+            catch_var,
+            catch_body,
+        } = &stmts[0]
+        {
             assert_eq!(body.len(), 1);
             assert_eq!(catch_var, &Some("err".to_string()));
             assert_eq!(catch_body.len(), 1);
@@ -966,7 +1072,11 @@ if true then 1 else 2 end";
         assert_eq!(stmts.len(), 1);
         if let Stmt::Expression(Expr::Call { callee, .. }) = &stmts[0] {
             // callee should be a call to bar
-            if let Expr::Call { callee: inner_callee, .. } = &**callee {
+            if let Expr::Call {
+                callee: inner_callee,
+                ..
+            } = &**callee
+            {
                 // inner_callee should be a call to baz
                 if let Expr::Call { .. } = &**inner_callee {
                     // Success - nested calls
@@ -1002,7 +1112,10 @@ if true then 1 else 2 end";
         if let Stmt::Expression(Expr::StructAccess { object, field }) = &stmts[0] {
             assert_eq!(field, "prop2");
             // object should be another StructAccess
-            if let Expr::StructAccess { field: inner_field, .. } = &**object {
+            if let Expr::StructAccess {
+                field: inner_field, ..
+            } = &**object
+            {
                 assert_eq!(inner_field, "prop1");
             }
         } else {
@@ -1053,20 +1166,39 @@ if true then 1 else 2 end";
     /// Index/slice brackets may span lines (`arr[\n  expr\n]`); regressions broke nebula-style code.
     #[test]
     fn test_multiline_subscript_expression() {
-        let stmts = parse(
-            "let pc = [[1],[2]]\nlet style = pc[\nrandom_int(0, len(pc))\n]",
-        )
-        .expect("multiline [...] indexing should parse");
+        let stmts = parse("let pc = [[1],[2]]\nlet style = pc[\nrandom_int(0, len(pc))\n]")
+            .expect("multiline [...] indexing should parse");
         assert_eq!(stmts.len(), 2);
     }
 
     #[test]
-    fn test_parse_njt_file() {
-        let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("n.jt"),
-        )
-        .expect("read n.jt");
-        let r = parse(&src);
-        assert!(r.is_ok(), "{:?}", r.err());
+    fn test_all_tracked_ject_sources_parse() {
+        fn collect(directory: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).expect("read source directory") {
+                let path = entry.expect("read directory entry").path();
+                if path.is_dir() {
+                    if path.file_name().and_then(|name| name.to_str()) != Some("target") {
+                        collect(&path, files);
+                    }
+                } else if path.extension().and_then(|extension| extension.to_str()) == Some("ject")
+                {
+                    files.push(path);
+                }
+            }
+        }
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        for directory in ["stdlib", "examples"] {
+            collect(&root.join(directory), &mut files);
+        }
+        files.sort();
+        assert!(!files.is_empty(), "expected tracked Ject sources");
+
+        for file in files {
+            let source = std::fs::read_to_string(&file).expect("read Ject source");
+            parse(&source)
+                .unwrap_or_else(|error| panic!("{} did not parse: {}", file.display(), error));
+        }
     }
 }

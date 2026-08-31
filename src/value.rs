@@ -1,7 +1,7 @@
+use crate::ast::{Parameter, Stmt};
+use crate::native::NativeValue;
 use std::collections::HashMap;
 use std::fmt;
-use crate::ast::{Stmt, Parameter};
-use crate::numpy::NdArray;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -11,7 +11,7 @@ pub enum Value {
     Bool(bool),
     Nil,
     Array(std::rc::Rc<std::cell::RefCell<Vec<Value>>>),
-    UniqueArray(Vec<Value>),  // Unique array (set-like)
+    UniqueArray(Vec<Value>), // Unique array (set-like)
     Dictionary(std::collections::HashMap<String, Value>),
     Collection(std::collections::HashSet<String>),
     Function {
@@ -31,6 +31,13 @@ pub enum Value {
     },
     ModuleObject(std::collections::HashMap<String, Value>),
     BuiltinFunction(String),
+    /// A function provided by a native extension module (e.g. jnum), called
+    /// through that module's `NativeModule::call`. Replaces the old approach of
+    /// sniffing a `"np_"`/`"gui_"` prefix on a plain `BuiltinFunction` name.
+    NativeFunction {
+        module: String,
+        name: String,
+    },
     StructInstance {
         struct_name: String,
         fields: HashMap<String, Value>,
@@ -39,7 +46,9 @@ pub enum Value {
         name: String,
         fields: Vec<String>,
     },
-    NdArray(NdArray),
+    /// A value backed by native (Rust) code from a native extension module, e.g.
+    /// jnum's `NdArray`. See `crate::native`.
+    Native(NativeValue),
     Error(String),
 }
 
@@ -66,7 +75,9 @@ impl fmt::Display for Value {
                 let elements = elements.borrow();
                 write!(f, "[")?;
                 for (i, elem) in elements.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", elem)?;
                 }
                 write!(f, "]")
@@ -74,7 +85,9 @@ impl fmt::Display for Value {
             Value::UniqueArray(elements) => {
                 write!(f, "{{|")?;
                 for (i, elem) in elements.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", elem)?;
                 }
                 write!(f, "|}}")
@@ -82,7 +95,9 @@ impl fmt::Display for Value {
             Value::Dictionary(map) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in map.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "\"{}\": {}", key, value)?;
                 }
                 write!(f, "}}")
@@ -92,7 +107,9 @@ impl fmt::Display for Value {
                 let mut items: Vec<_> = set.iter().collect();
                 items.sort(); // Sort for consistent display
                 for (i, item) in items.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", item)?;
                 }
                 write!(f, "}}")
@@ -100,7 +117,9 @@ impl fmt::Display for Value {
             Value::Function { params, .. } => {
                 write!(f, "fn(")?;
                 for (i, param) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")
@@ -108,7 +127,9 @@ impl fmt::Display for Value {
             Value::ModuleFunction { params, .. } => {
                 write!(f, "fn(")?;
                 for (i, param) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")
@@ -116,7 +137,9 @@ impl fmt::Display for Value {
             Value::Lambda { params, .. } => {
                 write!(f, "lambda(")?;
                 for (i, param) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", param)?;
                 }
                 write!(f, ")")
@@ -124,16 +147,23 @@ impl fmt::Display for Value {
             Value::ModuleObject(exports) => {
                 write!(f, "module {{ ")?;
                 for (i, (name, _)) in exports.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", name)?;
                 }
                 write!(f, " }}")
             }
             Value::BuiltinFunction(name) => write!(f, "<builtin: {}>", name),
-            Value::StructInstance { struct_name, fields } => {
+            Value::StructInstance {
+                struct_name,
+                fields,
+            } => {
                 write!(f, "{} {{", struct_name)?;
                 for (i, (key, value)) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}: {}", key, value)?;
                 }
                 write!(f, "}}")
@@ -141,35 +171,15 @@ impl fmt::Display for Value {
             Value::StructDefinition { name, fields } => {
                 write!(f, "struct {} {{", name)?;
                 for (i, field) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", field)?;
                 }
                 write!(f, "}}")
             }
-            Value::NdArray(arr) => {
-                write!(f, "array(")?;
-                match arr {
-                    crate::numpy::NdArray::F64(a) => {
-                        for (i, val) in a.iter().enumerate() {
-                            if i > 0 { write!(f, ", ")?; }
-                            write!(f, "{}", val)?;
-                        }
-                    }
-                    crate::numpy::NdArray::I64(a) => {
-                        for (i, val) in a.iter().enumerate() {
-                            if i > 0 { write!(f, ", ")?; }
-                            write!(f, "{}", val)?;
-                        }
-                    }
-                    crate::numpy::NdArray::Bool(a) => {
-                        for (i, val) in a.iter().enumerate() {
-                            if i > 0 { write!(f, ", ")?; }
-                            write!(f, "{}", val)?;
-                        }
-                    }
-                }
-                write!(f, ")")
-            }
+            Value::Native(native) => write!(f, "{}", native.0.display()),
+            Value::NativeFunction { module, name } => write!(f, "<native {}::{}>", module, name),
             Value::Error(msg) => write!(f, "error: {}", msg),
         }
     }
@@ -183,16 +193,16 @@ impl PartialOrd for Value {
             (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
             (Value::Integer(a), Value::Float(b)) => (*a as f64).partial_cmp(b),
             (Value::Float(a), Value::Integer(b)) => a.partial_cmp(&(*b as f64)),
-            
+
             // Strings can be compared
             (Value::String(a), Value::String(b)) => a.partial_cmp(b),
-            
+
             // Bools can be compared
             (Value::Bool(a), Value::Bool(b)) => a.partial_cmp(b),
-            
+
             // Arrays can be compared lexicographically
             (Value::Array(a), Value::Array(b)) => a.borrow().partial_cmp(&*b.borrow()),
-            
+
             // For different types, use a consistent ordering
             (a, b) => {
                 let type_order = |v: &Value| match v {
@@ -213,7 +223,8 @@ impl PartialOrd for Value {
                     Value::StructInstance { .. } => 14,
                     Value::StructDefinition { .. } => 15,
                     Value::Error(_) => 16,
-                    Value::NdArray(_) => 17,
+                    Value::Native(_) => 17,
+                    Value::NativeFunction { .. } => 18,
                 };
                 type_order(a).partial_cmp(&type_order(b))
             }
@@ -242,8 +253,8 @@ impl Value {
             _ => true,
         }
     }
-    
-    pub fn type_name(&self) -> &'static str {
+
+    pub fn type_name(&self) -> &str {
         match self {
             Value::Integer(_) => "number",
             Value::Float(_) => "number",
@@ -261,7 +272,8 @@ impl Value {
             Value::BuiltinFunction(_) => "builtin",
             Value::StructInstance { .. } => "struct",
             Value::StructDefinition { .. } => "struct_definition",
-            Value::NdArray(_) => "ndarray",
+            Value::Native(native) => native.0.type_name(),
+            Value::NativeFunction { .. } => "builtin",
             Value::Error(_) => "error",
         }
     }
@@ -270,8 +282,8 @@ impl Value {
     /// But strings inside collections keep their quotes (via to_string())
     pub fn display(&self) -> String {
         match self {
-            Value::String(s) => s.clone(),  // No quotes for bare strings in print
-            _ => self.to_string(),  // Use Display (with quotes) for everything else
+            Value::String(s) => s.clone(), // No quotes for bare strings in print
+            _ => self.to_string(),         // Use Display (with quotes) for everything else
         }
     }
 }
@@ -295,13 +307,13 @@ impl Environment {
             scopes: vec![std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()))],
         }
     }
-    
+
     pub fn define(&mut self, name: String, value: Value) {
         if let Some(scope) = self.scopes.last() {
             scope.borrow_mut().insert(name, value);
         }
     }
-    
+
     pub fn get(&self, name: &str) -> Option<Value> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.borrow().get(name) {
@@ -310,7 +322,7 @@ impl Environment {
         }
         None
     }
-    
+
     pub fn set(&mut self, name: &str, value: Value) -> bool {
         for scope in self.scopes.iter().rev() {
             if scope.borrow().contains_key(name) {
@@ -320,11 +332,12 @@ impl Environment {
         }
         false
     }
-    
+
     pub fn push_scope(&mut self) {
-        self.scopes.push(std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())));
+        self.scopes
+            .push(std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())));
     }
-    
+
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();

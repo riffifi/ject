@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::lexer::{Lexer, Token, InterpolationPart};
+    use crate::lexer::{InterpolationPart, Lexer, Token};
 
     // ========== Basic Token Tests ==========
 
@@ -41,34 +41,52 @@ mod tests {
         assert_eq!(lexer.next_token().token, Token::String("".to_string()));
 
         let mut lexer = Lexer::new("\"Hello, World!\"");
-        assert_eq!(lexer.next_token().token, Token::String("Hello, World!".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("Hello, World!".to_string())
+        );
     }
 
     #[test]
     fn test_string_escape_sequences() {
         let mut lexer = Lexer::new("\"hello\\nworld\"");
-        assert_eq!(lexer.next_token().token, Token::String("hello\nworld".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("hello\nworld".to_string())
+        );
 
         let mut lexer = Lexer::new("\"tab\\there\"");
-        assert_eq!(lexer.next_token().token, Token::String("tab\there".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("tab\there".to_string())
+        );
 
         let mut lexer = Lexer::new("\"quote\\\"here\"");
-        assert_eq!(lexer.next_token().token, Token::String("quote\"here".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("quote\"here".to_string())
+        );
 
         let mut lexer = Lexer::new("\"backslash\\\\here\"");
-        assert_eq!(lexer.next_token().token, Token::String("backslash\\here".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("backslash\\here".to_string())
+        );
     }
 
     #[test]
     fn test_string_unicode_escapes() {
-        let mut lexer = Lexer::new("\"\\u0041\"");  // Unicode 'A'
+        let mut lexer = Lexer::new("\"\\u0041\""); // Unicode 'A'
         assert_eq!(lexer.next_token().token, Token::String("A".to_string()));
 
-        let mut lexer = Lexer::new("\"\\u03B1\"");  // Greek alpha
+        let mut lexer = Lexer::new("\"\\u03B1\""); // Greek alpha
         assert_eq!(lexer.next_token().token, Token::String("α".to_string()));
 
-        let mut lexer = Lexer::new("\"\\u001b\"");  // ESC character
-        assert_eq!(lexer.next_token().token, Token::String("\u{001b}".to_string()));
+        let mut lexer = Lexer::new("\"\\u001b\""); // ESC character
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("\u{001b}".to_string())
+        );
     }
 
     #[test]
@@ -112,22 +130,40 @@ mod tests {
     #[test]
     fn test_identifiers() {
         let mut lexer = Lexer::new("foo");
-        assert_eq!(lexer.next_token().token, Token::Identifier("foo".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("foo".to_string())
+        );
 
         let mut lexer = Lexer::new("_private");
-        assert_eq!(lexer.next_token().token, Token::Identifier("_private".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("_private".to_string())
+        );
 
         let mut lexer = Lexer::new("my_var_123");
-        assert_eq!(lexer.next_token().token, Token::Identifier("my_var_123".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("my_var_123".to_string())
+        );
 
         let mut lexer = Lexer::new("camelCase");
-        assert_eq!(lexer.next_token().token, Token::Identifier("camelCase".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("camelCase".to_string())
+        );
 
         let mut lexer = Lexer::new("PascalCase");
-        assert_eq!(lexer.next_token().token, Token::Identifier("PascalCase".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("PascalCase".to_string())
+        );
 
         let mut lexer = Lexer::new("snake_case");
-        assert_eq!(lexer.next_token().token, Token::Identifier("snake_case".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("snake_case".to_string())
+        );
     }
 
     #[test]
@@ -167,7 +203,12 @@ mod tests {
 
         for (input, expected) in keywords {
             let mut lexer = Lexer::new(input);
-            assert_eq!(lexer.next_token().token, expected, "Failed for keyword: {}", input);
+            assert_eq!(
+                lexer.next_token().token,
+                expected,
+                "Failed for keyword: {}",
+                input
+            );
         }
     }
 
@@ -341,18 +382,18 @@ mod tests {
     #[test]
     fn test_multiline_position_tracking() {
         let mut lexer = Lexer::new("let x = 1\nlet y = 2");
-        
+
         // First line
         assert_eq!(lexer.next_token().position.line, 1);
         assert_eq!(lexer.next_token().position.line, 1);
         assert_eq!(lexer.next_token().position.line, 1);
         assert_eq!(lexer.next_token().position.line, 1);
-        
+
         // Newline
         let newline = lexer.next_token();
         assert_eq!(newline.token, Token::Newline);
         assert_eq!(newline.position.line, 1);
-        
+
         // Second line
         assert_eq!(lexer.next_token().position.line, 2);
     }
@@ -383,10 +424,13 @@ mod tests {
 
     #[test]
     fn test_large_numbers() {
-        let mut lexer = Lexer::new("9223372036854775807");  // i64::MAX
-        assert_eq!(lexer.next_token().token, Token::Integer(9223372036854775807));
+        let mut lexer = Lexer::new("9223372036854775807"); // i64::MAX
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Integer(9223372036854775807)
+        );
 
-        let mut lexer = Lexer::new("1.7976931348623157e308");  // f64::MAX (approx)
+        let mut lexer = Lexer::new("1.7976931348623157e308"); // f64::MAX (approx)
         let token = lexer.next_token().token;
         if let Token::Float(f) = token {
             assert!(f > 1e308);
@@ -407,9 +451,12 @@ mod tests {
     fn test_complex_expression() {
         let input = "let result = (a + b) * c - d / e";
         let mut lexer = Lexer::new(input);
-        
+
         assert_eq!(lexer.next_token().token, Token::Let);
-        assert_eq!(lexer.next_token().token, Token::Identifier("result".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("result".to_string())
+        );
         assert_eq!(lexer.next_token().token, Token::Equal);
         assert_eq!(lexer.next_token().token, Token::LeftParen);
         assert_eq!(lexer.next_token().token, Token::Identifier("a".to_string()));
@@ -441,11 +488,17 @@ mod tests {
     fn test_dictionary_syntax() {
         let mut lexer = Lexer::new("{name: \"Alice\", age: 30}");
         assert_eq!(lexer.next_token().token, Token::LeftBrace);
-        assert_eq!(lexer.next_token().token, Token::Identifier("name".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("name".to_string())
+        );
         assert_eq!(lexer.next_token().token, Token::Colon);
         assert_eq!(lexer.next_token().token, Token::String("Alice".to_string()));
         assert_eq!(lexer.next_token().token, Token::Comma);
-        assert_eq!(lexer.next_token().token, Token::Identifier("age".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("age".to_string())
+        );
         assert_eq!(lexer.next_token().token, Token::Colon);
         assert_eq!(lexer.next_token().token, Token::Integer(30));
         assert_eq!(lexer.next_token().token, Token::RightBrace);
@@ -485,7 +538,7 @@ mod tests {
     fn test_tokenize_with_positions() {
         let mut lexer = Lexer::new("let x = 42");
         let tokens = lexer.tokenize_with_positions();
-        
+
         assert!(tokens.len() > 0);
         assert_eq!(tokens[0].token, Token::Let);
         assert_eq!(tokens[0].position.line, 1);
@@ -505,19 +558,18 @@ mod tests {
 
     #[test]
     fn test_unclosed_string() {
-        // Should handle unclosed strings gracefully
+        // Unterminated input must be surfaced, never accepted as a valid string.
         let mut lexer = Lexer::new("\"unclosed");
         let token = lexer.next_token().token;
-        // Should return a string token (possibly empty or partial)
-        assert!(matches!(token, Token::String(_) | Token::InterpolatedString(_)));
+        assert_eq!(token, Token::UnterminatedString);
     }
 
     #[test]
     fn test_unexpected_characters() {
-        // Should skip unexpected characters
+        // Unexpected characters must be surfaced at their exact position.
         let mut lexer = Lexer::new("let @ x = 42");
         assert_eq!(lexer.next_token().token, Token::Let);
-        // @ should be skipped
+        assert_eq!(lexer.next_token().token, Token::Invalid('@'));
         assert_eq!(lexer.next_token().token, Token::Identifier("x".to_string()));
         assert_eq!(lexer.next_token().token, Token::Equal);
         assert_eq!(lexer.next_token().token, Token::Integer(42));
@@ -537,14 +589,20 @@ mod tests {
     fn test_identifier_after_keyword() {
         // Ensure keywords aren't mistakenly treated as identifiers
         let mut lexer = Lexer::new("letfn");
-        assert_eq!(lexer.next_token().token, Token::Identifier("letfn".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::Identifier("letfn".to_string())
+        );
     }
 
     #[test]
     fn test_string_with_dollar_sign() {
         // Test escaped dollar sign
         let mut lexer = Lexer::new("\"price is \\$100\"");
-        assert_eq!(lexer.next_token().token, Token::String("price is $100".to_string()));
+        assert_eq!(
+            lexer.next_token().token,
+            Token::String("price is $100".to_string())
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::interpreter::Interpreter;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
-    use crate::interpreter::Interpreter;
 
     fn run(input: &str) -> Result<String, String> {
         let mut lexer = Lexer::new(input);
@@ -10,16 +10,16 @@ mod tests {
         let tokens: Vec<_> = located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = Parser::new_simple(tokens);
         let statements = parser.parse().map_err(|e| e.message)?;
-        
+
         let mut interpreter = Interpreter::new();
-        
+
         // Capture output by redirecting println
         let mut output = String::new();
-        
+
         // For now, just execute and check for errors
         // A more sophisticated test harness would capture stdout
         interpreter.interpret(&statements).map_err(|e| e.message)?;
-        
+
         Ok(output)
     }
 
@@ -29,10 +29,10 @@ mod tests {
         let tokens: Vec<_> = located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = Parser::new_simple(tokens);
         let statements = parser.parse().map_err(|e| e.message)?;
-        
+
         let mut interpreter = Interpreter::new();
         interpreter.interpret(&statements).map_err(|e| e.message)?;
-        
+
         // For tests that return a value, we'd need to modify the interpreter
         // For now, we test via side effects (print statements)
         Ok("success".to_string())
@@ -711,11 +711,11 @@ print "I am " + age + " years old"
     fn test_string_interpolation() {
         let result = run(r#"
 let name = "Alice"
+let age = 25
 print "Hello, $name!"
 print "Next year you'll be ${age + 1}"
 "#);
-        // Note: Second line might fail if 'age' isn't defined
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok(), "string interpolation failed: {:?}", result);
     }
 
     #[test]
@@ -907,7 +907,7 @@ print distance(p1, p2)
 import "math"
 print PI
 "#);
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok(), "aliased math import failed: {:?}", result);
     }
 
     #[test]
@@ -920,14 +920,13 @@ print m.PI
     }
 
     #[test]
-    #[ignore] // TODO: Fix stdlib module loading for wrapper modules
     fn test_selective_import() {
         let result = run(r#"
-import {PI, sqrt} from "math"
-print PI
-print sqrt(16)
+import {factorial, clamp} from "math"
+assert(factorial(5) == 120, "selective function import")
+assert(clamp(12, 0, 10) == 10, "second selective import")
 "#);
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok(), "selective math import failed: {:?}", result);
     }
 
     // ========== Error Handling Tests ==========

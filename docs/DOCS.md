@@ -1,36 +1,45 @@
-# Ject Language Reference — v0.6.0
+# The Ject Language Guide
 
-## Table of Contents
+Version 0.9.0
 
-1. [Getting Started](#getting-started)
-2. [Syntax Basics](#syntax-basics)
-3. [Types & Values](#types--values)
-4. [Variables](#variables)
-5. [Operators](#operators)
-6. [Control Flow](#control-flow)
-7. [Match](#match)
-8. [Functions](#functions)
-9. [Arrays](#arrays)
-10. [List Comprehensions](#list-comprehensions)
-11. [Strings](#strings)
-12. [Dictionaries](#dictionaries)
-13. [Collections (Sets)](#collections-sets)
-14. [Structs](#structs)
-15. [Modules](#modules)
-16. [Error Handling](#error-handling)
-17. [Input & Output](#input--output)
-18. [File System](#file-system)
-19. [System](#system)
-20. [CorLib Reference](#corlib-reference)
-21. [Standard Library Modules](#standard-library-modules)
-22. [CLI Reference](#cli-reference)
-23. [Architecture: CorLib vs Stdlib](#architecture-corlib-vs-stdlib)
+Ject is a small, dynamically typed scripting language implemented in Rust. It is
+designed for readable programs, quick scripts, embeddable libraries, and a gradual
+path from ordinary Ject code to high-performance Rust extensions.
 
----
+This guide serves two purposes:
 
-## Getting Started
+- Chapters 1–12 teach the language from the beginning.
+- The later reference chapters collect syntax, built-ins, modules, CLI commands,
+  packages, and native-extension details in one place.
 
-### Building
+Examples use the `.ject` file extension.
+
+## Contents
+
+1. [Install and run Ject](#1-install-and-run-ject)
+2. [Your first program](#2-your-first-program)
+3. [Values and variables](#3-values-and-variables)
+4. [Operators and expressions](#4-operators-and-expressions)
+5. [Control flow](#5-control-flow)
+6. [Functions](#6-functions)
+7. [Arrays, dictionaries, and collections](#7-arrays-dictionaries-and-collections)
+8. [Strings](#8-strings)
+9. [Structs](#9-structs)
+10. [Errors](#10-errors)
+11. [Modules](#11-modules)
+12. [Packages](#12-packages)
+13. [Standard library reference](#13-standard-library-reference)
+14. [JGUI](#14-jgui)
+15. [JNUM](#15-jnum)
+16. [Mixed Ject and Rust libraries](#16-mixed-ject-and-rust-libraries)
+17. [Command-line reference](#17-command-line-reference)
+18. [Language reference](#18-language-reference)
+
+## 1. Install and run Ject
+
+### Build from source
+
+Ject currently builds with Cargo:
 
 ```bash
 git clone https://github.com/riffifi/ject.git
@@ -38,1419 +47,1371 @@ cd ject
 cargo build --release
 ```
 
-### Running
+The executable is created at `target/release/ject`.
+
+Check the installed version:
 
 ```bash
-ject script.ject          # run a file
-ject                      # start the REPL
-ject --check script.ject  # parse + lint only, no execution
-ject --test script.ject   # run; exit non-zero on failure
-ject --version            # print version
-ject --introspect         # print native kernel metadata as JSON
-ject --help               # show help
+ject --version
 ```
 
-### File extensions
+### Run a file
 
-`.ject` and `.jt` are both recognized.
-
----
-
-## Syntax Basics
-
-### Comments
+Create `hello.ject`:
 
 ```ject
-# single-line comment only
+print "Hello, Ject!"
 ```
 
-There are no multi-line comment blocks.
+Run it:
 
-### Statement separation
-
-Statements are separated by newlines. Semicolons also work for multiple statements on one line:
-
-```ject
-let a = 1
-let b = 2; let c = 3
+```bash
+ject hello.ject
 ```
 
-### Blocks
+The older file-oriented commands remain useful for individual scripts:
 
-Blocks open with a keyword (`fn`, `if`, `while`, `for`, `try`, `match`) and always close with `end`. No indentation-based parsing.
+```bash
+ject script.ject
+ject --check script.ject
+ject --test test_one.ject test_two.ject
+```
+
+### Use the REPL
+
+Run `ject` without arguments:
+
+```bash
+ject
+```
+
+The REPL evaluates expressions immediately:
+
+```text
+>> 2 + 3
+5
+>> upper("hello")
+"HELLO"
+```
+
+Use Ctrl+C to cancel the current input or interrupt a running loop. Use Ctrl+D or
+enter `exit` to leave the REPL. Multi-line functions and blocks automatically use a
+continuation prompt.
+
+## 2. Your first program
+
+Here is a complete small program:
 
 ```ject
-if x > 0 then
-    print x
+fn greet(name, greeting = "Hello")
+    return "$greeting, $name!"
+end
+
+let names = ["Ada", "Grace", "Linus"]
+
+for name in names do
+    print greet(name)
 end
 ```
 
----
+Important ideas in this example:
 
-## Types & Values
+- `fn` defines a function.
+- `let` creates a variable.
+- Arrays use square brackets.
+- `for ... do ... end` repeats a block.
+- `$name` interpolates a variable into a string.
+- Indentation makes code readable, but `end` is what closes a block.
 
-Ject is dynamically typed. Every value has one of these types:
+### Comments and line endings
 
-| Type | Examples | `type_of` result |
-|------|----------|-----------------|
-| Integer | `0`, `42`, `-7` | `"number"` |
-| Float | `3.14`, `-0.5` | `"number"` |
-| String | `"hello"` | `"string"` |
-| Boolean | `true`, `false` | `"boolean"` |
-| Nil | `nil` | `"nil"` |
-| Array | `[1, 2, 3]` | `"array"` |
-| Unique Array | `{|a, b|}` | `"unique_array"` |
-| Dictionary | `{name: "Alice"}` | `"dictionary"` |
-| Collection | `import "collections" as col; col.from_array([1, 2])` | `"collection"` |
-| Struct instance | `new Point {x: 0}` | `"struct"` |
-| Named function | `fn add(a, b) ... end` | `"function"` |
-| Anonymous function | `fn(x) -> x * 2` / `lambda(x) -> x * 2` | `"lambda"` |
-
-Integer and Float are both reported as `"number"` by `type_of` -- there's no separate check for which one you have; `to_int`/`to_float` convert explicitly, and arithmetic mixing them coerces to Float.
-
-### Type conversion
+A single-line comment starts with `#`:
 
 ```ject
-to_int("42")       # 42
-to_int(3.9)        # 3  (truncates)
-to_float("3.14")   # 3.14
-to_float(5)        # 5.0
-to_string(42)      # "42"
-to_bool(0)         # false
-to_bool(1)         # true
-to_bool("")        # false
-to_bool("hi")      # true
-type_of(42)        # "number"
+# This is a comment.
+let answer = 42  # Comments may follow code.
 ```
 
----
-
-## Variables
-
-Declare with `let`. Reassign without `let`.
+Multi-line comments use `#*` and `*#` and may be nested:
 
 ```ject
-let name = "Alice"
-let count = 0
-count = count + 1
+#*
+This whole section is ignored.
+#* Nested comments work too. *#
+*#
 ```
 
-### Compound assignment operators
+Newlines normally separate statements. Semicolons are accepted when several short
+statements genuinely read better on one line:
 
 ```ject
-count += 1
-count -= 5
-count *= 2
-count /= 4
-count %= 3
+let x = 1; let y = 2; print x + y
 ```
 
-### Increment / decrement
+## 3. Values and variables
 
-Both prefix and postfix forms work:
+Ject is dynamically typed: variables do not have declared types, and a variable may
+hold different kinds of values over its lifetime.
+
+### Core value types
+
+```ject
+let count = 12                         # number (integer)
+let ratio = 0.75                       # number (float)
+let title = "Ject"                    # string
+let enabled = true                    # boolean
+let missing = nil                     # nil
+let items = [1, 2, 3]                 # array
+let user = {name: "Ada", active: true} # dictionary
+```
+
+`type_of(value)` returns the runtime type name:
+
+```ject
+print type_of(10)          # number
+print type_of("hello")     # string
+print type_of([1, 2])      # array
+print type_of(nil)         # nil
+```
+
+Native libraries can introduce additional type names such as `ndarray`,
+`jgui_window`, or a package-defined resource type.
+
+### Declaring and assigning variables
+
+Use `let` the first time a name is introduced:
+
+```ject
+let score = 10
+score = score + 5
+```
+
+Assigning to an undeclared name is an error. This catches many spelling mistakes.
+
+Compound assignments are available:
+
+```ject
+score += 5
+score -= 2
+score *= 3
+score /= 2
+score %= 4
+```
+
+Increment and decrement work in prefix or postfix form:
 
 ```ject
 count++
-count--
 ++count
+count--
 --count
 ```
 
-Variables are block-scoped. A variable declared inside an `if` or loop body is not accessible outside it.
+### Conversions
 
----
+Use explicit conversion functions at data boundaries:
 
-## Operators
+```ject
+to_int("42")
+to_float("3.5")
+to_string(42)
+to_bool(1)
+```
+
+Conversion failures produce runtime errors rather than silently inventing a value.
+
+### Truthiness
+
+Conditions accept any value. `false`, `nil`, zero, empty strings, and empty
+containers behave as false-like values; non-empty and non-zero values behave as
+true-like values. Prefer explicit comparisons when that makes intent clearer.
+
+## 4. Operators and expressions
 
 ### Arithmetic
 
 ```ject
-a + b    # addition / string concatenation
-a - b    # subtraction
-a * b    # multiplication
-a / b    # division
-a % b    # modulo
+2 + 3       # 5
+7 - 2       # 5
+4 * 3       # 12
+7 / 2       # 3.5
+7 % 2       # 1
+pow(2, 8)   # 256
+```
+
+Division returns a floating-point result. Division or modulo by zero is an error.
+
+`+` also concatenates strings and arrays:
+
+```ject
+"hello" + " world"
+[1, 2] + [3, 4]
 ```
 
 ### Comparison
 
 ```ject
-a == b   # equal
-a != b   # not equal
-a < b    # less than
-a > b    # greater than
-a <= b   # less than or equal
-a >= b   # greater than or equal
+a == b
+a != b
+a < b
+a <= b
+a > b
+a >= b
 ```
 
-### Logical
+### Logical operators
 
 ```ject
-a and b  # logical AND
-a or b   # logical OR
-!a       # logical NOT
+ready and connected
+cached or fetch_value()
+!finished
 ```
 
-`and`/`or` short-circuit: `b` is only evaluated if it's actually needed (e.g. `false and expensive()` never calls `expensive()`).
+`and` and `or` short-circuit: the right side is evaluated only when needed.
 
 ### Membership
 
 ```ject
-"l" in "hello"       # true — substring check
-2 in [1, 2, 3]       # true — array membership
-"key" in {key: 1}    # true — dictionary key check
+2 in [1, 2, 3]
+"ect" in "Ject"
+"name" in {name: "Ada"}
 ```
 
-`in` works for strings, arrays, and dictionaries.
+### Precedence
 
----
+From tighter to looser binding, the commonly used groups are:
 
-## Control Flow
+1. Calls, member access, and indexing
+2. Unary `-` and `!`
+3. `*`, `/`, `%`
+4. `+`, `-`
+5. Ranges
+6. Comparisons and `in`
+7. `and`
+8. `or`
+9. Conditional expressions
 
-### if / elseif / else
+Use parentheses whenever they make an expression easier to read:
+
+```ject
+let total = (price + shipping) * quantity
+```
+
+## 5. Control flow
+
+### `if`, `elseif`, and `else`
 
 ```ject
 if score >= 90
-    print "A"
-elseif score >= 80
-    print "B"
-elseif score >= 70
-    print "C"
+    print "excellent"
+elseif score >= 60
+    print "passed"
 else
-    print "F"
+    print "try again"
 end
 ```
 
-`then` is optional but accepted after the condition.
-
-### if as an expression
-
-`if` can return a value. All branches must produce a value.
+An `if` can also produce a value:
 
 ```ject
-let label = if score >= 60 then "Pass" else "Fail" end
-let sign  = if x > 0 then 1 elseif x < 0 then -1 else 0 end
+let label = if score >= 60 then "pass" else "fail" end
 ```
 
-### while
+### `while`
 
 ```ject
-let i = 0
-while i < 10 do
-    print i
-    i += 1
+let count = 3
+
+while count > 0 do
+    print count
+    count -= 1
 end
 ```
 
-`do` is optional.
+### `for`
 
-### for
-
-Iterates over arrays, strings, ranges, and unique arrays:
+Iterate over arrays, strings, collections, or ranges:
 
 ```ject
-for item in ["apple", "banana"] do
+for item in ["a", "b", "c"] do
     print item
 end
 
-for i in 1..6 do
-    print i       # 1 2 3 4 5
-end
-
-for i in 0..10:2 do
-    print i       # 0 2 4 6 8
-end
-
-for ch in "hello" do
-    print ch
+for i in 0..5 do
+    print i
 end
 ```
 
-`do` is optional.
+The end of a range is exclusive, so `0..5` produces `0, 1, 2, 3, 4`.
 
-### Ranges
+Ranges can have a step:
 
 ```ject
-1..6        # exclusive end: 1, 2, 3, 4, 5
-0..10:2     # with step: 0, 2, 4, 6, 8
+for even in 0..10:2 do
+    print even
+end
+
+for descending in 5..0:-1 do
+    print descending
+end
 ```
 
-Ranges can be assigned to variables and passed to `sum`, `len`, etc.:
+`break` leaves the nearest loop. `continue` starts its next iteration:
 
 ```ject
-let r = 1..11
-print sum(r)   # 55
-```
-
-### break and continue
-
-```ject
-while true do
-    let line = input("> ")
-    if line == "quit" then
-        break
-    end
-    if line == "" then
+for value in 0..10 do
+    if value == 2
         continue
     end
-    print "got: " + line
+    if value == 7
+        break
+    end
+    print value
 end
 ```
 
----
+### `match`
 
-## Match
-
-`match` is an expression that compares a value against a series of patterns, top to bottom, and returns (or runs) the first matching arm. Closes with `end`.
+`match` selects one arm and returns its value:
 
 ```ject
-let day = "Monday"
-
-let kind = match day
-    "Saturday" -> "weekend"
-    "Sunday"   -> "weekend"
-    _          -> "weekday"
+let description = match status
+    200 -> "ok"
+    400, 404 -> "client error"
+    500 -> "server error"
+    _ -> "unknown"
 end
-
-print kind   # weekday
 ```
 
-### Pattern kinds
-
-- **Literal** — `42`, `"hello"`, `true`, `nil`
-- **Identifier** — binds the matched value to a name, always matches (a named catch-all)
-- **Wildcard** — `_`, matches anything. At most one per match, and it must be the last arm.
-- **Relational** — `> 90`, `< 10`, `>= 5`, `<= 5`, `== x`, `!= x`. Compares the subject against the right-hand side with that operator.
-- **Range** — `0..12`, an *inclusive* membership test (`subject >= 0 and subject <= 12`).
-- **Multiple patterns per arm** — comma-separated; the arm fires if *any* of them match.
+Range and comparison patterns are useful for classification:
 
 ```ject
 let grade = match score
-    > 89       -> "A"
-    > 79       -> "B"
-    0..49      -> "F"
-    "x", "y"   -> "special case"
-    _          -> "C"
+    > 89 -> "A"
+    > 79 -> "B"
+    0..60 -> "F"
+    _ -> "C"
 end
 ```
 
-### Arm bodies: expression or block
-
-If `->` is followed by something on the same line, that's a single expression:
+An arm may contain a block:
 
 ```ject
-match cmd
-    "quit" -> exit(0)
-    _      -> print "unknown"
+match command
+    "save" ->
+        write_file(path, content)
+        print "saved"
+    "quit", "exit" -> exit(0)
+    _ -> print "unknown command"
 end
 ```
 
-If `->` is followed by a newline, everything up to the next arm (or `end`) is a block of statements:
+## 6. Functions
 
-```ject
-match choice
-    1 ->
-        print "Loading..."
-        load_game()
-    2 ->
-        print "Saving..."
-        save_game()
-    _ ->
-        print "Invalid"
-end
-```
-
-`print` is also valid as a same-line arm body, same as any other expression.
-
-### Method-call sugar
-
-`value.match ... end` is sugar for `match value ... end`:
-
-```ject
-score.match
-    > 90 -> print "excellent"
-    _    -> print "try again"
-end
-```
-
----
-
-## Functions
-
-### Definition
+### Named functions
 
 ```ject
 fn add(a, b)
     return a + b
 end
+
+print add(2, 3)
 ```
 
-A function with no `return` returns `nil`.
+If no explicit `return` runs, a function returns `nil`.
 
 ### Default parameters
 
 ```ject
 fn greet(name, greeting = "Hello")
-    print greeting + ", " + name + "!"
+    return "$greeting, $name!"
 end
 
-greet("Alice")          # Hello, Alice!
-greet("Bob", "Hey")     # Hey, Bob!
+greet("Ada")
+greet("Ada", "Welcome")
 ```
 
-### Keyword arguments at call site
+Required parameters must come before parameters with defaults.
 
-Any parameter can be passed by name:
+### Keyword arguments
+
+Calls may name arguments:
 
 ```ject
-fn connect(host, port = 80, timeout = 30)
-    print "connecting to $host:$port"
-end
-
-connect("example.com", timeout=60)
-connect(port=443, host="example.com")
+greet(greeting: "Welcome", name: "Ada")
 ```
+
+Keyword arguments make calls with several similar values easier to understand.
 
 ### Anonymous functions
 
-`fn` without a name creates an anonymous function -- this is the preferred spelling. Two forms:
+Use the expression form for short functions:
 
 ```ject
-let square = fn(x) -> x * x          # expression body, OCaml-`let`-style value
+let square = fn(value) -> value * value
+print square(6)
+```
 
-let square2 = fn(x)                  # block body -- a trailing bare expression
-    x * x                            # is implicitly returned, no `return` needed
+Use a block for multi-step logic:
+
+```ject
+let classify = fn(value)
+    if value < 0
+        return "negative"
+    end
+    return "non-negative"
 end
 ```
 
-`lambda(x) -> expr` still works, unchanged, as a compatibility alias for the expression form -- existing code using it doesn't need to change.
+`lambda(...) -> ...` remains an alias for the short anonymous-function form.
 
-Named functions can use the same expression-body sugar:
+### Closures
 
-```ject
-fn square(x) -> x * x
-```
-
-Note the difference from a named function's block body: `fn name(x) ... end` still requires an explicit `return` (predictable, Python-style); only the *anonymous* block form (`fn(x) ... end`) implicitly returns its trailing expression.
-
-### Method-call syntax
-
-`obj.method(args)` works two ways, decided by whether `method` is a genuine member of `obj`:
-
-- If `obj` is a struct with that field, a dictionary with that key, or a module with that export, `method` is looked up there and called -- this is what makes `import "math" as m; m.log(x, base)` work.
-- Otherwise (arrays, strings, numbers, or a struct/dict without that field), it's sugar for a free function call: `arr.map(f)` is exactly `map(arr, f)`, `arr.push(x)` is `push(arr, x)`, and so on for any function that takes the value as its first argument.
-
-A real member always wins over the sugar fallback, so it's never ambiguous which one fires.
-
-### Functions are first-class
+Functions remember variables from the scope where they were created:
 
 ```ject
-fn double(x)
-    return x * 2
+fn multiplier(factor)
+    return fn(value) -> value * factor
 end
 
-let transform = double
-print transform(5)    # 10
-
-let ops = [fn(x) -> x + 1, fn(x) -> x * 2]
-for op in ops do
-    print op(3)
-end
+let triple = multiplier(3)
+print triple(7)  # 21
 ```
 
-### Recursion
+### First-class functions
+
+Functions can be stored, passed, and returned:
 
 ```ject
-fn fib(n)
-    if n <= 1 then return n end
-    return fib(n - 1) + fib(n - 2)
-end
+let doubled = map([1, 2, 3], fn(value) -> value * 2)
+let positive = filter([-2, 0, 3], fn(value) -> value > 0)
+let total = reduce([1, 2, 3], fn(a, b) -> a + b, 0)
 ```
 
----
+### Method-call sugar
 
-## Arrays
-
-### Creation
+When a value has no actual member by a given name, Ject can rewrite:
 
 ```ject
-let empty  = []
-let nums   = [1, 2, 3, 4, 5]
-let mixed  = [1, "hello", true, nil]
-let nested = [[1, 2], [3, 4]]
+items.map(transform)
 ```
 
-### Index access
+as:
 
 ```ject
-nums[0]    # 1  (first)
-nums[-1]   # 5  (last)
-nums[-2]   # 4  (second to last)
+map(items, transform)
 ```
 
-### Index assignment
+This is syntax convenience, not a separate method system. Real struct, dictionary,
+and module members take priority.
+
+## 7. Arrays, dictionaries, and collections
+
+### Arrays
+
+Arrays are ordered and mutable:
 
 ```ject
-nums[0]      = 99   # direct mutation
-grid[y][x]   = 1    # nested mutation works too
+let colors = ["red", "green", "blue"]
+print colors[0]
+colors[1] = "emerald"
 ```
 
-### Slicing — three equivalent syntaxes
+Negative indexes count from the end:
 
-**Named parameters:**
 ```ject
-arr[from:1 to:4]           # [1, 2, 3]
-arr[from:0 to:6 step:2]    # [0, 2, 4]
-arr[from:5 to:0 step:-1]   # [5, 4, 3, 2, 1]
+print colors[-1]
 ```
 
-**Range syntax:**
+Assignment and function calls share the same array object. Operations such as
+`push`, `map`, `filter`, `sort`, and slicing return a new array rather than modifying
+the input.
+
+Common operations:
+
 ```ject
-arr[1..4]     # [1, 2, 3]
-arr[0..6:2]   # [0, 2, 4]
+len(items)
+push(items, value)
+pop(items)
+first(items)
+last(items)
+contains(items, value)
+index_of(items, value)
+reverse(items)
+sort(items)
+unique(items)
+flatten(nested)
 ```
 
-**Python-style:**
+### Slicing
+
+Ject supports three equivalent slicing styles. Bounds are start-inclusive and
+end-exclusive:
+
 ```ject
-arr[1:4]    # [1, 2, 3]
-arr[::2]    # every other element
-arr[1:]     # from index 1 to end
-arr[:3]     # first 3 elements
-arr[-3:]    # last 3 elements
+let values = [0, 1, 2, 3, 4, 5]
+
+values[1:4]
+values[1..4]
+values[from:1 to:4]
+
+values[::2]
+values[0..6:2]
+values[from:0 to:6 step:2]
+```
+
+### List comprehensions
+
+Build an array by transforming and optionally filtering another iterable:
+
+```ject
+let squares = [x * x for x in 0..6]
+let even_squares = [x * x for x in 0..10 if x % 2 == 0]
 ```
 
 ### Unique arrays
 
-Automatically deduplicate on creation and on `push`:
+Unique arrays preserve insertion order while preventing duplicate values:
 
 ```ject
-let tags = {|"rust", "ject", "rust"|}   # {|"rust", "ject"|}
-tags = push(tags, "ject")               # no change
-tags = push(tags, "go")                 # adds "go"
+let tags = {|"rust", "ject", "rust"|}
+print tags  # {|"rust", "ject"|}
 ```
 
-### Core array functions
+Use `to_uarray(array)` and `to_array(unique_array)` to convert between forms.
+
+### Dictionaries
+
+Dictionaries map string keys to values:
 
 ```ject
-len([1, 2, 3])                           # 3
-push([1, 2], 3)                          # [1, 2, 3]
-pop([1, 2, 3])                           # [1, 2]
-sum([1, 2, 3, 4])                        # 10
-first([10, 20, 30])                      # 10
-last([10, 20, 30])                       # 30
-reverse([1, 2, 3])                       # [3, 2, 1]
-sort([3, 1, 2])                          # [1, 2, 3]
-unique([1, 2, 2, 3])                     # [1, 2, 3]
-contains([1, 2, 3], 2)                   # true
-index_of([1, 2, 3], 2)                   # 1
-slice([0,1,2,3,4], 1, 4)                 # [1, 2, 3]
-map([1,2,3], fn(x) -> x * 2)            # [2, 4, 6]
-filter([1,2,3,4], fn(x) -> x % 2 == 0)  # [2, 4]
-reduce([1,2,3], fn(a,b) -> a + b, 0)    # 6
-range(5)                                 # [0, 1, 2, 3, 4]
-range(1, 6)                              # [1, 2, 3, 4, 5]
-range(0, 10, 2)                          # [0, 2, 4, 6, 8]
+let person = {
+    name: "Ada",
+    age: 36,
+    active: true
+}
+
+print person["name"]
+person["language"] = "Ject"
 ```
 
----
-
-## List Comprehensions
-
-Build arrays from iterables in a single expression:
+Identifier-like keys may use member syntax:
 
 ```ject
-let squares = [x * x for x in 1..6]                  # [1, 4, 9, 16, 25]
-let evens   = [x for x in 1..11 if x % 2 == 0]       # [2, 4, 6, 8, 10]
-let upper   = [upper(w) for w in ["hi", "hello"]]     # ["HI", "HELLO"]
+print person.name
+person.age = 37
 ```
 
-Syntax: `[expression for variable in iterable]` or `[expression for variable in iterable if condition]`.
-
----
-
-## Strings
-
-### Literals and escapes
+Useful dictionary functions:
 
 ```ject
-let s = "Hello, World!"
-let t = "line one\nline two"
-let u = "tab\there"
-let v = "with a quote: \""
+keys(person)
+values(person)
+has_key(person, "name")
+delete(person, "active")
+len(person)
 ```
 
-### String interpolation
+### Collections (sets)
 
-`$variable` for simple names, `${expression}` for anything else:
+The `collections` module provides set-oriented operations:
 
 ```ject
-let name = "Alice"
-let age  = 30
-print "Hello, $name!"
-print "In 5 years: ${age + 5}"
-print "Type: ${type_of(name)}"
+import "collections" as sets
+
+let a = sets.from_array(["a", "b"])
+let b = sets.from_array(["b", "c"])
+
+sets.union(a, b)
+sets.intersect(a, b)
+sets.difference(a, b)
+sets.has(a, "a")
+sets.to_array(a)
+```
+
+## 8. Strings
+
+Strings are UTF-8 text values:
+
+```ject
+let language = "Ject"
+let escaped = "first line\nsecond line"
+```
+
+Common escape sequences include `\n`, `\t`, `\r`, `\\`, and `\"`.
+
+### Interpolation
+
+Use `$name` for a variable and `${expression}` for a full expression:
+
+```ject
+let name = "Ada"
+print "Hello, $name"
+print "2 + 3 = ${2 + 3}"
 ```
 
 ### Indexing and slicing
 
-String indexing works exactly like array indexing:
-
 ```ject
-"hello"[0]             # "h"
-"hello"[-1]            # "o"
-"hello"[1:4]           # "ell"
-"hello"[from:1 to:4]   # "ell"
-"hello"[-3:]           # "llo"
+"hello"[1]    # "e"
+"hello"[1:4]  # "ell"
+"hello"[-1]   # "o"
 ```
 
-### Core string functions
+### Common string functions
 
 ```ject
-len("hello")                   # 5
-upper("hello")                 # "HELLO"
-lower("HELLO")                 # "hello"
-trim("  hi  ")                 # "hi"
-split("a,b,c", ",")            # ["a", "b", "c"]
-join(["a", "b"], "-")          # "a-b"
-replace("hello", "l", "r")    # "herro"
-char_at("hello", 1)            # "e"
-substring("hello", 1, 4)       # "ell"
-repeat("ab", 3)                # "ababab"
+len(text)
+upper(text)
+lower(text)
+trim(text)
+split(text, separator)
+join(parts, separator)
+replace(text, old, new)
+substring(text, start, end)
+contains(text, fragment)
+starts_with(text, prefix)
+ends_with(text, suffix)
+repeat(text, count)
+char_at(text, index)
 ```
 
----
+The `string` module adds higher-level helpers such as capitalization, title casing,
+padding, word operations, and validation predicates.
 
-## Dictionaries
+## 9. Structs
 
-Key-value stores with string keys.
-
-```ject
-let person = {name: "Alice", age: 30, active: true}
-let empty  = {}
-```
-
-### Access and mutation
-
-```ject
-person["name"]            # "Alice"
-person["age"] = 31        # update existing key
-person["email"] = "a@b"   # add new key
-```
-
-### Dictionary builtins
-
-```ject
-has_key(person, "name")   # true
-delete(person, "email")   # returns new dict without the key
-keys(person)              # array of keys, sorted
-values(person)            # array of values in key-sorted order
-```
-
----
-
-## Collections (Sets)
-
-A `Collection` is a hash set of unique string values. Useful when you need fast membership checks and automatic deduplication without order guarantees.
-
-```ject
-import "collections" as c
-
-let fruits = collection(["apple", "banana", "apple"])
-# contains only "apple" and "banana"
-```
-
-### Collection functions (require `import "collections"`)
-
-```ject
-collection(arr)              # create from array
-add_to(s, "cherry")          # returns new collection with item added
-remove_from(s, "banana")     # returns new collection with item removed
-has(s, "apple")              # true/false
-size(s)                      # element count
-union(s1, s2)
-intersect(s1, s2)
-difference(s1, s2)           # in s1 but not s2
-is_subset(s1, s2)
-is_superset(s1, s2)
-clear_collection(s)
-to_array(s)
-```
-
-From `stdlib/collections.ject`:
-
-```ject
-c.from_array(arr)             # same as collection(arr)
-c.is_empty_collection(coll)   # size(coll) == 0
-```
-
----
-
-## Structs
-
-### Definition
+Structs describe records with known fields:
 
 ```ject
 struct Point { x, y }
 
-struct Person {
-    name,
-    age,
-    email
-}
+let point = new Point { x: 10, y: 20 }
+print point.x
+point.x = 15
 ```
 
-### Instantiation
+Fields not supplied during construction receive `nil`.
+
+Structs are useful when a dictionary would be too loose and the program benefits
+from a named shape. Functions that accept a struct can still be used with method-call
+sugar:
 
 ```ject
-let p     = new Point { x: 10, y: 20 }
-let alice = new Person { name: "Alice", age: 30, email: "a@b.com" }
-```
-
-### Access and mutation
-
-```ject
-print p.x    # 10
-p.x = 99
-p.y += 5
-```
-
----
-
-## Modules
-
-### Import styles
-
-```ject
-import "math"                    # all into scope directly
-import "math" as m               # with alias
-import {sqrt, PI} from "math"    # selective
-```
-
-### User modules
-
-```ject
-import "./utils"                 # relative path -- resolves against the IMPORTING file's own directory
-import "modules/utils"           # project-root-relative path
-import "~/Documents/mylib"       # home-relative
-import "/absolute/path/to/lib"   # absolute
-```
-
-The `.ject` extension is added automatically if omitted.
-
-A `./` or `../` import always resolves relative to the directory of the file doing the importing, not the process's working directory or the entry script -- so a module can freely import its own sibling files no matter where the overall program is run from.
-
-Importing the same module twice (from anywhere in the program) reuses its already-executed state rather than re-running the file -- module-level variables behave like a singleton, the same as Python or JS modules. A module that imports another which (directly or transitively) imports it back gets a clear "Circular import detected" error instead of infinite recursion.
-
-### Exporting
-
-```ject
-# utils.ject
-export PI = 3.14159
-
-export fn circle_area(r)
-    return PI * r * r
+fn distance_from_origin(point)
+    return sqrt(pow(point.x, 2) + pow(point.y, 2))
 end
+
+print point.distance_from_origin()
 ```
 
-Use `export fn` for functions, `export name = value` for constants.
+## 10. Errors
 
-### Available standard modules
-
-| Module | Description |
-|--------|-------------|
-| `"math"` | Advanced math — trig, logs, primes, stats, geometry |
-| `"string"` | Advanced string manipulation |
-| `"array"` | Advanced array operations |
-| `"io"` | File helpers, JSON file I/O |
-| `"json"` | JSON validation, path access |
-| `"system"` | Shell/CWD helpers |
-| `"datetime"` | Timestamp helpers |
-| `"util"` | Functional utilities, random float |
-| `"collections"` | Set operations |
-| `"numpy"` | Numerical arrays (Rust-backed) |
-| `"gui"` | Native dialog windows (Rust-backed) |
-| `"color"` | ANSI terminal color/style helpers |
-| `"table"` | Aligned ASCII table rendering |
-
----
-
-## Error Handling
-
-### throw
+### Throwing an error
 
 ```ject
 fn divide(a, b)
-    if b == 0 then
-        throw "division by zero"
+    if b == 0
+        throw "cannot divide by zero"
     end
     return a / b
 end
 ```
 
-Any value can be thrown, not just strings -- a dict, a struct, whatever fits the situation:
+Any Ject value can be thrown, though strings or structured dictionaries usually
+produce the clearest errors.
 
-```ject
-throw {"code": 404, "message": "not found"}
-```
-
-A thrown value caught by a `try`/`catch` wrapped directly around it keeps its original type (string, dict, struct, ...). If it instead escapes a function call first (i.e. the `throw` is inside a function, and the `try` is around the *call* to that function), it's currently converted to its string representation before the catch sees it.
-
-### try / catch
+### Catching errors
 
 ```ject
 try
     let result = divide(10, 0)
     print result
-catch err
-    print "Error: " + err
+catch error
+    print "Failed: $error"
 end
 ```
 
-`catch` can omit the variable name:
+Use exceptions for exceptional failures. For ordinary expected choices, returning
+`nil`, a boolean, or a result dictionary may be easier for callers.
+
+### Assertions
+
+Assertions are useful in tests and at API boundaries:
 
 ```ject
-try
-    risky()
-catch
-    print "something went wrong"
+assert(total >= 0, "total must not be negative")
+```
+
+### Diagnostics
+
+Ject uses one diagnostic format everywhere: parsing, linting, execution, packages,
+and native libraries. Diagnostics are written to standard error, while normal
+program output remains on standard output. This makes shell redirection and editor
+integration predictable.
+
+```text
+error[E3001]: undefined variable `totla`
+ --> src/main.ject:2:7
+   |
+ 2 | print totla
+   |       ^^^^^ not found in this scope
+   = note: names are case-sensitive
+   = help: did you mean `total`?
+```
+
+Every diagnostic consists of a severity, a stable code, a short explanation, and,
+when useful, a source label, note, and actionable help. Color is enabled only when
+standard error is a terminal, so redirected output contains no escape sequences.
+
+Code families identify the subsystem:
+
+| Range | Meaning |
+|---|---|
+| `E11xx` | Syntax and parser errors |
+| `E20xx` / `W20xx` | Static-analysis errors and warnings |
+| `E30xx` | Runtime values, calls, indices, and operations |
+| `E31xx` | Imports and modules |
+| `E32xx` | Native calls and ABI failures |
+| `E40xx` | Command usage, packages, and files |
+| `E41xx` / `E42xx` | Native package builds and loading |
+
+Treat a code as a searchable identifier; the explanatory text may improve between
+releases. `ject check` parses and lints without executing user code and returns a
+non-zero status if it finds an error. Warnings are shown with a summary but do not
+make checking fail. Runtime and parser errors also return a non-zero status when a
+file or package command is used. The REPL reports the same diagnostics but remains
+open so the next expression can be entered.
+
+## 11. Modules
+
+A module is a `.ject` file that explicitly exports values.
+
+`math_utils.ject`:
+
+```ject
+export PI = 3.14159
+
+export fn circle_area(radius)
+    return PI * radius * radius
 end
 ```
 
-Execution continues normally after the block.
-
----
-
-## Input & Output
-
-### print
+Import with an alias:
 
 ```ject
-print "Hello"
-print x, y, z
-print "a", "b", "c" sep:", "    # a, b, c
-print "no newline" end:""
-print(42)                        # parenthesized form works too
+import "./math_utils" as math
+print math.circle_area(5)
 ```
 
-### input
+Import selected names:
 
 ```ject
-let name = input("Name: ")
-let n    = to_int(input("Number: "))
+import {circle_area, PI} from "./math_utils"
 ```
 
----
-
-## File System
-
-Available globally without any import:
+Import every export into the current scope:
 
 ```ject
-read_file("notes.txt")               # full content as string, or nil
-write_file("out.txt", "hello")       # create or overwrite
-append_file("log.txt", "new line\n") # append without overwriting
-read_lines("data.txt")               # array of lines
-file_exists("config.txt")            # true/false
-is_file("notes.txt")                 # true if regular file
-is_dir("/home/leo")                  # true if directory
+import "./math_utils"
 ```
 
----
+Aliases are recommended for larger modules because they make the origin of a name
+obvious.
 
-## System
-
-Available globally without any import:
+### Module paths
 
 ```ject
-exec("ls -la")      # run shell command, return stdout as string
-env("HOME")         # get environment variable value
-exit(0)             # exit program with status code
-now()               # current time as float (Unix seconds)
-timestamp()         # current Unix timestamp as integer
-sleep(500)          # sleep for 500 milliseconds
+import "./sibling"       # relative to the importing file
+import "../shared/util"  # relative parent path
+import "/absolute/path"  # absolute filesystem path
+import "~/my_lib"        # home-relative path
+import "math"            # package or standard module
 ```
 
----
+Relative imports always resolve against the importing module, not the process's
+current directory.
 
-## CorLib Reference
+Modules execute once per interpreter. Later imports reuse their cached exports.
+Circular imports produce a diagnostic rather than recursing forever.
 
-CorLib is always in scope — no import needed. All implemented in Rust.
+## 12. Packages
 
-### Type
+A package is a directory containing `Ject.toml`.
 
-| Function | Description |
-|----------|-------------|
-| `type_of(value)` | Type name as string |
-| `to_int(value)` | Convert to integer (truncates floats) |
-| `to_float(value)` | Convert to float |
-| `to_string(value)` | Convert to string |
-| `to_bool(value)` | Convert to boolean |
+Create an application:
 
-### Array
+```bash
+ject new hello
+cd hello
+ject run
+```
 
-| Function | Description |
-|----------|-------------|
-| `len(value)` | Length of array or string |
-| `range(stop)` / `range(start, stop)` / `range(start, stop, step)` | Integer array |
-| `push(arr, item)` | New array with item appended |
-| `pop(arr)` | New array with last item removed |
-| `sum(arr)` | Sum of numeric elements |
-| `contains(arr, item)` | Membership check |
-| `index_of(arr, item)` | Index or -1 |
-| `first(arr)` | First element |
-| `last(arr)` | Last element |
-| `slice(arr, start, end)` | Subarray |
-| `sort(arr)` | Sorted copy |
-| `reverse(arr)` | Reversed copy |
-| `unique(arr)` | Deduplicated copy |
-| `map(arr, fn)` | Apply fn to each element |
-| `filter(arr, fn)` | Keep elements where fn is truthy |
-| `reduce(arr, fn, initial)` | Fold left. `initial` is optional -- if omitted, the first element seeds the accumulator and folding starts from the second element (an empty array then requires `initial`) |
+The generated layout is:
 
-### String
+```text
+hello/
+  Ject.toml
+  src/main.ject
+```
 
-| Function | Description |
-|----------|-------------|
-| `upper(str)` | Uppercase |
-| `lower(str)` | Lowercase |
-| `trim(str)` | Strip whitespace |
-| `split(str, sep)` | Split by separator |
-| `join(arr, sep)` | Join array into string |
-| `replace(str, old, new)` | Replace all occurrences |
-| `char_at(str, i)` | Character at index (negative supported) |
-| `substring(str, start, end)` | Substring by index |
-| `repeat(str, n)` | Repeat string |
+Create a library:
 
-### Math
+```bash
+ject new useful_math --lib
+```
 
-| Function | Description |
-|----------|-------------|
-| `abs(x)` | Absolute value |
-| `sqrt(x)` | Square root |
-| `pow(base, exp)` | Exponentiation |
-| `sin(x)` / `cos(x)` / `tan(x)` | Trig (radians) |
-| `floor(x)` / `ceil(x)` / `round(x)` | Rounding |
-| `min(a, b)` / `max(a, b)` | Min/max of two values |
-| `random()` | Float in `[0.0, 1.0)` |
-| `random_int(min, max)` | Integer in `[min, max)` |
-| `PI` | 3.141592653589793 |
-| `E` | 2.718281828459045 |
-| `inf` | Positive floating-point infinity (`-inf` for negative) |
-| `nan` | Floating-point not-a-number (`nan == nan` is `false`, per IEEE 754) |
+Libraries conventionally use `src/lib.ject` and export their public API.
 
-### I/O
+### Manifest
 
-| Function | Description |
-|----------|-------------|
-| `print ...` | Print with optional `sep:` and `end:` |
-| `input(prompt)` | Read line from stdin |
-| `read_file(path)` | File contents as string |
-| `write_file(path, content)` | Create or overwrite |
-| `append_file(path, content)` | Append to file |
-| `read_lines(path)` | File as array of lines |
-| `file_exists(path)` | Check existence |
-| `is_file(path)` | Is regular file |
-| `is_dir(path)` | Is directory |
+```toml
+[package]
+name = "my_app"
+version = "0.1.0"
+edition = "2026"
+entry = "src/main.ject"
 
-### Dictionary
+[dependencies]
+useful_math = { path = "../useful_math" }
+```
 
-| Function | Description |
-|----------|-------------|
-| `has_key(dict, key)` | Check key existence |
-| `delete(dict, key)` | New dict without key |
-| `keys(dict)` | Array of keys (sorted) |
-| `values(dict)` | Array of values (key-sorted order) |
-
-### JSON
-
-| Function | Description |
-|----------|-------------|
-| `parse_json(str)` | Parse JSON string |
-| `to_json(value)` | Serialize to JSON string |
-
-### Misc
-
-| Function | Description |
-|----------|-------------|
-| `assert(cond)` | Throw if condition is falsy |
-| `exec(cmd)` | Run shell command |
-| `env(name)` | Get environment variable |
-| `exit(code)` | Exit program |
-| `now()` | Unix time as float |
-| `timestamp()` | Unix time as integer |
-| `sleep(ms)` | Sleep milliseconds |
-
----
-
-## Standard Library Modules
-
-All modules below are written in Ject and embedded in the binary at compile time via `include_str!()`. When you import one, the interpreter executes the `.ject` source with a small set of seed builtins pre-injected.
-
-### math
+Then import the dependency by its manifest key:
 
 ```ject
-import "math" as m
+import "useful_math" as math
 ```
 
-**Extra constants:**
-```ject
-m.PHI    # 1.618... golden ratio
-m.SQRT2  # 1.414...
-m.SQRT3  # 1.732...
+Path dependencies and their transitive path dependencies are resolved before the
+program starts. Native artifacts in that graph are loaded automatically.
+
+### Package commands
+
+```bash
+ject run
+ject check
+ject test
+ject add useful_math --path ../useful_math
+ject install
+ject remove useful_math
+ject build
+ject build --release
 ```
 
-**Logarithms** (not in CorLib — need this import):
-```ject
-m.log(x, base)
-m.log10(x)
-m.log2(x)
-m.ln(x)
-m.exp(x)
+- `run` executes the package entry.
+- `check` parses and lints the package entry.
+- `test` runs every `tests/*.ject` file in sorted order.
+- `add` validates a local library, records it, and refreshes the lockfile.
+- `install` resolves the graph, writes `Ject.lock`, and builds native parts.
+- `remove` deletes a dependency and refreshes the lockfile.
+- `build` checks Ject source and builds native components when present.
+
+Commit `Ject.lock` for applications. Remote registries, git dependencies, and
+publishing are not completed in 0.9; installation currently uses explicit local paths.
+
+## 13. Standard library reference
+
+Ject has two library layers:
+
+- CorLib contains primitives that are always in scope.
+- Standard modules are imported explicitly and are mostly written in Ject.
+
+### CorLib: type and conversion
+
+| Function | Purpose |
+|---|---|
+| `type_of(value)` | Return the runtime type name |
+| `to_int(value)` | Convert to an integer |
+| `to_float(value)` | Convert to a float |
+| `to_string(value)` | Convert to text |
+| `to_bool(value)` | Convert to a boolean |
+
+### CorLib: arrays and iteration
+
+| Function | Purpose |
+|---|---|
+| `len(value)` | Length of a string or container |
+| `range(...)` | Construct a numeric range as values |
+| `push(array, value)` | Return an array with a value appended |
+| `pop(array)` | Return an array without its final value |
+| `first(array)` / `last(array)` | First or last item |
+| `slice(value, start, end, step)` | Slice an array or string |
+| `map(array, function)` | Transform every element |
+| `filter(array, predicate)` | Keep matching elements |
+| `reduce(array, function, initial)` | Fold elements into one value |
+| `sort(array)` / `reverse(array)` | Return reordered arrays |
+| `flatten(array)` | Flatten nested arrays |
+| `unique(array)` | Remove repeated values |
+| `contains(container, value)` | Test membership |
+| `index_of(container, value)` | Find an item index |
+
+### CorLib: strings
+
+| Function | Purpose |
+|---|---|
+| `upper` / `lower` | Change letter case |
+| `trim` | Remove surrounding whitespace |
+| `split` / `join` | Split text or join strings |
+| `replace` | Replace text fragments |
+| `substring` | Extract a text range |
+| `char_at` | Read one character |
+| `starts_with` / `ends_with` | Test prefixes and suffixes |
+| `repeat` | Repeat text |
+
+### CorLib: mathematics
+
+Constants available globally include `PI`, `E`, `inf`, and `nan`.
+
+Functions include:
+
+```text
+abs  ceil  floor  round  sqrt  pow
+min  max  sum
+sin  cos  tan
+random  random_int
 ```
 
-**Angle conversion:**
-```ject
-m.deg_to_rad(d)
-m.rad_to_deg(r)
-m.degrees(r)     # alias
-m.radians(d)     # alias
+### CorLib: dictionaries and JSON
+
+```text
+keys  values  has_key  delete
+to_json  parse_json
 ```
 
-**Inverse trig:**
-```ject
-m.asin(x)
-m.acos(x)
-m.atan(x)
-m.atan2(y, x)
+### CorLib: I/O, files, and processes
+
+```text
+print  input
+read_file  write_file  append_file  read_lines
+file_exists  is_file  is_dir
+exec  exit
 ```
 
-**Hyperbolic:**
-```ject
-m.sinh(x)
-m.cosh(x)
-m.tanh(x)
+File and process functions operate with the permissions of the Ject process. Treat
+untrusted paths and command strings carefully.
+
+### CorLib: testing and utilities
+
+```text
+assert  now  timestamp  sleep
 ```
 
-**Number theory (written in Ject):**
-```ject
-m.gcd(a, b)
-m.lcm(a, b)
-m.factorial(n)
-m.fibonacci(n)
-m.is_prime(n)
-m.primes_up_to(n)
-```
+### Standard modules
 
-**Statistics (written in Ject):**
-```ject
-m.average(arr)
-m.median(arr)
-m.variance(arr)
-m.stddev(arr)
-m.product(arr)
-```
-
-**Combinatorics:**
-```ject
-m.permutations(n, k)
-m.combinations(n, k)
-```
-
-**Geometry:**
-```ject
-m.distance_2d(x1, y1, x2, y2)
-m.distance_3d(x1, y1, z1, x2, y2, z2)
-m.dot_2d(x1, y1, x2, y2)
-m.cross_2d(x1, y1, x2, y2)
-m.magnitude(x, y)
-m.normalize_2d(x, y)             # returns [nx, ny]
-m.quadratic_roots(a, b, c)       # returns [], [r], or [r1, r2]
-```
-
-**Utilities:**
-```ject
-m.round_to(x, decimals)
-m.clamp(value, min, max)
-m.sign(x)                        # -1, 0, or 1
-m.lerp(a, b, t)
-m.remap(val, from_min, from_max, to_min, to_max)
-m.is_even(n)
-m.is_odd(n)
-m.is_power_of_2(n)
-m.next_power_of_2(n)
-m.nth_root(x, n)
-```
-
----
-
-### string
-
-```ject
-import "string" as s
-```
-
-```ject
-s.capitalize(str)
-s.title_case(str)
-s.trim_left(str)
-s.trim_right(str)
-s.pad_left(str, width, char)
-s.pad_right(str, width, char)
-s.pad_center(str, width, char)
-s.starts_with(str, prefix)
-s.ends_with(str, suffix)
-s.contains_str(str, substr)
-s.find(str, substr, start)
-s.count(str, substr)
-s.replace_all(str, old, new)
-s.replace_first(str, old, new)
-s.remove(str, substr)
-s.reverse_str(str)
-s.left(str, n)
-s.right(str, n)
-s.truncate(str, max_len)          # truncates with "..."
-s.is_empty(str)
-s.is_numeric(str)
-s.is_alpha(str)
-s.word_count(str)
-s.sentence_count(str)
-s.lines(str)                      # split on newlines → array
-s.format(template, args)          # "{0} and {1}" with array
-s.escape(str)
-s.unescape(str)
-s.wrap_text(str, width)
-s.extract_numbers(str)
-```
-
----
-
-### array
+Import standard modules by name:
 
 ```ject
-import "array" as a
+import "math" as math
+import "string" as strings
+import "array" as arrays
+import "io" as io
+import "json" as json
+import "system" as system
+import "util" as util
+import "datetime" as datetime
+import "collections" as sets
+import "color" as color
+import "table" as table
 ```
+
+#### `math`
+
+Adds helpers beyond the global math primitives, including logarithms with a base,
+number predicates, combinatorics, and common sequences.
+
+Representative use:
 
 ```ject
-a.any(arr, fn)              # true if fn(item) for any item
-a.all(arr, fn)              # true if fn(item) for all items
-a.average(arr)
-a.median(arr)
-a.find(arr, fn)             # first element where fn is truthy
-a.count(arr, fn)            # count where fn is truthy
-a.take(arr, n)              # first n elements
-a.drop(arr, n)              # all but first n
-a.initial(arr)              # all but last
-a.rest(arr)                 # all but first
-a.concat(arr1, arr2)
-a.zip(arr1, arr2)           # [[a0,b0], [a1,b1], ...]
-a.union(arr1, arr2)
-a.intersection(arr1, arr2)
-a.difference(arr1, arr2)
-a.flatten(arr)
-a.chunk(arr, n)
-a.shuffle(arr)
-a.rotate_left(arr, n)
-a.rotate_right(arr, n)
-a.insert_at(arr, idx, item)
-a.remove_at(arr, idx)
-a.compact(arr)              # remove nil and false values
-a.enumerate(arr)            # [[0, item0], [1, item1], ...]
-a.fill_arr(count, value)
-a.range_arr(start, end, step)
-a.sample(arr)               # random element
-a.sort_by(arr, key_fn)
+import "math" as math
+
+math.log(8, 2)
+math.fibonacci(10)
+math.factorial(5)
+math.gcd(24, 18)
+math.lcm(6, 8)
+math.is_prime(97)
+math.clamp(value, 0, 100)
 ```
 
----
+#### `string`
 
-### io
+Adds higher-level text helpers:
 
 ```ject
-import "io"
+import "string" as strings
+
+strings.capitalize("hello")
+strings.title_case("hello world")
+strings.is_alpha("Ject")
+strings.is_numeric("123")
+strings.reverse_str("abc")
 ```
+
+#### `array`
+
+Adds conversions and array-oriented convenience operations. Core functional
+operations such as `map`, `filter`, and `reduce` remain globally available.
+
+#### `io` and `json`
+
+These modules group file and JSON operations for namespaced use. The underlying
+primitives are also available globally where documented above.
+
+#### `system`
+
+Groups process, environment, input, and filesystem inspection helpers.
+
+#### `util`
+
+Contains general helpers built on conversion, random, and type primitives.
+
+#### `datetime`
+
+Groups time-related functions. `now`, `timestamp`, and `sleep` are also global.
+Calendar extraction and formatting remain intentionally modest in 0.8.
+
+#### `collections`
+
+Provides set-like collections:
+
+```text
+from_array  to_array  add_to  remove_from  has
+union  intersect  difference
+is_subset  is_superset  size  clear_collection
+```
+
+#### `color`
+
+Provides color creation, conversion, and formatting helpers.
+
+#### `table`
+
+Provides helpers for constructing and formatting text tables.
+
+## 14. JGUI
+
+JGUI is a mixed library. Its public API and convenience dialogs are Ject source;
+the private Rust backend uses egui/eframe for operating-system windows.
 
 ```ject
-io.write_lines(path, lines_arr)   # join with \n and write
-io.read_json(path)                # read_file + parse_json
-io.write_json(path, value)        # to_json + write_file
+import "jgui" as gui
+
+let app = gui.window("Profile", 560, 380)
+gui.label(app, "Enter your details")
+gui.separator(app)
+gui.input(app, "name", "Name:", "")
+gui.button(app, "save", "Save")
+
+let result = gui.run(app)
+print result["buttons"]
+print result["inputs"]
 ```
 
-Also exposes: `file_exists`, `is_file`, `is_dir`, `append_file`, `read_lines`, `parse_json`, `to_json`.
+### JGUI functions
 
----
+| Function | Purpose |
+|---|---|
+| `window(title, width=640, height=480)` | Create a native window resource |
+| `label(app, text)` | Add text |
+| `separator(app)` | Add a visual separator |
+| `button(app, id, text)` | Add a button |
+| `input(app, id, label, initial="")` | Add a single-line input |
+| `run(app)` | Run until the window closes and return results |
+| `message(title, text, width=420, height=180)` | Display a message dialog |
+| `confirm(title, question, width=420, height=200)` | Display yes/no buttons |
 
-### json
+A window has runtime type `jgui_window`. It is a generic native resource, not an
+integer ID. Application code cannot import `@native/jgui`; only the public JGUI
+facade may access that implementation module.
+
+JGUI currently uses a blocking, declarative window lifecycle. Callback and event
+handles are a planned ABI layer rather than an undocumented special case.
+
+## 15. JNUM
+
+JNUM is Ject's native numerical-array library:
 
 ```ject
-import "json" as j
+import "jnum" as numbers
+
+let data = numbers.array([1, 2, 3, 4])
+print numbers.mean(data)
+print numbers.shape(data)
 ```
+
+Its public Ject facade provides defaults and convenience wrappers. Rust and ndarray
+own numerical storage and kernels. Array values have runtime type `ndarray`.
+
+### Creation
+
+```text
+array  zeros  ones
+arange  linspace  eye  identity
+```
+
+### Shape and manipulation
+
+```text
+shape  ndim  size
+reshape  flatten  transpose
+concatenate  stack
+```
+
+### Element-wise operations
+
+```text
+sqrt  exp  log  log10  abs
+ceil  floor  round  clip
+sin  cos  tan  arcsin  arccos  arctan  arctan2
+degrees  radians
+sinh  cosh  tanh
+```
+
+### Reductions and ordering
+
+```text
+sum  mean  std  var  min  max
+argmin  argmax  cumsum  any  all
+sort  argsort
+```
+
+### Linear algebra and comparisons
+
+```text
+dot  inner  outer  matmul  trace  diag
+logical_and  logical_or  logical_not
+greater  less  equal  not_equal  where_cond
+```
+
+### Random values and constants
+
+```text
+random  rand  randint
+PI  E  INF  NAN
+```
+
+Not every NumPy behavior is implied by the JNUM name. Consult tests and runtime
+errors for supported dimensions and argument forms; JNUM is an evolving native
+library, not a compatibility promise with Python NumPy.
+
+## 16. Mixed Ject and Rust libraries
+
+Create a mixed package:
+
+```bash
+ject new native_greeter --native
+cd native_greeter
+ject build
+```
+
+Generated layout:
+
+```text
+native_greeter/
+  Ject.toml
+  src/lib.ject
+  native/Cargo.toml
+  native/src/lib.rs
+```
+
+### Public facade
+
+`src/lib.ject` is the API consumers import:
 
 ```ject
-j.to_json_pretty(value)          # pretty-printed JSON
-j.is_valid_json(str)             # true if parseable
-j.json_get(obj, "key.nested")    # dot-path access into parsed JSON
+import "@native/native_greeter" as native
+
+export fn hello(name)
+    assert(type_of(name) == "string", "hello requires a string")
+    return native.hello(name)
+end
 ```
 
----
+`@native/...` is package-private. It is available to the owning facade but rejected
+when application code tries to bypass that facade.
 
-### system
+### Rust backend
 
-```ject
-import "system" as sys
+The Rust crate builds as a `cdylib` and uses `ject-native`:
+
+```rust
+use serde_json::{json, Value};
+
+fn call(function: &str, args: Vec<Value>) -> Result<Value, String> {
+    match function {
+        "hello" => {
+            let name = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| "hello expects a string".to_string())?;
+            Ok(json!(format!("Hello, {name}!")))
+        }
+        _ => Err(format!("unknown function '{function}'")),
+    }
+}
+
+ject_native::ject_plugin!("native_greeter", ["hello"], call);
 ```
 
-```ject
-sys.get_cwd()          # current working directory
-sys.change_dir(path)   # change directory
+The macro exports one stable symbol, `ject_plugin_entry_v1`. Ject reads its module
+name and export list at runtime. No interpreter match arm is added for the package.
+
+### ABI values
+
+The first ABI supports:
+
+- `nil`
+- booleans
+- finite integers and floats
+- strings
+- arrays
+- dictionaries
+- opaque native resources
+- structured success and error envelopes
+
+Rust layouts never cross the dynamic-library boundary. Values are encoded using the
+versioned ABI wire format.
+
+### Native resources
+
+A plugin can return an opaque resource marker:
+
+```rust
+Ok(ject_native::resource(id, "database_connection"))
 ```
 
-Also exposes: `input`, `exec`, `env`, `exit`, `file_exists`, `is_file`, `is_dir`.
+Ject turns it into a typed native value containing the owning module and opaque ID.
+Only that module can receive it again. When the final Ject reference disappears,
+the SDK calls the handler with `__drop_resource` so Rust can release the object.
 
----
+See `examples/native_double` and `examples/native_double_demo` for a complete,
+tested library/consumer pair containing both a normal function and an opaque counter
+resource.
 
-### util
+### Trust model
 
-```ject
-import "util" as u
+Version 0.8 native libraries are in-process dynamic libraries. They are appropriate
+for trusted local code and have the same operating-system access as Ject itself.
+Capability enforcement, signed registry artifacts, lockfiles, callbacks, and a
+sandboxed WebAssembly provider are future layers. Do not load untrusted native
+packages.
+
+## 17. Command-line reference
+
+```text
+ject
+ject <file.ject>
+ject --check <file.ject> [...]
+ject --test <file.ject> [...]
+ject --version
+ject --introspect
+ject --help
+
+ject new <name> [--lib | --native]
+ject init [--lib | --native]
+ject run
+ject check
+ject test
+ject build [--release]
 ```
 
-```ject
-u.random_float(min, max)   # float in [min, max)
-u.identity(x)
-u.constant(value)          # returns fn(_) -> value
-u.compose(f, g)            # fn(x) -> f(g(x))
-u.apply(func, value)
-u.is_nil(value)
-u.is_truthy(value)
-u.deep_equal(a, b)
-u.copy(value)
-```
+| Command | Description |
+|---|---|
+| `ject` | Start the REPL |
+| `ject file.ject` | Run one file |
+| `ject --check files...` | Parse and lint files without running them |
+| `ject --test files...` | Run explicit test scripts |
+| `ject new name` | Create an application package |
+| `ject new name --lib` | Create a source library |
+| `ject new name --native` | Create a mixed Ject/Rust library |
+| `ject init` | Initialize the current directory |
+| `ject run` | Run the current package entry |
+| `ject check` | Check the current package entry |
+| `ject test` | Run `tests/*.ject` |
+| `ject build` | Check source and build native dependencies |
+| `ject --introspect` | Print native-kernel metadata as JSON |
 
-Also exposes: `type_of`, `random`, `random_int`, `to_int`, `to_float`, `to_string`, `to_bool`.
+Commands search the current directory and its parents for `Ject.toml`.
 
----
-
-### datetime
-
-```ject
-import "datetime" as dt
-```
-
-`now()`, `timestamp()`, and `sleep()` are globally available and don't require this import. The module provides placeholder helpers (`format_time`, `get_year`, `get_month`, `get_day`, `create_timestamp`) pending a proper date library implementation.
-
----
-
-### gui
-
-```ject
-import {window, label, separator, button, input, run} from "gui"
-```
-
-Builds a native dialog window. `run(app)` blocks until the user closes the window and returns a result dictionary.
-
-```ject
-let app = window("My App", 560, 380)
-label(app, "Fill in your details:")
-separator(app)
-input(app, "name", "Name:", "")
-input(app, "email", "Email:", "")
-separator(app)
-button(app, "ok", "OK")
-button(app, "cancel", "Cancel")
-
-let result = run(app)
-print result["buttons"]    # ["ok"]
-print result["inputs"]     # {name: "Alice", email: "a@b.com"}
-```
-
-The GUI module is native-only (Rust/egui). It cannot be reimplemented in Ject itself.
-
----
-
-### numpy
-
-```ject
-import "numpy" as np
-```
-
-Rust-backed numerical arrays. Native-only.
-
-**Creation:** `np.array([...])`, `np.zeros(n)`, `np.ones(n)`, `np.arange(start, stop, step)`, `np.linspace(start, stop, n)`, `np.eye(n)`, `np.identity(n)`
-
-**Properties:** `np.shape(arr)`, `np.ndim(arr)`, `np.size(arr)`
-
-**Manipulation:** `np.reshape(arr, dims)`, `np.flatten(arr)`, `np.transpose(arr)`, `np.concatenate([a,b])`, `np.stack([a,b])`
-
-**Element-wise math:** `np.sqrt`, `np.exp`, `np.log`, `np.abs`, `np.sin`, `np.cos`, `np.add`, `np.subtract`, `np.multiply`, `np.divide`
-
-**Aggregation:** `np.sum`, `np.min`, `np.max`, `np.mean`, `np.std`, `np.var`
-
-**Linear algebra:** `np.dot(a,b)`, `np.norm(arr)`, `np.det(m)`, `np.inv(m)`, `np.solve(A,b)`
-
-**Constants:** `np.PI`, `np.E`, `np.inf` / `np.INF`, `np.nan` / `np.NAN`
-
----
-
-### color
-
-```ject
-import "color" as c
-```
-
-Pure Ject, no native code. Wraps text in ANSI escape codes; each call resets styling afterward, so calls nest and concatenate freely.
-
-**Foreground:** `c.black`, `c.red`, `c.green`, `c.yellow`, `c.blue`, `c.magenta`, `c.cyan`, `c.white`, `c.gray`
-
-**Background:** `c.bg_red`, `c.bg_green`, `c.bg_yellow`, `c.bg_blue`
-
-**Styles:** `c.bold`, `c.dim`, `c.underline`, `c.italic`
-
-**True color:** `c.rgb(text, r, g, b)`, `c.bg_rgb(text, r, g, b)`
-
-**Semantic shortcuts:** `c.success`, `c.error`, `c.warning`, `c.info`
-
-```ject
-print(c.bold(c.green("Build succeeded")))
-print(c.error("Something failed"))
-```
-
----
-
-### table
-
-```ject
-import "table" as t
-```
-
-Pure Ject, no native code. Renders an aligned, bordered ASCII table.
-
-```ject
-print(t.render(["Name", "Score"], [["Alice", 92], ["Bob", 81]]))
-```
-
-```
-+-------+-------+
-| Name  | Score |
-+-------+-------+
-| Alice | 92    |
-| Bob   | 81    |
-+-------+-------+
-```
-
-If your data is already an array of dictionaries (e.g. loaded from JSON), `render_dicts` derives the headers from the first dictionary's keys:
-
-```ject
-let rows = [{"name": "Alice", "score": 92}, {"name": "Bob", "score": 81}]
-print(t.render_dicts(rows))
-```
-
-`print_table(headers, rows)` and `print_dicts(dicts)` are shorthand for `print(render(...))` / `print(render_dicts(...))`.
-
----
-
-## CLI Reference
-
-```
-ject                         Start REPL  (prompt: >> )
-ject <file.ject>             Run a script
-ject --check <file> [...]    Parse + lint only, no execution
-ject --test <file> [...]     Run; exit non-zero on failure
-ject --version               Print version
-ject --introspect            Print native kernel metadata as JSON
-ject --help                  Show help
-```
-
-### REPL
-
-- Bare expressions auto-print their result, like Python's REPL (`2 + 2` shows `4` with no `print` needed). `nil` results aren't echoed, so a bare `print(...)` call doesn't double-print.
-- Multi-line input: an unclosed `fn ... end`, an open paren/bracket, a trailing operator, etc. switches to a `.. ` continuation prompt and keeps accumulating lines until the statement is actually complete.
-- Ctrl+C cancels the line currently being typed, or interrupts a running script (e.g. an infinite `while true do ... end`) without killing the REPL. Ctrl+D exits.
-
----
-
-## Architecture: CorLib vs Stdlib
-
-Ject has a two-layer design:
-
-**CorLib** — always in scope, no import needed, implemented in Rust. These are primitives that can't be expressed in Ject: type introspection, array/string operations, math primitives, I/O, system calls.
-
-**Standard library** — written in Ject, embedded in the binary via `include_str!()`. When you `import "math"`, the interpreter loads and executes `stdlib/math.ject`, which builds on top of CorLib. The `.ject` source is readable and patchable without touching Rust.
-
-The three exceptions that stay native-only: `"gui"`, `"base"`, `"numpy"` — they need direct access to native APIs.
-
-```
-import "math"
-  → not native-only
-  → load embedded stdlib/math.ject source
-  → inject seed builtins (log, log10, asin, ...)
-  → execute the Ject source
-  → return the exported scope
-
-import "gui"
-  → native-only
-  → return pre-built Rust map of builtin functions
-```
-
----
-
-## Quick Reference
+## 18. Language reference
 
 ### Keywords
 
-```
+```text
 let  fn  lambda  return
-if  elseif  else  then  end
-while  for  in  do
-match  when
+if  then  elseif  else  end
+while  for  in  do  break  continue
+match
+true  false  nil
+and  or  not
 struct  new
 try  catch  throw
 import  export  from  as
-break  continue
-true  false  nil
-print  and  or
+print
+```
+
+### Delimiters
+
+```text
+( )     calls and grouping
+[ ]     arrays, indexing, and slicing
+{ }     dictionaries and struct fields
+{| |}   unique arrays
+,       item separator
+:       key/value, keyword argument, or slice separator
+.       member access and method-call sugar
 ```
 
 ### Operators
 
-```
-+  -  *  /  %            arithmetic
-+=  -=  *=  /=  %=       compound assignment
-++  --                   increment / decrement
-==  !=  <  >  <=  >=     comparison
-and  or  !               logical
-in                       membership
-..                       range (exclusive end)
-->                       lambda arrow / match arm
+```text
++  -  *  /  %
+==  !=  <  <=  >  >=
+and  or  not  in
+=  -=  *=  /=  %=
+++  --
+..
 ```
 
-### Common patterns
+### Block forms
 
 ```ject
-# iterate with index
-let i = 0
-for item in arr do
-    print "${i}: $item"
-    i += 1
+if condition
+    statements
 end
 
-# list comprehension
-let doubled = [x * 2 for x in nums]
-let big     = [x for x in nums if x > 10]
-
-# match on value
-let msg = match status
-    200 -> "OK"
-    404 -> "Not Found"
-    _   -> "Unknown"
+while condition do
+    statements
 end
 
-# safe dict access
-let val = if has_key(d, "key") then d["key"] else "default" end
+for value in iterable do
+    statements
+end
 
-# functional chain
-let result = reduce(
-    filter(map(data, fn(x) -> x * 2), fn(x) -> x > 5),
-    fn(a, b) -> a + b,
-    0
-)
+fn name(parameters)
+    statements
+end
+
+try
+    statements
+catch error
+    statements
+end
 ```
+
+### Recommended style
+
+- Use four spaces for indentation.
+- Prefer one statement per line.
+- Use `snake_case` for variables and functions.
+- Use `PascalCase` for struct names.
+- Import modules with short, meaningful aliases.
+- Keep native APIs small and place validation and convenience behavior in Ject.
+- Use `ject check` while editing and `ject test` before committing.
+
+### Current boundaries
+
+Ject 0.9 deliberately does not claim completed support for remote package registries,
+publishing, capability sandboxes, or native callbacks. The implemented local package,
+lockfile, diagnostics, and native ABI behavior is documented above. Planned architecture is
+described separately in [PACKAGES.md](PACKAGES.md).

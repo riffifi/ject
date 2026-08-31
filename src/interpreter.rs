@@ -1,10 +1,10 @@
-use crate::ast::{Expr, Stmt, BinaryOp, UnaryOp, Argument};
+use crate::ast::{Argument, BinaryOp, Expr, Stmt, UnaryOp};
 use crate::lexer::InterpolationPart;
-use crate::value::{Value, Environment};
+use crate::value::{Environment, Value};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::Path;
-use std::collections::HashMap;
 
 /// Get a helpful suggestion for runtime errors
 pub fn get_runtime_suggestion(message: &str) -> String {
@@ -32,7 +32,8 @@ pub fn get_runtime_suggestion(message: &str) -> String {
         return "Check the denominator isn't zero before dividing.".to_string();
     }
     if msg.contains("expected") && msg.contains("argument") {
-        return "Check the number of arguments passed matches the function/lambda's parameters.".to_string();
+        return "Check the number of arguments passed matches the function/lambda's parameters."
+            .to_string();
     }
     if msg.contains("circular import") {
         return "One of these modules needs to stop importing the other, or move the shared code into a third module both of them import instead.".to_string();
@@ -59,7 +60,12 @@ pub struct RuntimeError {
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Runtime error: {}{}", self.message, get_runtime_suggestion(&self.message))
+        write!(
+            f,
+            "Runtime error: {}{}",
+            self.message,
+            get_runtime_suggestion(&self.message)
+        )
     }
 }
 
@@ -82,6 +88,9 @@ pub struct Interpreter {
     // moment it's used from a different directory than the one it happened to be
     // authored/tested in, or is nested inside a subdirectory of a larger project.
     module_dir_stack: Vec<std::path::PathBuf>,
+    // Package import name -> dependency entry file, prepared from Ject.toml.
+    package_modules: HashMap<String, std::path::PathBuf>,
+    current_package: Option<String>,
     // Checked periodically inside loop bodies. A host (e.g. the REPL) can share this
     // with a Ctrl+C handler to interrupt a runaway script -- e.g. an infinite `while
     // true do ... end` -- without killing the whole process. Not set by anything
@@ -118,6 +127,8 @@ impl Interpreter {
             import_stack: Vec::new(),
             module_cache: HashMap::new(),
             module_dir_stack: vec![std::env::current_dir().unwrap_or_default()],
+            package_modules: HashMap::new(),
+            current_package: None,
             interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -132,7 +143,10 @@ impl Interpreter {
     }
 
     fn check_interrupted(&self) -> RuntimeResult<()> {
-        if self.interrupt_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .interrupt_flag
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             Err(RuntimeError {
                 message: "Interrupted".to_string(),
             })
@@ -146,57 +160,73 @@ impl Interpreter {
     /// after `new()`, before `interpret`, so `import "./x"` in the entry file resolves
     /// relative to wherever that file lives rather than the process's CWD.
     pub fn set_script_dir(&mut self, dir: std::path::PathBuf) {
-        self.module_dir_stack[0] = dir;
+        self.module_dir_stack[0] = dir.clone();
+        if let Ok(project) = crate::package::discover(&dir) {
+            self.current_package = Some(project.name.clone());
+            for (alias, root) in &project.dependencies {
+                if let Ok(dependency) = crate::package::load(root) {
+                    self.package_modules
+                        .insert(alias.clone(), dependency.entry.clone());
+                }
+            }
+            if let Ok(dependencies) = crate::package::dependency_projects(&project) {
+                for dependency in dependencies {
+                    self.package_modules
+                        .entry(dependency.name.clone())
+                        .or_insert(dependency.entry);
+                }
+            }
+        }
     }
 
     fn current_import_base(&self) -> std::path::PathBuf {
         self.module_dir_stack.last().cloned().unwrap_or_default()
     }
-    
-//     fn load_stdlib_from_ject(environment: &mut Environment) -> RuntimeResult<()> {
-//         // Load stdlib/index.ject
-//         let stdlib_path = "stdlib/index.ject";
-//         
-//         if !Path::new(stdlib_path).exists() {
-//             // If stdlib doesn't exist in Ject files, that's okay - use Rust stdlib
-//             return Ok(());
-//         }
-//         
-//         // Read and parse the stdlib index
-//         let stdlib_content = fs::read_to_string(stdlib_path)
-//             .map_err(|e| RuntimeError {
-//                 message: format!("Failed to read stdlib: {}", e),
-//             })?;
-//             
-//         let mut lexer = crate::lexer::Lexer::new(&stdlib_content);
-//         let located_tokens = lexer.tokenize_with_positions();
-//         let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
-//         let mut parser = crate::parser::Parser::new_simple(tokens);
-//         let statements = parser.parse().map_err(|e| RuntimeError {
-//             message: format!("Parse error in stdlib: {}", e),
-//         })?;
-//         
-//         // Create a temporary interpreter to execute stdlib
-//         let mut stdlib_interpreter = Interpreter {
-//             environment: environment.clone(),
-//         };
-//         
-//         // Execute stdlib statements
-//         for statement in &statements {
-//             match stdlib_interpreter.execute_statement(statement)? {
-//                 ControlFlow::Return(_) => break,
-//                 ControlFlow::Throw(_) => break, // Errors in stdlib are ignored
-//                 ControlFlow::Break | ControlFlow::Continue => continue,
-//                 ControlFlow::None => continue,
-//             }
-//         }
-//         
-//         // Merge stdlib environment back
-//         *environment = stdlib_interpreter.environment;
-//         
-//         Ok(())
-//     }
-//     
+
+    //     fn load_stdlib_from_ject(environment: &mut Environment) -> RuntimeResult<()> {
+    //         // Load stdlib/index.ject
+    //         let stdlib_path = "stdlib/index.ject";
+    //
+    //         if !Path::new(stdlib_path).exists() {
+    //             // If stdlib doesn't exist in Ject files, that's okay - use Rust stdlib
+    //             return Ok(());
+    //         }
+    //
+    //         // Read and parse the stdlib index
+    //         let stdlib_content = fs::read_to_string(stdlib_path)
+    //             .map_err(|e| RuntimeError {
+    //                 message: format!("Failed to read stdlib: {}", e),
+    //             })?;
+    //
+    //         let mut lexer = crate::lexer::Lexer::new(&stdlib_content);
+    //         let located_tokens = lexer.tokenize_with_positions();
+    //         let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+    //         let mut parser = crate::parser::Parser::new_simple(tokens);
+    //         let statements = parser.parse().map_err(|e| RuntimeError {
+    //             message: format!("Parse error in stdlib: {}", e),
+    //         })?;
+    //
+    //         // Create a temporary interpreter to execute stdlib
+    //         let mut stdlib_interpreter = Interpreter {
+    //             environment: environment.clone(),
+    //         };
+    //
+    //         // Execute stdlib statements
+    //         for statement in &statements {
+    //             match stdlib_interpreter.execute_statement(statement)? {
+    //                 ControlFlow::Return(_) => break,
+    //                 ControlFlow::Throw(_) => break, // Errors in stdlib are ignored
+    //                 ControlFlow::Break | ControlFlow::Continue => continue,
+    //                 ControlFlow::None => continue,
+    //             }
+    //         }
+    //
+    //         // Merge stdlib environment back
+    //         *environment = stdlib_interpreter.environment;
+    //
+    //         Ok(())
+    //     }
+    //
     pub fn interpret(&mut self, statements: &[Stmt]) -> RuntimeResult<()> {
         for statement in statements {
             match self.execute_statement(statement)? {
@@ -259,7 +289,7 @@ impl Interpreter {
             }
         }
     }
-    
+
     fn execute_statement(&mut self, stmt: &Stmt) -> RuntimeResult<ControlFlow> {
         match stmt {
             Stmt::Expression(expr) => {
@@ -273,7 +303,7 @@ impl Interpreter {
             }
             Stmt::Assign { target, value } => {
                 let val = self.evaluate_expression(value)?;
-                
+
                 match target {
                     crate::ast::AssignTarget::Identifier(name) => {
                         if self.environment.set(&name, val) {
@@ -285,13 +315,12 @@ impl Interpreter {
                         }
                     }
                     crate::ast::AssignTarget::Index { object, index } => {
-                        let obj = self.environment.get(&object)
-                            .ok_or_else(|| RuntimeError {
-                                message: format!("Undefined variable '{}'", object),
-                            })?;
-                        
+                        let obj = self.environment.get(&object).ok_or_else(|| RuntimeError {
+                            message: format!("Undefined variable '{}'", object),
+                        })?;
+
                         let idx = self.evaluate_expression(&index)?;
-                        
+
                         if let Value::Array(arr) = &obj {
                             if let Value::Integer(i) = idx {
                                 let len = arr.borrow().len() as i64;
@@ -304,7 +333,9 @@ impl Interpreter {
                                 arr.borrow_mut()[actual_index as usize] = val;
                                 Ok(ControlFlow::None)
                             } else {
-                                Err(RuntimeError { message: "Array index must be integer".to_string() })
+                                Err(RuntimeError {
+                                    message: "Array index must be integer".to_string(),
+                                })
                             }
                         } else if let Value::Dictionary(mut dict) = obj {
                             if let Value::String(key) = idx {
@@ -312,10 +343,14 @@ impl Interpreter {
                                 self.environment.set(&object, Value::Dictionary(dict));
                                 Ok(ControlFlow::None)
                             } else {
-                                Err(RuntimeError { message: "Dictionary key must be string".to_string() })
+                                Err(RuntimeError {
+                                    message: "Dictionary key must be string".to_string(),
+                                })
                             }
                         } else {
-                            Err(RuntimeError { message: format!("Cannot index into {}", obj.type_name()) })
+                            Err(RuntimeError {
+                                message: format!("Cannot index into {}", obj.type_name()),
+                            })
                         }
                     }
                     crate::ast::AssignTarget::IndexChain { object, indices } => {
@@ -323,21 +358,32 @@ impl Interpreter {
                         Ok(ControlFlow::None)
                     }
                     crate::ast::AssignTarget::Field { object, field } => {
-                        let obj = self.environment.get(&object)
-                            .ok_or_else(|| RuntimeError {
-                                message: format!("Undefined variable '{}'", object),
-                            })?;
-                        
+                        let obj = self.environment.get(&object).ok_or_else(|| RuntimeError {
+                            message: format!("Undefined variable '{}'", object),
+                        })?;
+
                         if let Value::Dictionary(mut dict) = obj {
                             dict.insert(field.clone(), val);
                             self.environment.set(&object, Value::Dictionary(dict));
                             Ok(ControlFlow::None)
-                        } else if let Value::StructInstance { struct_name, mut fields } = obj {
+                        } else if let Value::StructInstance {
+                            struct_name,
+                            mut fields,
+                        } = obj
+                        {
                             fields.insert(field.clone(), val);
-                            self.environment.set(&object, Value::StructInstance { struct_name, fields });
+                            self.environment.set(
+                                &object,
+                                Value::StructInstance {
+                                    struct_name,
+                                    fields,
+                                },
+                            );
                             Ok(ControlFlow::None)
                         } else {
-                            Err(RuntimeError { message: format!("Cannot assign field on {}", obj.type_name()) })
+                            Err(RuntimeError {
+                                message: format!("Cannot assign field on {}", obj.type_name()),
+                            })
                         }
                     }
                 }
@@ -351,20 +397,26 @@ impl Interpreter {
                 self.environment.define(name.clone(), func);
                 Ok(ControlFlow::None)
             }
-            Stmt::If { condition, then_branch, elseif_branches, else_branch } => {
+            Stmt::If {
+                condition,
+                then_branch,
+                elseif_branches,
+                else_branch,
+            } => {
                 let cond_value = self.evaluate_expression(condition)?;
-                
+
                 if cond_value.is_truthy() {
                     self.execute_block(then_branch)
                 } else {
                     // Check elseif conditions
                     for elseif_branch in elseif_branches {
-                        let elseif_cond_value = self.evaluate_expression(&elseif_branch.condition)?;
+                        let elseif_cond_value =
+                            self.evaluate_expression(&elseif_branch.condition)?;
                         if elseif_cond_value.is_truthy() {
                             return self.execute_block(&elseif_branch.body);
                         }
                     }
-                    
+
                     // If no elseif matched, execute else branch if present
                     if let Some(else_stmts) = else_branch {
                         self.execute_block(else_stmts)
@@ -386,7 +438,11 @@ impl Interpreter {
                 }
                 Ok(ControlFlow::None)
             }
-            Stmt::For { var, iterable, body } => {
+            Stmt::For {
+                var,
+                iterable,
+                body,
+            } => {
                 let iter_value = self.evaluate_expression(iterable)?;
 
                 match iter_value {
@@ -422,7 +478,8 @@ impl Interpreter {
                         for ch in s.chars() {
                             self.check_interrupted()?;
                             self.environment.push_scope();
-                            self.environment.define(var.clone(), Value::String(ch.to_string()));
+                            self.environment
+                                .define(var.clone(), Value::String(ch.to_string()));
 
                             let block_result = self.execute_block(body);
                             self.environment.pop_scope();
@@ -460,7 +517,11 @@ impl Interpreter {
                 };
                 Ok(ControlFlow::Return(value))
             }
-            Stmt::Import { module_path, items, alias } => {
+            Stmt::Import {
+                module_path,
+                items,
+                alias,
+            } => {
                 self.load_module(module_path, items, alias)?;
                 Ok(ControlFlow::None)
             }
@@ -484,7 +545,7 @@ impl Interpreter {
                 let mut output = Vec::new();
                 for value_expr in values {
                     let value = self.evaluate_expression(value_expr)?;
-                    output.push(value.display());  // Use display() for print (no quotes on strings)
+                    output.push(value.display()); // Use display() for print (no quotes on strings)
                 }
 
                 // Determine separator (default: space)
@@ -515,7 +576,11 @@ impl Interpreter {
                 self.environment.define(name.clone(), struct_def);
                 Ok(ControlFlow::None)
             }
-            Stmt::Try { body, catch_var, catch_body } => {
+            Stmt::Try {
+                body,
+                catch_var,
+                catch_body,
+            } => {
                 let try_result = self.execute_block(body);
                 match try_result {
                     Ok(ControlFlow::Throw(error_value)) => {
@@ -523,7 +588,8 @@ impl Interpreter {
                         self.environment.push_scope();
                         if let Some(var_name) = catch_var {
                             // Store the error value directly (it can be any value)
-                            self.environment.define(var_name.clone(), error_value.clone());
+                            self.environment
+                                .define(var_name.clone(), error_value.clone());
                         }
                         let result = self.execute_block(catch_body);
                         self.environment.pop_scope();
@@ -534,7 +600,8 @@ impl Interpreter {
                         // Runtime error from function call - convert to throw
                         self.environment.push_scope();
                         if let Some(var_name) = catch_var {
-                            self.environment.define(var_name.clone(), Value::String(e.message.clone()));
+                            self.environment
+                                .define(var_name.clone(), Value::String(e.message.clone()));
                         }
                         let result = self.execute_block(catch_body);
                         self.environment.pop_scope();
@@ -550,7 +617,7 @@ impl Interpreter {
             Stmt::Continue => Ok(ControlFlow::Continue),
         }
     }
-    
+
     fn execute_block(&mut self, statements: &[Stmt]) -> RuntimeResult<ControlFlow> {
         for statement in statements {
             match self.execute_statement(statement)? {
@@ -563,7 +630,7 @@ impl Interpreter {
         }
         Ok(ControlFlow::None)
     }
-    
+
     fn evaluate_expression(&mut self, expr: &Expr) -> RuntimeResult<Value> {
         match expr {
             Expr::Integer(n) => Ok(Value::Integer(*n)),
@@ -580,9 +647,10 @@ impl Interpreter {
                             // Parse and evaluate the expression
                             let mut lexer = crate::lexer::Lexer::new(expr_str);
                             let located_tokens = lexer.tokenize_with_positions();
-                            let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
-let mut parser = crate::parser::Parser::new_simple(tokens);
-                            
+                            let tokens: Vec<crate::lexer::Token> =
+                                located_tokens.into_iter().map(|lt| lt.token).collect();
+                            let mut parser = crate::parser::Parser::new_simple(tokens);
+
                             match parser.parse() {
                                 Ok(statements) => {
                                     if let Some(stmt) = statements.first() {
@@ -591,14 +659,19 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                                             result.push_str(&value.display());
                                         } else {
                                             return Err(RuntimeError {
-                                                message: "Invalid expression in string interpolation".to_string(),
+                                                message:
+                                                    "Invalid expression in string interpolation"
+                                                        .to_string(),
                                             });
                                         }
                                     }
                                 }
                                 Err(e) => {
                                     return Err(RuntimeError {
-                                        message: format!("Parse error in string interpolation: {}", e),
+                                        message: format!(
+                                            "Parse error in string interpolation: {}",
+                                            e
+                                        ),
                                     });
                                 }
                             }
@@ -609,12 +682,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Nil => Ok(Value::Nil),
-            Expr::Identifier(name) => {
-                self.environment.get(name).ok_or_else(|| RuntimeError {
-                    message: format!("Undefined variable '{}'.", name),
-                })
-            }
-            Expr::Binary { left, operator, right } => {
+            Expr::Identifier(name) => self.environment.get(name).ok_or_else(|| RuntimeError {
+                message: format!("Undefined variable '{}'.", name),
+            }),
+            Expr::Binary {
+                left,
+                operator,
+                right,
+            } => {
                 let left_val = self.evaluate_expression(left)?;
 
                 // Short-circuit: don't evaluate (or execute the side effects of) the
@@ -644,8 +719,10 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 // becomes the single positional argument.
                 //
                 // Reconstruct the canonical AST shape to preserve runtime semantics.
-                if let (Expr::Call { .. }, [crate::ast::Argument::Positional(Expr::Identifier(name))]) =
-                    (callee.as_ref(), args.as_slice())
+                if let (
+                    Expr::Call { .. },
+                    [crate::ast::Argument::Positional(Expr::Identifier(name))],
+                ) = (callee.as_ref(), args.as_slice())
                 {
                     let rebuilt = Expr::Call {
                         callee: Box::new(Expr::Identifier(name.clone())),
@@ -656,7 +733,12 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
 
                 // Check for higher-order functions that need special handling
                 if let Expr::Identifier(func_name) = &**callee {
-                    if func_name == "map" || func_name == "filter" || func_name == "reduce" || func_name == "any" || func_name == "all" {
+                    if func_name == "map"
+                        || func_name == "filter"
+                        || func_name == "reduce"
+                        || func_name == "any"
+                        || func_name == "all"
+                    {
                         return self.call_higher_order_function(func_name, args);
                     }
                 }
@@ -687,31 +769,51 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     let mut rest_values = Vec::with_capacity(args.len());
                     for arg in args {
                         match arg {
-                            crate::ast::Argument::Positional(expr) => rest_values.push(self.evaluate_expression(expr)?),
+                            crate::ast::Argument::Positional(expr) => {
+                                rest_values.push(self.evaluate_expression(expr)?)
+                            }
                             crate::ast::Argument::Keyword { .. } => {
                                 return Err(RuntimeError {
-                                    message: format!("{}() does not support keyword arguments", field),
+                                    message: format!(
+                                        "{}() does not support keyword arguments",
+                                        field
+                                    ),
                                 });
                             }
                         }
                     }
 
-                    if field == "map" || field == "filter" || field == "reduce" || field == "any" || field == "all" {
+                    if field == "map"
+                        || field == "filter"
+                        || field == "reduce"
+                        || field == "any"
+                        || field == "all"
+                    {
                         let mut values = vec![obj_val];
                         values.extend(rest_values);
                         return self.call_higher_order_with_values(field, values);
                     }
-                    if let Some(free_fn @ (Value::BuiltinFunction(_) | Value::Function { .. } | Value::Lambda { .. } | Value::ModuleFunction { .. })) = self.environment.get(field) {
+                    if let Some(
+                        free_fn @ (Value::BuiltinFunction(_)
+                        | Value::Function { .. }
+                        | Value::Lambda { .. }
+                        | Value::ModuleFunction { .. }),
+                    ) = self.environment.get(field)
+                    {
                         let mut values = vec![obj_val];
                         values.extend(rest_values);
                         return self.invoke_callable(&free_fn, values);
                     }
 
                     return Err(RuntimeError {
-                        message: format!("Cannot access field '{}' on {}", field, obj_val.type_name()),
+                        message: format!(
+                            "Cannot access field '{}' on {}",
+                            field,
+                            obj_val.type_name()
+                        ),
                     });
                 }
-                
+
                 let func = self.evaluate_expression(callee)?;
 
                 self.call_function(func, args)
@@ -738,25 +840,34 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
                 Ok(Value::UniqueArray(values))
             }
-            Expr::ListComprehension { expr, var, iterable, condition } => {
+            Expr::ListComprehension {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 // Evaluate the iterable
                 let iter_value = self.evaluate_expression(iterable)?;
-                
+
                 // Get elements from iterable (array, unique array, string chars, or range)
                 let elements = match iter_value {
                     Value::Array(arr) => arr.borrow().clone(),
                     Value::UniqueArray(arr) => arr,
                     Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
-                    _ => return Err(RuntimeError { message: "Can only iterate over arrays, strings, or ranges".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Can only iterate over arrays, strings, or ranges".to_string(),
+                        })
+                    }
                 };
-                
+
                 let mut result = Vec::new();
-                
+
                 for item in &elements {
                     // Create new scope for loop variable
                     self.environment.push_scope();
                     self.environment.define(var.clone(), item.clone());
-                    
+
                     let outcome: RuntimeResult<Option<Value>> = (|| {
                         let include = if let Some(cond) = condition {
                             self.evaluate_expression(cond)?.is_truthy()
@@ -776,27 +887,36 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         result.push(value);
                     }
                 }
-                
+
                 Ok(Value::array(result))
             }
-            Expr::Generator { expr, var, iterable, condition } => {
+            Expr::Generator {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 // For now, generators evaluate eagerly like list comprehensions
                 // In the future, this could return a lazy iterator
                 let iter_value = self.evaluate_expression(iterable)?;
-                
+
                 let elements = match iter_value {
                     Value::Array(arr) => arr.borrow().clone(),
                     Value::UniqueArray(arr) => arr,
                     Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
-                    _ => return Err(RuntimeError { message: "Can only iterate over arrays, strings, or ranges".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Can only iterate over arrays, strings, or ranges".to_string(),
+                        })
+                    }
                 };
-                
+
                 let mut result = Vec::new();
-                
+
                 for item in &elements {
                     self.environment.push_scope();
                     self.environment.define(var.clone(), item.clone());
-                    
+
                     let outcome: RuntimeResult<Option<Value>> = (|| {
                         let include = if let Some(cond) = condition {
                             self.evaluate_expression(cond)?.is_truthy()
@@ -816,7 +936,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         result.push(value);
                     }
                 }
-                
+
                 // Return as array for now (could be made lazy in future)
                 Ok(Value::array(result))
             }
@@ -836,7 +956,11 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let mut base: &Expr = object.as_ref();
                 indices.push((**index).clone());
 
-                while let Expr::Index { object: inner_obj, index: inner_idx } = base {
+                while let Expr::Index {
+                    object: inner_obj,
+                    index: inner_idx,
+                } = base
+                {
                     indices.push((**inner_idx).clone());
                     base = inner_obj.as_ref();
                 }
@@ -845,89 +969,102 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 for idx_expr in indices {
                     let idx = self.evaluate_expression(&idx_expr)?;
                     current = match (current, idx) {
-                    (Value::Array(arr), Value::Integer(i)) => {
-                        let arr = arr.borrow();
-                        // Handle negative indices
-                        let actual_index = if i < 0 {
-                            (arr.len() as i64 + i) as usize
-                        } else {
-                            i as usize
-                        };
-                        
-                        if actual_index < arr.len() {
-                            arr[actual_index].clone()
-                        } else {
+                        (Value::Array(arr), Value::Integer(i)) => {
+                            let arr = arr.borrow();
+                            // Handle negative indices
+                            let actual_index = if i < 0 {
+                                (arr.len() as i64 + i) as usize
+                            } else {
+                                i as usize
+                            };
+
+                            if actual_index < arr.len() {
+                                arr[actual_index].clone()
+                            } else {
+                                return Err(RuntimeError {
+                                    message: format!("Array index out of bounds: {}", i),
+                                });
+                            }
+                        }
+                        (Value::Dictionary(dict), Value::String(key)) => {
+                            dict.get(&key).cloned().unwrap_or(Value::Nil)
+                        }
+                        (Value::String(s), Value::Integer(i)) => {
+                            // Handle negative indices for strings
+                            let chars: Vec<char> = s.chars().collect();
+                            let len = chars.len() as i64;
+                            let actual_index = if i < 0 {
+                                (len + i) as usize
+                            } else {
+                                i as usize
+                            };
+
+                            if actual_index < chars.len() {
+                                Value::String(chars[actual_index].to_string())
+                            } else {
+                                return Err(RuntimeError {
+                                    message: format!("String index out of bounds: {}", i),
+                                });
+                            }
+                        }
+                        (obj, idx) => {
                             return Err(RuntimeError {
-                                message: format!("Array index out of bounds: {}", i),
+                                message: format!(
+                                    "Cannot index {} with {}",
+                                    obj.type_name(),
+                                    idx.type_name()
+                                ),
                             });
                         }
-                    }
-                    (Value::Dictionary(dict), Value::String(key)) => {
-                        dict.get(&key).cloned().unwrap_or(Value::Nil)
-                    }
-                    (Value::String(s), Value::Integer(i)) => {
-                        // Handle negative indices for strings
-                        let chars: Vec<char> = s.chars().collect();
-                        let len = chars.len() as i64;
-                        let actual_index = if i < 0 {
-                            (len + i) as usize
-                        } else {
-                            i as usize
-                        };
-                        
-                        if actual_index < chars.len() {
-                            Value::String(chars[actual_index].to_string())
-                        } else {
-                            return Err(RuntimeError {
-                                message: format!("String index out of bounds: {}", i),
-                            });
-                        }
-                    }
-                    (obj, idx) => {
-                        return Err(RuntimeError {
-                        message: format!("Cannot index {} with {}", obj.type_name(), idx.type_name()),
-                        });
-                    }
-                };
+                    };
                 }
 
                 Ok(current)
             }
-            Expr::Slice { object, from, to, step } => {
+            Expr::Slice {
+                object,
+                from,
+                to,
+                step,
+            } => {
                 let obj = self.evaluate_expression(object)?;
-                
+
                 // Evaluate slice parameters
                 let from_val = if let Some(from_expr) = from {
                     Some(self.evaluate_expression(from_expr)?)
                 } else {
                     None
                 };
-                
+
                 let to_val = if let Some(to_expr) = to {
                     Some(self.evaluate_expression(to_expr)?)
                 } else {
                     None
                 };
-                
+
                 let step_val = if let Some(step_expr) = step {
                     self.evaluate_expression(step_expr)?
                 } else {
-                    Value::Integer(1)  // Default step is 1
+                    Value::Integer(1) // Default step is 1
                 };
-                
+
                 // Convert step to integer
                 let step_i = match step_val {
                     Value::Integer(n) => n,
                     Value::Float(f) => f.floor() as i64,
-                    _ => return Err(RuntimeError { message: "Slice step must be a number".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Slice step must be a number".to_string(),
+                        })
+                    }
                 };
-                
+
                 if step_i == 0 {
                     return Err(RuntimeError {
                         message: "Slice step cannot be zero".to_string(),
                     });
                 }
-                
+
                 // Perform slicing based on object type
                 match obj {
                     Value::Array(arr) => {
@@ -937,26 +1074,56 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         // Convert from/to to actual indices
                         let from_i = match from_val {
                             Some(Value::Integer(n)) => {
-                                if n < 0 { len + n } else { n }
+                                if n < 0 {
+                                    len + n
+                                } else {
+                                    n
+                                }
                             }
                             None => {
-                                if step_i > 0 { 0 } else { len - 1 }
+                                if step_i > 0 {
+                                    0
+                                } else {
+                                    len - 1
+                                }
                             }
-                            _ => return Err(RuntimeError { message: "Slice 'from' must be an integer".to_string() }),
+                            _ => {
+                                return Err(RuntimeError {
+                                    message: "Slice 'from' must be an integer".to_string(),
+                                })
+                            }
                         };
 
                         let to_i = match to_val {
                             Some(Value::Integer(n)) => {
-                                if n < 0 { len + n } else { n }
+                                if n < 0 {
+                                    len + n
+                                } else {
+                                    n
+                                }
                             }
                             None => {
-                                if step_i > 0 { len } else { -1 }
+                                if step_i > 0 {
+                                    len
+                                } else {
+                                    -1
+                                }
                             }
-                            _ => return Err(RuntimeError { message: "Slice 'to' must be an integer".to_string() }),
+                            _ => {
+                                return Err(RuntimeError {
+                                    message: "Slice 'to' must be an integer".to_string(),
+                                })
+                            }
                         };
 
                         // Normalize indices (but preserve -1 for reverse slice end)
-                        let from_i = if from_i < 0 { 0 } else if from_i > len { len } else { from_i };
+                        let from_i = if from_i < 0 {
+                            0
+                        } else if from_i > len {
+                            len
+                        } else {
+                            from_i
+                        };
                         // For to_i, only clamp upper bound, preserve negative for reverse slice
                         let to_i = if to_i > len { len } else { to_i };
 
@@ -973,7 +1140,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                             // or down to and including 0 (if to_i < 0)
                             while current >= 0 && current < len && (to_i < 0 || current > to_i) {
                                 result.push(arr[current as usize].clone());
-                                if current == 0 { break; }
+                                if current == 0 {
+                                    break;
+                                }
                                 current += step_i;
                             }
                         }
@@ -987,26 +1156,56 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         // Convert from/to to actual indices
                         let from_i = match from_val {
                             Some(Value::Integer(n)) => {
-                                if n < 0 { len + n } else { n }
+                                if n < 0 {
+                                    len + n
+                                } else {
+                                    n
+                                }
                             }
                             None => {
-                                if step_i > 0 { 0 } else { len - 1 }
+                                if step_i > 0 {
+                                    0
+                                } else {
+                                    len - 1
+                                }
                             }
-                            _ => return Err(RuntimeError { message: "Slice 'from' must be an integer".to_string() }),
+                            _ => {
+                                return Err(RuntimeError {
+                                    message: "Slice 'from' must be an integer".to_string(),
+                                })
+                            }
                         };
 
                         let to_i = match to_val {
                             Some(Value::Integer(n)) => {
-                                if n < 0 { len + n } else { n }
+                                if n < 0 {
+                                    len + n
+                                } else {
+                                    n
+                                }
                             }
                             None => {
-                                if step_i > 0 { len } else { -1 }
+                                if step_i > 0 {
+                                    len
+                                } else {
+                                    -1
+                                }
                             }
-                            _ => return Err(RuntimeError { message: "Slice 'to' must be an integer".to_string() }),
+                            _ => {
+                                return Err(RuntimeError {
+                                    message: "Slice 'to' must be an integer".to_string(),
+                                })
+                            }
                         };
 
                         // Normalize indices (but preserve -1 for reverse slice end)
-                        let from_i = if from_i < 0 { 0 } else if from_i > len { len } else { from_i };
+                        let from_i = if from_i < 0 {
+                            0
+                        } else if from_i > len {
+                            len
+                        } else {
+                            from_i
+                        };
                         // For to_i, only clamp upper bound, preserve negative for reverse slice
                         let to_i = if to_i > len { len } else { to_i };
 
@@ -1023,7 +1222,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                             // or down to and including 0 (if to_i < 0)
                             while current >= 0 && current < len && (to_i < 0 || current > to_i) {
                                 result.push(chars[current as usize]);
-                                if current == 0 { break; }
+                                if current == 0 {
+                                    break;
+                                }
                                 current += step_i;
                             }
                         }
@@ -1045,7 +1246,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             Expr::Member { object, property } => {
                 let obj = self.evaluate_expression(object)?;
-                
+
                 match obj {
                     Value::ModuleObject(exports) => {
                         exports.get(property).cloned().ok_or_else(|| RuntimeError {
@@ -1053,13 +1254,17 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         })
                     }
                     _ => Err(RuntimeError {
-                        message: format!("Cannot access property '{}' on {}", property, obj.type_name()),
-                    })
+                        message: format!(
+                            "Cannot access property '{}' on {}",
+                            property,
+                            obj.type_name()
+                        ),
+                    }),
                 }
             }
             Expr::StructAccess { object, field } => {
                 let obj = self.evaluate_expression(object)?;
-                
+
                 match obj {
                     Value::StructInstance { fields, .. } => {
                         fields.get(field).cloned().ok_or_else(|| RuntimeError {
@@ -1078,38 +1283,49 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     }
                     _ => Err(RuntimeError {
                         message: format!("Cannot access field '{}' on {}", field, obj.type_name()),
-                    })
+                    }),
                 }
             }
-            Expr::StructInit { struct_name, fields } => {
+            Expr::StructInit {
+                struct_name,
+                fields,
+            } => {
                 // Get struct definition
-                let struct_def = self.environment.get(struct_name)
+                let struct_def = self
+                    .environment
+                    .get(struct_name)
                     .ok_or_else(|| RuntimeError {
                         message: format!("Struct '{}' not defined", struct_name),
                     })?;
-                
-                if let Value::StructDefinition { fields: def_fields, .. } = struct_def {
+
+                if let Value::StructDefinition {
+                    fields: def_fields, ..
+                } = struct_def
+                {
                     // Create struct instance
                     let mut instance_fields = HashMap::new();
-                    
+
                     // Initialize fields from the struct init
                     for (field_name, field_value_expr) in fields {
                         if !def_fields.contains(field_name) {
                             return Err(RuntimeError {
-                                message: format!("Field '{}' not found in struct '{}'", field_name, struct_name),
+                                message: format!(
+                                    "Field '{}' not found in struct '{}'",
+                                    field_name, struct_name
+                                ),
                             });
                         }
                         let field_value = self.evaluate_expression(field_value_expr)?;
                         instance_fields.insert(field_name.clone(), field_value);
                     }
-                    
+
                     // Initialize missing fields to nil
                     for field_name in &def_fields {
                         if !instance_fields.contains_key(field_name) {
                             instance_fields.insert(field_name.clone(), Value::Nil);
                         }
                     }
-                    
+
                     Ok(Value::StructInstance {
                         struct_name: struct_name.clone(),
                         fields: instance_fields,
@@ -1127,24 +1343,36 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let step_val = if let Some(step_expr) = step {
                     self.evaluate_expression(step_expr)?
                 } else {
-                    Value::Integer(1)  // Default step is 1
+                    Value::Integer(1) // Default step is 1
                 };
 
                 // Convert to integers (floor floats)
                 let start_i = match start_val {
                     Value::Integer(n) => n,
                     Value::Float(f) => f.floor() as i64,
-                    _ => return Err(RuntimeError { message: "Range start must be a number".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Range start must be a number".to_string(),
+                        })
+                    }
                 };
                 let end_i = match end_val {
                     Value::Integer(n) => n,
                     Value::Float(f) => f.floor() as i64,
-                    _ => return Err(RuntimeError { message: "Range end must be a number".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Range end must be a number".to_string(),
+                        })
+                    }
                 };
                 let step_i = match step_val {
                     Value::Integer(n) => n,
                     Value::Float(f) => f.floor() as i64,
-                    _ => return Err(RuntimeError { message: "Range step must be a number".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Range step must be a number".to_string(),
+                        })
+                    }
                 };
 
                 if step_i == 0 {
@@ -1170,29 +1398,34 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
 
                 Ok(Value::array(result))
             }
-            Expr::ConditionalExpr { condition, then_expr, elseif_branches, else_expr } => {
+            Expr::ConditionalExpr {
+                condition,
+                then_expr,
+                elseif_branches,
+                else_expr,
+            } => {
                 let cond_value = self.evaluate_expression(condition)?;
-                
+
                 if cond_value.is_truthy() {
                     return self.evaluate_expression(then_expr);
-                } 
-                
+                }
+
                 for elseif in elseif_branches {
                     let elseif_cond_value = self.evaluate_expression(&elseif.condition)?;
                     if elseif_cond_value.is_truthy() {
                         return self.evaluate_expression(&elseif.then_expr);
                     }
                 }
-                
+
                 if let Some(else_expr) = else_expr {
                     return self.evaluate_expression(else_expr);
                 }
-                
+
                 Ok(Value::Nil)
             }
             Expr::Match { expr, arms } => {
                 let match_value = self.evaluate_expression(expr)?;
-                
+
                 for arm in arms {
                     let mut matched = false;
                     let mut bound_name: Option<&String> = None;
@@ -1215,7 +1448,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         return result;
                     }
                 }
-                
+
                 Err(RuntimeError {
                     message: "No matching pattern found in match expression".to_string(),
                 })
@@ -1246,106 +1479,150 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
         }
     }
-    
-    fn evaluate_binary_op(&self, left: &Value, op: &BinaryOp, right: &Value) -> RuntimeResult<Value> {
+
+    fn evaluate_binary_op(
+        &self,
+        left: &Value,
+        op: &BinaryOp,
+        right: &Value,
+    ) -> RuntimeResult<Value> {
         match (left, op, right) {
             // Arithmetic
             (Value::Integer(a), BinaryOp::Add, Value::Integer(b)) => Ok(Value::Integer(a + b)),
             (Value::Float(a), BinaryOp::Add, Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Integer(a), BinaryOp::Add, Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
             (Value::Float(a), BinaryOp::Add, Value::Integer(b)) => Ok(Value::Float(a + *b as f64)),
-            (Value::String(a), BinaryOp::Add, Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
+            (Value::String(a), BinaryOp::Add, Value::String(b)) => {
+                Ok(Value::String(format!("{}{}", a, b)))
+            }
             (Value::String(a), BinaryOp::Add, b) => Ok(Value::String(format!("{}{}", a, b))),
             (a, BinaryOp::Add, Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
             (Value::Array(a), BinaryOp::Add, Value::Array(b)) => {
                 let mut result = a.borrow().clone();
                 result.extend(b.borrow().iter().cloned());
                 Ok(Value::array(result))
-            },
-            
+            }
+
             (Value::Integer(a), BinaryOp::Subtract, Value::Integer(b)) => Ok(Value::Integer(a - b)),
             (Value::Float(a), BinaryOp::Subtract, Value::Float(b)) => Ok(Value::Float(a - b)),
-            (Value::Integer(a), BinaryOp::Subtract, Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
-            (Value::Float(a), BinaryOp::Subtract, Value::Integer(b)) => Ok(Value::Float(a - *b as f64)),
-            
+            (Value::Integer(a), BinaryOp::Subtract, Value::Float(b)) => {
+                Ok(Value::Float(*a as f64 - b))
+            }
+            (Value::Float(a), BinaryOp::Subtract, Value::Integer(b)) => {
+                Ok(Value::Float(a - *b as f64))
+            }
+
             (Value::Integer(a), BinaryOp::Multiply, Value::Integer(b)) => Ok(Value::Integer(a * b)),
             (Value::Float(a), BinaryOp::Multiply, Value::Float(b)) => Ok(Value::Float(a * b)),
-            (Value::Integer(a), BinaryOp::Multiply, Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
-            (Value::Float(a), BinaryOp::Multiply, Value::Integer(b)) => Ok(Value::Float(a * *b as f64)),
-            
+            (Value::Integer(a), BinaryOp::Multiply, Value::Float(b)) => {
+                Ok(Value::Float(*a as f64 * b))
+            }
+            (Value::Float(a), BinaryOp::Multiply, Value::Integer(b)) => {
+                Ok(Value::Float(a * *b as f64))
+            }
+
             (Value::Integer(a), BinaryOp::Divide, Value::Integer(b)) => {
                 if *b == 0 {
-                    Err(RuntimeError { message: "Division by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Division by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float(*a as f64 / *b as f64))
                 }
             }
             (Value::Float(a), BinaryOp::Divide, Value::Float(b)) => {
                 if *b == 0.0 {
-                    Err(RuntimeError { message: "Division by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Division by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float(a / b))
                 }
             }
             (Value::Integer(a), BinaryOp::Divide, Value::Float(b)) => {
                 if *b == 0.0 {
-                    Err(RuntimeError { message: "Division by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Division by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float(*a as f64 / b))
                 }
             }
             (Value::Float(a), BinaryOp::Divide, Value::Integer(b)) => {
                 if *b == 0 {
-                    Err(RuntimeError { message: "Division by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Division by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float(a / *b as f64))
                 }
             }
-            
+
             (Value::Integer(a), BinaryOp::Modulo, Value::Integer(b)) => {
                 if *b == 0 {
-                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Modulo by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Integer(a % b))
                 }
             }
             (Value::Float(a), BinaryOp::Modulo, Value::Float(b)) => {
                 if *b == 0.0 {
-                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Modulo by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float(a % b))
                 }
             }
             (Value::Integer(a), BinaryOp::Modulo, Value::Float(b)) => {
                 if *b == 0.0 {
-                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Modulo by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float((*a as f64) % b))
                 }
             }
             (Value::Float(a), BinaryOp::Modulo, Value::Integer(b)) => {
                 if *b == 0 {
-                    Err(RuntimeError { message: "Modulo by zero".to_string() })
+                    Err(RuntimeError {
+                        message: "Modulo by zero".to_string(),
+                    })
                 } else {
                     Ok(Value::Float(a % (*b as f64)))
                 }
             }
-            
+
             // Comparison
             (Value::Integer(a), BinaryOp::Equal, Value::Integer(b)) => Ok(Value::Bool(a == b)),
             (Value::Float(a), BinaryOp::Equal, Value::Float(b)) => Ok(Value::Bool(a == b)),
-            (Value::Integer(a), BinaryOp::Equal, Value::Float(b)) => Ok(Value::Bool(*a as f64 == *b)),
-            (Value::Float(a), BinaryOp::Equal, Value::Integer(b)) => Ok(Value::Bool(*a == *b as f64)),
+            (Value::Integer(a), BinaryOp::Equal, Value::Float(b)) => {
+                Ok(Value::Bool(*a as f64 == *b))
+            }
+            (Value::Float(a), BinaryOp::Equal, Value::Integer(b)) => {
+                Ok(Value::Bool(*a == *b as f64))
+            }
             (Value::String(a), BinaryOp::Equal, Value::String(b)) => Ok(Value::Bool(a == b)),
             (Value::Bool(a), BinaryOp::Equal, Value::Bool(b)) => Ok(Value::Bool(a == b)),
             (Value::Array(a), BinaryOp::Equal, Value::Array(b)) => Ok(Value::Bool(a == b)),
-            (Value::Collection(a), BinaryOp::Equal, Value::Collection(b)) => Ok(Value::Bool(a == b)),
+            (Value::Collection(a), BinaryOp::Equal, Value::Collection(b)) => {
+                Ok(Value::Bool(a == b))
+            }
             (Value::Nil, BinaryOp::Equal, Value::Nil) => Ok(Value::Bool(true)),
-            (Value::Dictionary(_), BinaryOp::Equal, Value::Dictionary(_)) => Ok(Value::Bool(left == right)),
-            (Value::UniqueArray(_), BinaryOp::Equal, Value::UniqueArray(_)) => Ok(Value::Bool(left == right)),
-            (Value::StructInstance { .. }, BinaryOp::Equal, Value::StructInstance { .. }) => Ok(Value::Bool(left == right)),
+            (Value::Dictionary(_), BinaryOp::Equal, Value::Dictionary(_)) => {
+                Ok(Value::Bool(left == right))
+            }
+            (Value::UniqueArray(_), BinaryOp::Equal, Value::UniqueArray(_)) => {
+                Ok(Value::Bool(left == right))
+            }
+            (Value::StructInstance { .. }, BinaryOp::Equal, Value::StructInstance { .. }) => {
+                Ok(Value::Bool(left == right))
+            }
+            (Value::Native(_), BinaryOp::Equal, Value::Native(_)) => Ok(Value::Bool(left == right)),
             (_, BinaryOp::Equal, _) => Ok(Value::Bool(false)),
-            
+
             (a, BinaryOp::NotEqual, b) => {
                 let equal = self.evaluate_binary_op(a, &BinaryOp::Equal, b)?;
                 if let Value::Bool(is_equal) = equal {
@@ -1354,27 +1631,45 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     Ok(Value::Bool(true))
                 }
             }
-            
+
             (Value::Integer(a), BinaryOp::Less, Value::Integer(b)) => Ok(Value::Bool(a < b)),
             (Value::Float(a), BinaryOp::Less, Value::Float(b)) => Ok(Value::Bool(a < b)),
-            (Value::Integer(a), BinaryOp::Less, Value::Float(b)) => Ok(Value::Bool((*a as f64) < *b)),
-            (Value::Float(a), BinaryOp::Less, Value::Integer(b)) => Ok(Value::Bool(*a < (*b as f64))),
-            
+            (Value::Integer(a), BinaryOp::Less, Value::Float(b)) => {
+                Ok(Value::Bool((*a as f64) < *b))
+            }
+            (Value::Float(a), BinaryOp::Less, Value::Integer(b)) => {
+                Ok(Value::Bool(*a < (*b as f64)))
+            }
+
             (Value::Integer(a), BinaryOp::Greater, Value::Integer(b)) => Ok(Value::Bool(a > b)),
             (Value::Float(a), BinaryOp::Greater, Value::Float(b)) => Ok(Value::Bool(a > b)),
-            (Value::Integer(a), BinaryOp::Greater, Value::Float(b)) => Ok(Value::Bool((*a as f64) > *b)),
-            (Value::Float(a), BinaryOp::Greater, Value::Integer(b)) => Ok(Value::Bool(*a > (*b as f64))),
-            
+            (Value::Integer(a), BinaryOp::Greater, Value::Float(b)) => {
+                Ok(Value::Bool((*a as f64) > *b))
+            }
+            (Value::Float(a), BinaryOp::Greater, Value::Integer(b)) => {
+                Ok(Value::Bool(*a > (*b as f64)))
+            }
+
             (Value::Integer(a), BinaryOp::LessEqual, Value::Integer(b)) => Ok(Value::Bool(a <= b)),
             (Value::Float(a), BinaryOp::LessEqual, Value::Float(b)) => Ok(Value::Bool(a <= b)),
-            (Value::Integer(a), BinaryOp::LessEqual, Value::Float(b)) => Ok(Value::Bool((*a as f64) <= *b)),
-            (Value::Float(a), BinaryOp::LessEqual, Value::Integer(b)) => Ok(Value::Bool(*a <= (*b as f64))),
-            
-            (Value::Integer(a), BinaryOp::GreaterEqual, Value::Integer(b)) => Ok(Value::Bool(a >= b)),
+            (Value::Integer(a), BinaryOp::LessEqual, Value::Float(b)) => {
+                Ok(Value::Bool((*a as f64) <= *b))
+            }
+            (Value::Float(a), BinaryOp::LessEqual, Value::Integer(b)) => {
+                Ok(Value::Bool(*a <= (*b as f64)))
+            }
+
+            (Value::Integer(a), BinaryOp::GreaterEqual, Value::Integer(b)) => {
+                Ok(Value::Bool(a >= b))
+            }
             (Value::Float(a), BinaryOp::GreaterEqual, Value::Float(b)) => Ok(Value::Bool(a >= b)),
-            (Value::Integer(a), BinaryOp::GreaterEqual, Value::Float(b)) => Ok(Value::Bool((*a as f64) >= *b)),
-            (Value::Float(a), BinaryOp::GreaterEqual, Value::Integer(b)) => Ok(Value::Bool(*a >= (*b as f64))),
-            
+            (Value::Integer(a), BinaryOp::GreaterEqual, Value::Float(b)) => {
+                Ok(Value::Bool((*a as f64) >= *b))
+            }
+            (Value::Float(a), BinaryOp::GreaterEqual, Value::Integer(b)) => {
+                Ok(Value::Bool(*a >= (*b as f64)))
+            }
+
             // In operator - check if left value is contained in right value
             (left_val, BinaryOp::In, Value::Array(arr)) => {
                 for item in arr.borrow().iter() {
@@ -1399,7 +1694,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             (Value::String(key), BinaryOp::In, Value::Collection(set)) => {
                 Ok(Value::Bool(set.contains(key)))
             }
-            
+
             // Logical
             (a, BinaryOp::And, b) => {
                 if a.is_truthy() {
@@ -1415,9 +1710,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     Ok(b.clone())
                 }
             }
-            
+
             (left, op, right) => {
-                let mut msg = format!("Unsupported operation: {} {} {}", left.type_name(), op, right.type_name());
+                let mut msg = format!(
+                    "Unsupported operation: {} {} {}",
+                    left.type_name(),
+                    op,
+                    right.type_name()
+                );
                 if matches!(op, BinaryOp::Modulo) {
                     msg.push_str(" (tip: `%` supports integer and float numbers only)");
                 }
@@ -1425,24 +1725,67 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
         }
     }
-    
+
     fn evaluate_unary_op(&self, op: &UnaryOp, operand: &Value) -> RuntimeResult<Value> {
         match (op, operand) {
             (UnaryOp::Negate, Value::Integer(n)) => Ok(Value::Integer(-n)),
             (UnaryOp::Negate, Value::Float(f)) => Ok(Value::Float(-f)),
             (UnaryOp::Not, val) => Ok(Value::Bool(!val.is_truthy())),
             (op, operand) => Err(RuntimeError {
-                message: format!("Unsupported unary operation: {} {}", op, operand.type_name()),
+                message: format!(
+                    "Unsupported unary operation: {} {}",
+                    op,
+                    operand.type_name()
+                ),
             }),
         }
     }
-    
-    fn load_module(&mut self, module_path: &str, items: &Option<Vec<String>>, alias: &Option<String>) -> RuntimeResult<()> {
-        // Native-only modules (`base`, `gui`, `numpy`) — see `NATIVE_KERNEL.md`
+
+    fn load_module(
+        &mut self,
+        module_path: &str,
+        items: &Option<Vec<String>>,
+        alias: &Option<String>,
+    ) -> RuntimeResult<()> {
+        if let Some(backend) = module_path.strip_prefix("@native/") {
+            let own_backend = self.current_package.as_deref() == Some(backend);
+            let embedded_facade = self
+                .import_stack
+                .last()
+                .is_some_and(|path| path == &format!("<embedded:{backend}>"));
+            let bundled_facade = self.import_stack.last().is_some_and(|path| {
+                Path::new(path).file_stem().and_then(|stem| stem.to_str()) == Some(backend)
+                    && Path::new(path)
+                        .parent()
+                        .and_then(|parent| parent.file_name())
+                        .and_then(|name| name.to_str())
+                        == Some("stdlib")
+            });
+            let dependency_facade = self.package_modules.get(backend).is_some_and(|entry| {
+                let entry = entry
+                    .canonicalize()
+                    .unwrap_or_else(|_| entry.clone())
+                    .to_string_lossy()
+                    .to_string();
+                self.import_stack.last() == Some(&entry)
+            });
+            if !own_backend && !embedded_facade && !bundled_facade && !dependency_facade {
+                return Err(RuntimeError {
+                    message: format!(
+                        "native backend '{backend}' is private; import its public package instead"
+                    ),
+                });
+            }
+        }
+
+        // Private native backends and the public `base` primitive module.
         if crate::stdlib::is_native_only_module(module_path) {
             let Some(module_functions) = crate::stdlib::get_module(module_path) else {
                 return Err(RuntimeError {
-                    message: format!("Internal error: native module '{}' missing exports", module_path),
+                    message: format!(
+                        "Internal error: native module '{}' missing exports",
+                        module_path
+                    ),
                 });
             };
             // It's a builtin module - load the requested functions
@@ -1485,7 +1828,8 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         // Try to find project root (go up from target/release or target/debug)
-        let project_root = exe_dir.parent()
+        let project_root = exe_dir
+            .parent()
             .and_then(|p| p.parent())
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| exe_dir.clone());
@@ -1501,7 +1845,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         // Determine module source from file path or embedded stdlib fallback.
         let mut embedded_module_content: Option<String> = None;
         // Determine the module file path based on import style
-        let module_file_path = if module_path.starts_with("~/") {
+        let module_file_path = if let Some(dependency_entry) = self.package_modules.get(module_path)
+        {
+            dependency_entry
+                .canonicalize()
+                .unwrap_or_else(|_| dependency_entry.clone())
+                .to_string_lossy()
+                .to_string()
+        } else if module_path.starts_with("~/") {
             // Home directory path: import "~/Documents/MyModule"
             if let Some(ref home) = home_dir {
                 let path_without_tilde = module_path.trim_start_matches("~/");
@@ -1512,10 +1863,18 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 };
                 let full_path = home.join(&path_with_ext);
                 if full_path.exists() {
-                    full_path.canonicalize().unwrap_or(full_path).to_string_lossy().to_string()
+                    full_path
+                        .canonicalize()
+                        .unwrap_or(full_path)
+                        .to_string_lossy()
+                        .to_string()
                 } else {
                     return Err(RuntimeError {
-                        message: format!("Module '{}' not found at {}", module_path, full_path.display()),
+                        message: format!(
+                            "Module '{}' not found at {}",
+                            module_path,
+                            full_path.display()
+                        ),
                     });
                 }
             } else {
@@ -1532,10 +1891,18 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             };
             let full_path = std::path::PathBuf::from(&path_with_ext);
             if full_path.exists() {
-                full_path.canonicalize().unwrap_or(full_path).to_string_lossy().to_string()
+                full_path
+                    .canonicalize()
+                    .unwrap_or(full_path)
+                    .to_string_lossy()
+                    .to_string()
             } else {
                 return Err(RuntimeError {
-                    message: format!("Module '{}' not found at {}", module_path, full_path.display()),
+                    message: format!(
+                        "Module '{}' not found at {}",
+                        module_path,
+                        full_path.display()
+                    ),
                 });
             }
         } else if module_path.starts_with("./") || module_path.starts_with("../") {
@@ -1548,13 +1915,18 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             };
             let full_path = self.current_import_base().join(&path_with_ext);
             if full_path.exists() {
-                full_path.canonicalize()
+                full_path
+                    .canonicalize()
                     .unwrap_or(full_path)
                     .to_string_lossy()
                     .to_string()
             } else {
                 return Err(RuntimeError {
-                    message: format!("Module '{}' not found at {}", module_path, full_path.display()),
+                    message: format!(
+                        "Module '{}' not found at {}",
+                        module_path,
+                        full_path.display()
+                    ),
                 });
             }
         } else if module_path.contains("/") {
@@ -1566,15 +1938,27 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             };
             let full_path = project_root.join(&path_with_ext);
             if full_path.exists() {
-                full_path.canonicalize().unwrap_or(full_path).to_string_lossy().to_string()
+                full_path
+                    .canonicalize()
+                    .unwrap_or(full_path)
+                    .to_string_lossy()
+                    .to_string()
             } else {
                 // Try cwd as fallback
                 let cwd_path = cwd.join(&path_with_ext);
                 if cwd_path.exists() {
-                    cwd_path.canonicalize().unwrap_or(cwd_path).to_string_lossy().to_string()
+                    cwd_path
+                        .canonicalize()
+                        .unwrap_or(cwd_path)
+                        .to_string_lossy()
+                        .to_string()
                 } else {
                     return Err(RuntimeError {
-                        message: format!("Module '{}' not found at {}", module_path, full_path.display()),
+                        message: format!(
+                            "Module '{}' not found at {}",
+                            module_path,
+                            full_path.display()
+                        ),
                     });
                 }
             }
@@ -1585,18 +1969,29 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             } else {
                 module_path.to_string()
             };
-            
+
             // Try project root stdlib first
-            let stdlib_path = project_root.join("stdlib").join(format!("{}.ject", module_name));
+            let stdlib_path = project_root
+                .join("stdlib")
+                .join(format!("{}.ject", module_name));
             if stdlib_path.exists() {
-                stdlib_path.canonicalize().unwrap_or(stdlib_path).to_string_lossy().to_string()
+                stdlib_path
+                    .canonicalize()
+                    .unwrap_or(stdlib_path)
+                    .to_string_lossy()
+                    .to_string()
             } else {
                 // Try cwd stdlib
                 let cwd_stdlib = cwd.join("stdlib").join(format!("{}.ject", module_name));
                 if cwd_stdlib.exists() {
-                    cwd_stdlib.canonicalize().unwrap_or(cwd_stdlib).to_string_lossy().to_string()
+                    cwd_stdlib
+                        .canonicalize()
+                        .unwrap_or(cwd_stdlib)
+                        .to_string_lossy()
+                        .to_string()
                 } else {
-                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name) {
+                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name)
+                    {
                         embedded_module_content = Some(source.to_string());
                         format!("<embedded:{module_name}>")
                     } else {
@@ -1645,12 +2040,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 .unwrap_or_else(|| self.current_import_base())
         };
         self.module_dir_stack.push(module_dir);
-        let body_result = self.execute_module_file(module_path, &module_file_path, embedded_module_content);
+        let body_result =
+            self.execute_module_file(module_path, &module_file_path, embedded_module_content);
         self.module_dir_stack.pop();
         self.import_stack.pop();
         let exports = body_result?;
 
-        self.module_cache.insert(module_file_path.clone(), exports.clone());
+        self.module_cache
+            .insert(module_file_path.clone(), exports.clone());
         self.apply_module_exports(module_path, exports, items, alias)
     }
 
@@ -1668,24 +2065,24 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         let module_content = if let Some(content) = embedded_module_content {
             content
         } else {
-            fs::read_to_string(module_file_path)
-                .map_err(|e| RuntimeError {
-                    message: format!("Failed to read module '{}': {}", module_path, e),
-                })?
+            fs::read_to_string(module_file_path).map_err(|e| RuntimeError {
+                message: format!("Failed to read module '{}': {}", module_path, e),
+            })?
         };
-            
+
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
-        let tokens: Vec<crate::lexer::Token> = located_tokens.into_iter().map(|lt| lt.token).collect();
+        let tokens: Vec<crate::lexer::Token> =
+            located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = crate::parser::Parser::new_simple(tokens);
         let statements = parser.parse().map_err(|e| RuntimeError {
             message: format!("Parse error in module '{}': {}", module_path, e),
         })?;
-        
+
         // Create a new environment for the module
         let mut module_env = Environment::new();
-        
-        // Load standard library into module environment 
+
+        // Load standard library into module environment
         let stdlib = crate::stdlib::create_stdlib();
         for (name, value) in stdlib {
             module_env.define(name, value);
@@ -1703,7 +2100,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         for (name, value) in crate::stdlib::inject_module_file_builtins(&module_file_stem) {
             module_env.define(name, value);
         }
-        
+
         // Save current environment and switch to module environment
         let saved_env = std::mem::replace(&mut self.environment, module_env);
 
@@ -1716,7 +2113,11 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         outcome
     }
 
-    fn run_module_body(&mut self, statements: &[Stmt], module_file_stem: &str) -> RuntimeResult<HashMap<String, Value>> {
+    fn run_module_body(
+        &mut self,
+        statements: &[Stmt],
+        module_file_stem: &str,
+    ) -> RuntimeResult<HashMap<String, Value>> {
         // First, execute all non-export statements to build up the module environment
         for statement in statements {
             match statement {
@@ -1728,7 +2129,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
             }
         }
-        
+
         // Process export functions and define them in the module environment first
         // This ensures they're available in the module scope for potential self-references
         for statement in statements {
@@ -1741,7 +2142,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 self.environment.define(name.clone(), func);
             }
         }
-        
+
         // Now process export statements and create module functions with proper closure
         let mut exports = HashMap::new();
         for statement in statements {
@@ -1767,7 +2168,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         }
 
         for (k, v) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
-            exports.insert(k, v);
+            exports.entry(k).or_insert(v);
         }
 
         Ok(exports)
@@ -1789,7 +2190,10 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         self.environment.define(item_name.clone(), value.clone());
                     } else {
                         return Err(RuntimeError {
-                            message: format!("Module '{}' does not export '{}'", module_path, item_name),
+                            message: format!(
+                                "Module '{}' does not export '{}'",
+                                module_path, item_name
+                            ),
                         });
                     }
                 }
@@ -1808,14 +2212,16 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             (Some(_), Some(_)) => {
                 return Err(RuntimeError {
-                    message: "Cannot use both specific imports and alias in the same import statement".to_string(),
+                    message:
+                        "Cannot use both specific imports and alias in the same import statement"
+                            .to_string(),
                 });
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn call_function(&mut self, func: Value, args: &[Argument]) -> RuntimeResult<Value> {
         match &func {
             Value::Function { params, .. } => {
@@ -1825,7 +2231,11 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 self.invoke_callable(&func, resolved_args)
             }
             Value::ModuleFunction { .. } | Value::Lambda { .. } => {
-                let type_label = if matches!(&func, Value::Lambda { .. }) { "Lambdas" } else { "Module functions" };
+                let type_label = if matches!(&func, Value::Lambda { .. }) {
+                    "Lambdas"
+                } else {
+                    "Module functions"
+                };
                 let mut arg_values = Vec::new();
                 for arg in args {
                     match arg {
@@ -1841,7 +2251,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
                 self.invoke_callable(&func, arg_values)
             }
-            Value::BuiltinFunction(_) => {
+            Value::BuiltinFunction(_) | Value::NativeFunction { .. } => {
                 let mut arg_values = Vec::new();
                 for arg in args {
                     match arg {
@@ -1850,7 +2260,8 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                         }
                         Argument::Keyword { .. } => {
                             return Err(RuntimeError {
-                                message: "Builtin functions do not support keyword arguments".to_string(),
+                                message: "Builtin functions do not support keyword arguments"
+                                    .to_string(),
                             });
                         }
                     }
@@ -1888,10 +2299,14 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             match self.execute_statement(statement)? {
                 ControlFlow::Return(value) => return Ok(value),
                 ControlFlow::Throw(error) => {
-                    return Err(RuntimeError { message: error.display() });
+                    return Err(RuntimeError {
+                        message: error.display(),
+                    });
                 }
                 ControlFlow::Break | ControlFlow::Continue => {
-                    return Err(RuntimeError { message: "break/continue in lambda".to_string() });
+                    return Err(RuntimeError {
+                        message: "break/continue in lambda".to_string(),
+                    });
                 }
                 ControlFlow::None => {}
             }
@@ -1904,21 +2319,35 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         } else {
             match self.execute_statement(last)? {
                 ControlFlow::Return(value) => Ok(value),
-                ControlFlow::Throw(error) => Err(RuntimeError { message: error.display() }),
-                ControlFlow::Break | ControlFlow::Continue => {
-                    Err(RuntimeError { message: "break/continue in lambda".to_string() })
-                }
+                ControlFlow::Throw(error) => Err(RuntimeError {
+                    message: error.display(),
+                }),
+                ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                    message: "break/continue in lambda".to_string(),
+                }),
                 ControlFlow::None => Ok(Value::Nil),
             }
         }
     }
 
-    fn invoke_callable(&mut self, callable: &Value, arg_values: Vec<Value>) -> RuntimeResult<Value> {
+    fn invoke_callable(
+        &mut self,
+        callable: &Value,
+        arg_values: Vec<Value>,
+    ) -> RuntimeResult<Value> {
         match callable {
-            Value::Lambda { params, body, closure_env } => {
+            Value::Lambda {
+                params,
+                body,
+                closure_env,
+            } => {
                 if arg_values.len() != params.len() {
                     return Err(RuntimeError {
-                        message: format!("Expected {} argument(s) but got {}", params.len(), arg_values.len()),
+                        message: format!(
+                            "Expected {} argument(s) but got {}",
+                            params.len(),
+                            arg_values.len()
+                        ),
                     });
                 }
 
@@ -1939,10 +2368,18 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 self.environment = saved_env;
                 result
             }
-            Value::Function { params, body, closure_env } => {
+            Value::Function {
+                params,
+                body,
+                closure_env,
+            } => {
                 if arg_values.len() != params.len() {
                     return Err(RuntimeError {
-                        message: format!("Expected {} argument(s) but got {}", params.len(), arg_values.len()),
+                        message: format!(
+                            "Expected {} argument(s) but got {}",
+                            params.len(),
+                            arg_values.len()
+                        ),
                     });
                 }
 
@@ -1968,10 +2405,18 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 self.environment = saved_env;
                 result
             }
-            Value::ModuleFunction { params, body, closure_env } => {
+            Value::ModuleFunction {
+                params,
+                body,
+                closure_env,
+            } => {
                 if arg_values.len() != params.len() {
                     return Err(RuntimeError {
-                        message: format!("Expected {} argument(s) but got {}", params.len(), arg_values.len()),
+                        message: format!(
+                            "Expected {} argument(s) but got {}",
+                            params.len(),
+                            arg_values.len()
+                        ),
                     });
                 }
 
@@ -1997,23 +2442,24 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 self.environment = saved_env;
                 result
             }
-            Value::BuiltinFunction(name) => {
-                if name.starts_with("np_") {
-                    crate::numpy::call_numpy_function(name, arg_values)
-                } else {
-                    crate::stdlib::call_builtin_function(name, arg_values)
-                }
+            Value::BuiltinFunction(name) => crate::stdlib::call_builtin_function(name, arg_values),
+            Value::NativeFunction { module, name } => {
+                crate::native::call_module(module, name, arg_values)
             }
             _ => Err(RuntimeError {
                 message: format!("Cannot call {}", callable.type_name()),
             }),
         }
     }
-    
-    fn resolve_arguments(&mut self, params: &[crate::ast::Parameter], args: &[Argument]) -> RuntimeResult<Vec<Value>> {
+
+    fn resolve_arguments(
+        &mut self,
+        params: &[crate::ast::Parameter],
+        args: &[Argument],
+    ) -> RuntimeResult<Vec<Value>> {
         let mut resolved_args = vec![None; params.len()];
         let mut positional_count = 0;
-        
+
         // First pass: handle positional arguments
         for arg in args {
             match arg {
@@ -2031,13 +2477,13 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
             }
         }
-        
+
         // Second pass: handle keyword arguments
         for arg in args {
             if let Argument::Keyword { name, value } = arg {
                 // Find the parameter with this name
                 let param_index = params.iter().position(|p| p.name == *name);
-                
+
                 match param_index {
                     Some(index) => {
                         if resolved_args[index].is_some() {
@@ -2055,7 +2501,7 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 }
             }
         }
-        
+
         // Third pass: fill in default values and check for missing arguments
         for (i, param) in params.iter().enumerate() {
             if resolved_args[i].is_none() {
@@ -2063,17 +2509,21 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                     resolved_args[i] = Some(self.evaluate_expression(default_expr)?);
                 } else {
                     return Err(RuntimeError {
-                        message: format!("Missing required argument '{}'"  , param.name),
+                        message: format!("Missing required argument '{}'", param.name),
                     });
                 }
             }
         }
-        
+
         // Convert Vec<Option<Value>> to Vec<Value>
         Ok(resolved_args.into_iter().map(|arg| arg.unwrap()).collect())
     }
-    
-    fn pattern_matches(&mut self, pattern: &crate::ast::Pattern, value: &Value) -> RuntimeResult<bool> {
+
+    fn pattern_matches(
+        &mut self,
+        pattern: &crate::ast::Pattern,
+        value: &Value,
+    ) -> RuntimeResult<bool> {
         match pattern {
             crate::ast::Pattern::Wildcard => Ok(true),
             crate::ast::Pattern::Identifier(_) => Ok(true), // Identifiers always match and bind
@@ -2098,7 +2548,8 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             crate::ast::Pattern::Range(start_expr, end_expr) => {
                 let start_value = self.evaluate_expression(start_expr)?;
                 let end_value = self.evaluate_expression(end_expr)?;
-                let above_start = self.evaluate_binary_op(value, &BinaryOp::GreaterEqual, &start_value)?;
+                let above_start =
+                    self.evaluate_binary_op(value, &BinaryOp::GreaterEqual, &start_value)?;
                 let below_end = self.evaluate_binary_op(value, &BinaryOp::LessEqual, &end_value)?;
                 match (above_start, below_end) {
                     (Value::Bool(a), Value::Bool(b)) => Ok(a && b),
@@ -2111,18 +2562,16 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
     fn evaluate_match_arm_body(&mut self, body: &crate::ast::MatchArmBody) -> RuntimeResult<Value> {
         match body {
             crate::ast::MatchArmBody::Expression(expr) => self.evaluate_expression(expr),
-            crate::ast::MatchArmBody::Block(statements) => {
-                match self.execute_block(statements)? {
-                    ControlFlow::Return(value) => Ok(value),
-                    ControlFlow::Throw(error) => Err(RuntimeError {
-                        message: format!("Error in match arm: {}", error),
-                    }),
-                    ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
-                        message: "break/continue not allowed directly in a match arm".to_string(),
-                    }),
-                    ControlFlow::None => Ok(Value::Nil),
-                }
-            }
+            crate::ast::MatchArmBody::Block(statements) => match self.execute_block(statements)? {
+                ControlFlow::Return(value) => Ok(value),
+                ControlFlow::Throw(error) => Err(RuntimeError {
+                    message: format!("Error in match arm: {}", error),
+                }),
+                ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                    message: "break/continue not allowed directly in a match arm".to_string(),
+                }),
+                ControlFlow::None => Ok(Value::Nil),
+            },
         }
     }
 
@@ -2193,9 +2642,12 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
         }
 
-        let obj = self.environment.get(root_name).ok_or_else(|| RuntimeError {
-            message: format!("Undefined variable '{}'", root_name),
-        })?;
+        let obj = self
+            .environment
+            .get(root_name)
+            .ok_or_else(|| RuntimeError {
+                message: format!("Undefined variable '{}'", root_name),
+            })?;
 
         let Value::Array(root_arr) = obj else {
             return Err(RuntimeError {
@@ -2209,36 +2661,60 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         Ok(())
     }
 
-    fn evaluate_increment_decrement(&mut self, target: &Expr, prefix: bool, is_increment: bool) -> RuntimeResult<Value> {
+    fn evaluate_increment_decrement(
+        &mut self,
+        target: &Expr,
+        prefix: bool,
+        is_increment: bool,
+    ) -> RuntimeResult<Value> {
         match target {
             Expr::Identifier(name) => {
-                let current = self.environment.get(name)
-                    .ok_or_else(|| RuntimeError { message: format!("Undefined variable '{}'", name) })?;
+                let current = self.environment.get(name).ok_or_else(|| RuntimeError {
+                    message: format!("Undefined variable '{}'", name),
+                })?;
                 let new_value = match current {
                     Value::Integer(n) => Value::Integer(if is_increment { n + 1 } else { n - 1 }),
                     Value::Float(f) => Value::Float(if is_increment { f + 1.0 } else { f - 1.0 }),
-                    _ => return Err(RuntimeError { message: "Can only increment/decrement numbers".to_string() }),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "Can only increment/decrement numbers".to_string(),
+                        })
+                    }
                 };
                 self.environment.set(name, new_value.clone());
                 Ok(if prefix { new_value } else { current })
             }
-            _ => Err(RuntimeError { message: "Invalid increment/decrement target".to_string() }),
+            _ => Err(RuntimeError {
+                message: "Invalid increment/decrement target".to_string(),
+            }),
         }
     }
 
     /// Extracts (array_or_unique_array, is_unique) from an evaluated Value, erroring
     /// with a consistent message if it's neither.
-    fn expect_array_like(&self, value: Value, func_name: &str) -> RuntimeResult<(Vec<Value>, bool)> {
+    fn expect_array_like(
+        &self,
+        value: Value,
+        func_name: &str,
+    ) -> RuntimeResult<(Vec<Value>, bool)> {
         match value {
             Value::Array(arr) => Ok((arr.borrow().clone(), false)),
             Value::UniqueArray(arr) => Ok((arr, true)),
             other => Err(RuntimeError {
-                message: format!("{}() requires an array or unique array, got {}", func_name, other.type_name()),
+                message: format!(
+                    "{}() requires an array or unique array, got {}",
+                    func_name,
+                    other.type_name()
+                ),
             }),
         }
     }
 
-    fn call_higher_order_function(&mut self, func_name: &str, args: &[crate::ast::Argument]) -> RuntimeResult<Value> {
+    fn call_higher_order_function(
+        &mut self,
+        func_name: &str,
+        args: &[crate::ast::Argument],
+    ) -> RuntimeResult<Value> {
         // Evaluate every argument expression exactly once, here, then hand off to the
         // Value-based core. This matters most for the `obj.map(f)` method-sugar call
         // site, which already has `obj` evaluated -- routing it through here again
@@ -2247,9 +2723,13 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
             match arg {
-                crate::ast::Argument::Positional(expr) => values.push(self.evaluate_expression(expr)?),
+                crate::ast::Argument::Positional(expr) => {
+                    values.push(self.evaluate_expression(expr)?)
+                }
                 crate::ast::Argument::Keyword { .. } => {
-                    return Err(RuntimeError { message: format!("{}() does not support keyword arguments", func_name) });
+                    return Err(RuntimeError {
+                        message: format!("{}() does not support keyword arguments", func_name),
+                    });
                 }
             }
         }
@@ -2260,11 +2740,17 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
     /// values instead of AST expressions -- for call sites (like method-sugar
     /// dispatch) that already have the receiver evaluated and shouldn't evaluate it
     /// twice.
-    fn call_higher_order_with_values(&mut self, func_name: &str, values: Vec<Value>) -> RuntimeResult<Value> {
+    fn call_higher_order_with_values(
+        &mut self,
+        func_name: &str,
+        values: Vec<Value>,
+    ) -> RuntimeResult<Value> {
         match func_name {
             "map" => {
                 if values.len() != 2 {
-                    return Err(RuntimeError { message: "map() takes 2 arguments (array, function)".to_string() });
+                    return Err(RuntimeError {
+                        message: "map() takes 2 arguments (array, function)".to_string(),
+                    });
                 }
                 let mut values = values;
                 let func_val = values.pop().unwrap();
@@ -2294,7 +2780,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             "filter" => {
                 if values.len() != 2 {
-                    return Err(RuntimeError { message: "filter() takes 2 arguments (array, function)".to_string() });
+                    return Err(RuntimeError {
+                        message: "filter() takes 2 arguments (array, function)".to_string(),
+                    });
                 }
                 let mut values = values;
                 let func_val = values.pop().unwrap();
@@ -2304,7 +2792,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let mut result = Vec::new();
                 let mut seen = std::collections::HashSet::new();
                 for item in &arr {
-                    let keep = self.invoke_callable(&func_val, vec![item.clone()])?.is_truthy();
+                    let keep = self
+                        .invoke_callable(&func_val, vec![item.clone()])?
+                        .is_truthy();
                     if keep {
                         if is_unique {
                             let key = item.to_string();
@@ -2326,7 +2816,10 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             "reduce" => {
                 if values.len() < 2 || values.len() > 3 {
-                    return Err(RuntimeError { message: "reduce() takes 2 or 3 arguments (array, function, [initial])".to_string() });
+                    return Err(RuntimeError {
+                        message: "reduce() takes 2 or 3 arguments (array, function, [initial])"
+                            .to_string(),
+                    });
                 }
                 let mut values = values;
                 let explicit_initial = if values.len() > 2 { values.pop() } else { None };
@@ -2349,13 +2842,16 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 };
 
                 for item in arr.iter().skip(start_index) {
-                    accumulator = self.invoke_callable(&func_val, vec![accumulator, item.clone()])?;
+                    accumulator =
+                        self.invoke_callable(&func_val, vec![accumulator, item.clone()])?;
                 }
                 Ok(accumulator)
             }
             "any" => {
                 if values.len() != 2 {
-                    return Err(RuntimeError { message: "any() takes 2 arguments (array, function)".to_string() });
+                    return Err(RuntimeError {
+                        message: "any() takes 2 arguments (array, function)".to_string(),
+                    });
                 }
                 let mut values = values;
                 let func_val = values.pop().unwrap();
@@ -2363,7 +2859,10 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let (arr, _is_unique) = self.expect_array_like(array_val, "any")?;
 
                 for item in &arr {
-                    if self.invoke_callable(&func_val, vec![item.clone()])?.is_truthy() {
+                    if self
+                        .invoke_callable(&func_val, vec![item.clone()])?
+                        .is_truthy()
+                    {
                         return Ok(Value::Bool(true));
                     }
                 }
@@ -2371,7 +2870,9 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
             }
             "all" => {
                 if values.len() != 2 {
-                    return Err(RuntimeError { message: "all() takes 2 arguments (array, function)".to_string() });
+                    return Err(RuntimeError {
+                        message: "all() takes 2 arguments (array, function)".to_string(),
+                    });
                 }
                 let mut values = values;
                 let func_val = values.pop().unwrap();
@@ -2379,13 +2880,18 @@ let mut parser = crate::parser::Parser::new_simple(tokens);
                 let (arr, _is_unique) = self.expect_array_like(array_val, "all")?;
 
                 for item in &arr {
-                    if !self.invoke_callable(&func_val, vec![item.clone()])?.is_truthy() {
+                    if !self
+                        .invoke_callable(&func_val, vec![item.clone()])?
+                        .is_truthy()
+                    {
                         return Ok(Value::Bool(false));
                     }
                 }
                 Ok(Value::Bool(true))
             }
-            _ => Err(RuntimeError { message: format!("Unknown function: {}", func_name) })
+            _ => Err(RuntimeError {
+                message: format!("Unknown function: {}", func_name),
+            }),
         }
     }
 }

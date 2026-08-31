@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.9.0
+
+### Diagnostics and local installation
+
+- Replaced generic output with one Rust-style renderer for parser, linter, runtime,
+  command, package, and native failures. Diagnostics use stable subsystem codes,
+  stderr, terminal-aware color, source underlines, notes, help, and summaries.
+- Added `ject add <name> --path <path>`, `ject remove <name>`, and `ject install`.
+  Source-only and mixed dependencies are validated, resolved transitively, recorded
+  in an atomically written deterministic `Ject.lock`, and native parts are built by
+  the same `ject` executable.
+- Added diagnostic rendering and end-to-end install/lock regression tests.
+- Updated the documentation and bumped Ject to 0.9.0.
+
+## 0.8.0
+
+### Mixed Ject/Rust packages
+
+- Public `jnum` and `jgui` imports are now Ject source facades over private
+  `@native/jnum` and `@native/jgui` backends. JGUI window handles are generic native
+  resources rather than integer IDs, and higher-level dialogs are implemented in Ject.
+- Added the `ject-native` Rust SDK and stable `ject-native-1` C descriptor ABI. Dynamic
+  libraries publish one entry symbol and exchange versioned values without passing Rust
+  layouts across the boundary.
+- The ABI supports discovered function exports and opaque, typed, reference-counted native
+  resources with plugin-owned destruction.
+- `Ject.toml` supports Rust native components and local path dependencies. `ject build`
+  builds the complete native dependency graph; `ject run`, `check`, and `test` discover and
+  load the resulting platform libraries automatically.
+- `ject new <name> --native` scaffolds a mixed package with a Ject facade, Rust `cdylib`,
+  manifest metadata, SDK wiring, and an example export.
+- Added `examples/native_double` and `examples/native_double_demo` as a complete native
+  library and consuming application, including an opaque resource crossing the ABI.
+- Replaced the private, missing `n.jt` parser fixture with a corpus test covering every
+  shipped `.ject` source file. Added ABI envelope/resource/error tests, native scaffolding
+  tests, facade privacy tests, and meaningful module-import assertions; the workspace now
+  completes with no failed, ignored, or filtered tests.
+- Rewrote `docs/DOCS.md` as a beginner-first language guide and precise 0.8 reference,
+  including packages, JGUI, JNUM, mixed Rust libraries, current limitations, and CLI usage.
+- Fixed injected module primitives overwriting same-named Ject exports, which made selective
+  imports such as `clamp` resolve to an invalid builtin instead of the module implementation.
+
+## 0.7.0
+
+### Native modules and package tooling
+- Added `NativeObject` and `NativeModule` traits (`src/native.rs`). Any native (Rust-backed)
+  value type or pluggable module can now implement these instead of being hardcoded into the
+  interpreter -- this replaces `Value::NdArray(NdArray)` as a hardcoded core-enum variant, the
+  `"np_"`/`"gui_"` function-name-prefix dispatch hack, and the `"base" | "jgui" | "jnum"` hardcoded
+  module allowlist (the last one is now allowlist-plus-registry: any future registered native
+  module is automatically recognized without another hardcoded match arm).
+- `jnum` fully migrated onto the new system (this release's actual proof that the design works,
+  not just scaffolding): `NdArray` implements `NativeObject`, `Value::Native` replaces
+  `Value::NdArray`, and a new `Value::NativeFunction { module, name }` replaces the old
+  `BuiltinFunction("np_...")` string-prefix convention. `interpreter.rs` and `stdlib.rs` no longer
+  reference `crate::jnum` directly anywhere except through the registry.
+- Renamed the public native modules and their Rust source files from `numpy`/`gui` to
+  `jnum`/`jgui`. Both modules now implement `NativeModule`; the interpreter no longer dispatches
+  GUI calls by recognizing a function-name prefix.
+- Added the first local package workflow to the main executable: `ject new`, `ject init`,
+  `ject run`, `ject check`, `ject test`, and `ject build`, backed by project discovery through
+  `Ject.toml`.
+- Documented the complete package, lockfile, module-provider, and versioned native-component
+  design in `docs/PACKAGES.md`. The current compiled-in registry is explicitly transitional.
+- Found and fixed a real equality bug while verifying this: `Value::Native == Value::Native` fell
+  through to the generic "different types are never equal" catch-all, so two jnum arrays with
+  identical contents compared unequal. Fixed.
+- Found, verified as pre-existing (not a regression), and left unfixed for the later "fix remaining
+  bugs" step: `np.array()` silently zeroes out nested array literals (`np.array([[1,2],[3,4]])`
+  produces zeros, not a 2D array) -- it only ever supported flat 1D input.
+- Verified: array creation/display, unary and binary element-wise ops, the three functions that
+  dispatch on either an `ndarray` or a plain `array` (`shape`/`ndim`/`size` and
+  `sum`/`mean`/`std`/`min`/`max`), `concatenate`, `zeros`/`ones`/`arange`, the `NAN`/`INF`/`PI`
+  constants, `random()`, equality, and `type_of()` -- all still correct after the migration.
+
 ## 0.6.0
 
 ### Performance & correctness: Array is now reference-counted
@@ -99,8 +174,8 @@
   instead of re-parsing and re-running the file.
 - `"error"` is no longer a reserved keyword -- it had no parser support anywhere and only blocked a
   very natural identifier/function name.
-- `np.NAN` / `np.INF` (and `import {NAN} from "numpy"`) now work -- the wrapper file that used to
-  define these aliases was unreachable dead code, since `numpy` resolves natively.
+- `np.NAN` / `np.INF` (and `import {NAN} from "jnum"`) now work -- the wrapper file that used to
+  define these aliases was unreachable dead code, since `jnum` resolves natively.
 - List comprehensions and generators now support iterating over a string's characters, matching
   `for` loops.
 - `fn(x) ... end` / `fn(x) -> expr` as a bare statement (not assigned to anything) now parses
