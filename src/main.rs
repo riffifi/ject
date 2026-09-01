@@ -504,7 +504,22 @@ fn validate_module_graph_or_exit(entry: &Path) {
                 "fix the first invalid module in the displayed import chain",
             ),
         };
-        emit_cli_error(code, error.to_string(), Some(help));
+        let mut diagnostic = diagnostic::Diagnostic::error(error.to_string())
+            .with_code(code.to_string())
+            .with_help(help.to_string());
+        let mut filename = None;
+        let mut source = None;
+        if let Some(site) = error.import_site() {
+            diagnostic = diagnostic.with_primary_label(
+                diagnostic::SourceSpan::new(site.line, site.column, site.length),
+                format!("failed import `{}`", site.specifier),
+            );
+            if let ject::module_resolver::ModuleIdentity::File(path) = &site.module {
+                filename = Some(path.to_string_lossy().into_owned());
+                source = fs::read_to_string(path).ok();
+            }
+        }
+        DiagnosticRenderer::new().render(&diagnostic, filename.as_deref(), source.as_deref());
         std::process::exit(1);
     }
 }

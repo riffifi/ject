@@ -14,6 +14,22 @@ pub struct ModuleNode {
     pub identity: ModuleIdentity,
     pub interface: ModuleInterface,
     pub dependencies: Vec<ModuleIdentity>,
+    pub edges: Vec<ModuleEdge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportSite {
+    pub module: ModuleIdentity,
+    pub specifier: String,
+    pub line: usize,
+    pub column: usize,
+    pub length: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleEdge {
+    pub target: ModuleIdentity,
+    pub site: ImportSite,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -24,22 +40,32 @@ pub struct ModuleGraph {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModuleGraphError {
-    Load { chain: Vec<String>, message: String },
-    Parse { chain: Vec<String>, message: String },
-    Cycle { chain: Vec<String> },
+    Load {
+        chain: Vec<String>,
+        message: String,
+        site: Option<ImportSite>,
+    },
+    Parse {
+        chain: Vec<String>,
+        message: String,
+    },
+    Cycle {
+        chain: Vec<String>,
+        site: ImportSite,
+    },
 }
 
 impl std::fmt::Display for ModuleGraphError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Load { chain, message } | Self::Parse { chain, message } => {
+            Self::Load { chain, message, .. } | Self::Parse { chain, message } => {
                 write!(formatter, "{message}")?;
                 if chain.len() > 1 {
                     write!(formatter, "\nimport chain: {}", chain.join(" -> "))?;
                 }
                 Ok(())
             }
-            Self::Cycle { chain } => {
+            Self::Cycle { chain, .. } => {
                 write!(formatter, "circular module import: {}", chain.join(" -> "))
             }
         }
@@ -48,6 +74,16 @@ impl std::fmt::Display for ModuleGraphError {
 
 impl std::error::Error for ModuleGraphError {}
 
+impl ModuleGraphError {
+    pub fn import_site(&self) -> Option<&ImportSite> {
+        match self {
+            Self::Load { site, .. } => site.as_ref(),
+            Self::Cycle { site, .. } => Some(site),
+            Self::Parse { .. } => None,
+        }
+    }
+}
+
 impl ModuleGraph {
     pub fn build(entry: &Path) -> Result<Self, ModuleGraphError> {
         let canonical = entry
@@ -55,10 +91,12 @@ impl ModuleGraph {
             .map_err(|error| ModuleGraphError::Load {
                 chain: vec![display_identity(&ModuleIdentity::File(entry.to_path_buf()))],
                 message: format!("failed to load module '{}': {error}", entry.display()),
+                site: None,
             })?;
         let source = fs::read_to_string(&canonical).map_err(|error| ModuleGraphError::Load {
             chain: vec![canonical.display().to_string()],
             message: format!("failed to load module '{}': {error}", canonical.display()),
+            site: None,
         })?;
         Self::build_source(&canonical, source)
     }
@@ -79,6 +117,7 @@ impl ModuleGraph {
             .map_err(|error| ModuleGraphError::Load {
                 chain: vec![display_identity(&ModuleIdentity::File(entry.to_path_buf()))],
                 message: format!("failed to load module '{}': {error}", entry.display()),
+                site: None,
             })?;
         let root = ModuleIdentity::File(canonical.clone());
         let module = ResolvedModule {
@@ -93,7 +132,7 @@ impl ModuleGraph {
             nodes: HashMap::new(),
         };
         let mut active = Vec::new();
-        graph.visit(module, &resolver, sources, &mut active)?;
+        graph.visit(module, &resolver, sources, &mut active, None)?;
         Ok(graph)
     }
 
@@ -103,6 +142,7 @@ impl ModuleGraph {
         resolver: &ModuleResolver,
         sources: &HashMap<std::path::PathBuf, String>,
         active: &mut Vec<ModuleIdentity>,
+        incoming: Option<ImportSite>,
     ) -> Result<(), ModuleGraphError> {
         if let Some(start) = active
             .iter()
@@ -113,26 +153,37 @@ impl ModuleGraph {
                 .map(display_identity)
                 .collect::<Vec<_>>();
             cycle.push(display_identity(&module.identity));
-            return Err(ModuleGraphError::Cycle { chain: cycle });
+            return Err(ModuleGraphError::Cycle {
+                chain: cycle,
+                site: incoming.expect("non-root cycle must have an import site"),
+            });
         }
         if self.nodes.contains_key(&module.identity) {
             return Ok(());
         }
 
         active.push(module.identity.clone());
-        let statements = parse_module(&module).map_err(|message| ModuleGraphError::Parse {
-            chain: active.iter().map(display_identity).collect(),
-            message,
-        })?;
+        let (statements, imports) =
+            parse_module(&module).map_err(|message| ModuleGraphError::Parse {
+                chain: active.iter().map(display_identity).collect(),
+                message,
+            })?;
         let interface = ModuleInterface::from_statements(&statements);
-        let mut imports = Vec::new();
-        collect_imports(&statements, &mut imports);
         let child_resolver = match &module.identity {
             ModuleIdentity::File(path) => ModuleResolver::for_path(path),
             ModuleIdentity::Embedded(_) => resolver.with_base(&module.directory),
         };
         let mut dependencies = Vec::new();
-        for specifier in imports {
+        let mut edges = Vec::new();
+        for parsed in imports {
+            let specifier = parsed.specifier;
+            let site = ImportSite {
+                module: module.identity.clone(),
+                length: specifier.chars().count(),
+                specifier: specifier.clone(),
+                line: parsed.line,
+                column: parsed.column,
+            };
             let resolved = child_resolver
                 .resolve_with_sources(&specifier, sources)
                 .map_err(|error| {
@@ -141,10 +192,15 @@ impl ModuleGraph {
                     ModuleGraphError::Load {
                         chain,
                         message: error.to_string(),
+                        site: Some(site.clone()),
                     }
                 })?;
             dependencies.push(resolved.identity.clone());
-            self.visit(resolved, &child_resolver, sources, active)?;
+            edges.push(ModuleEdge {
+                target: resolved.identity.clone(),
+                site: site.clone(),
+            });
+            self.visit(resolved, &child_resolver, sources, active, Some(site))?;
         }
         active.pop();
         self.nodes.insert(
@@ -153,60 +209,57 @@ impl ModuleGraph {
                 identity: module.identity,
                 interface,
                 dependencies,
+                edges,
             },
         );
         Ok(())
     }
 }
 
-fn parse_module(module: &ResolvedModule) -> Result<Vec<Stmt>, String> {
-    let tokens = Lexer::new(&module.source)
-        .tokenize_with_positions()
-        .into_iter()
-        .map(|token| token.token)
-        .collect();
-    Parser::new_simple(tokens).parse().map_err(|error| {
+#[derive(Debug)]
+struct ParsedImport {
+    specifier: String,
+    line: usize,
+    column: usize,
+}
+
+fn parse_module(module: &ResolvedModule) -> Result<(Vec<Stmt>, Vec<ParsedImport>), String> {
+    let located = Lexer::new(&module.source).tokenize_with_positions();
+    let imports = collect_imports(&located);
+    let tokens = located.into_iter().map(|token| token.token).collect();
+    let statements = Parser::new_simple(tokens).parse().map_err(|error| {
         format!(
             "cannot parse module '{}': {}",
             display_identity(&module.identity),
             error.message
         )
-    })
+    })?;
+    Ok((statements, imports))
 }
 
-fn collect_imports(statements: &[Stmt], imports: &mut Vec<String>) {
-    for statement in statements {
-        match statement {
-            Stmt::Import { module_path, .. } if !module_path.starts_with("@native/") => {
-                imports.push(module_path.clone());
+fn collect_imports(tokens: &[crate::lexer::LocatedToken]) -> Vec<ParsedImport> {
+    let mut imports = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if !matches!(token.token, crate::lexer::Token::Import) {
+            continue;
+        }
+        if let Some(crate::lexer::LocatedToken {
+            token: crate::lexer::Token::String(specifier),
+            position,
+        }) = tokens[index + 1..]
+            .iter()
+            .find(|token| matches!(token.token, crate::lexer::Token::String(_)))
+        {
+            if !specifier.starts_with("@native/") {
+                imports.push(ParsedImport {
+                    specifier: specifier.clone(),
+                    line: position.line,
+                    column: position.column + 1,
+                });
             }
-            Stmt::Function { body, .. }
-            | Stmt::ExportFunction { body, .. }
-            | Stmt::While { body, .. }
-            | Stmt::For { body, .. } => collect_imports(body, imports),
-            Stmt::If {
-                then_branch,
-                elseif_branches,
-                else_branch,
-                ..
-            } => {
-                collect_imports(then_branch, imports);
-                for branch in elseif_branches {
-                    collect_imports(&branch.body, imports);
-                }
-                if let Some(branch) = else_branch {
-                    collect_imports(branch, imports);
-                }
-            }
-            Stmt::Try {
-                body, catch_body, ..
-            } => {
-                collect_imports(body, imports);
-                collect_imports(catch_body, imports);
-            }
-            _ => {}
         }
     }
+    imports
 }
 
 fn display_identity(identity: &ModuleIdentity) -> String {
@@ -257,11 +310,13 @@ mod tests {
         fs::write(root.join("a.ject"), "import \"./b\"\n").unwrap();
         fs::write(root.join("b.ject"), "import \"./a\"\n").unwrap();
         let error = ModuleGraph::build(&root.join("a.ject")).unwrap_err();
-        let ModuleGraphError::Cycle { chain } = error else {
+        let ModuleGraphError::Cycle { chain, site } = error else {
             panic!("expected a cycle");
         };
         assert_eq!(chain.len(), 3);
         assert_eq!(chain.first(), chain.last());
+        assert_eq!(site.specifier, "./a");
+        assert_eq!((site.line, site.column), (1, 9));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -271,11 +326,14 @@ mod tests {
         fs::write(root.join("main.ject"), "import \"./middle\"\n").unwrap();
         fs::write(root.join("middle.ject"), "import \"./missing\"\n").unwrap();
         let error = ModuleGraph::build(&root.join("main.ject")).unwrap_err();
-        let ModuleGraphError::Load { chain, .. } = error else {
+        let ModuleGraphError::Load { chain, site, .. } = error else {
             panic!("expected a load failure");
         };
         assert_eq!(chain.len(), 3);
         assert!(chain.last().unwrap().contains("missing"));
+        let site = site.unwrap();
+        assert_eq!(site.specifier, "./missing");
+        assert_eq!((site.line, site.column), (1, 9));
         fs::remove_dir_all(root).unwrap();
     }
 

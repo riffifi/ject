@@ -169,7 +169,7 @@ impl Backend {
                     documents.entry(module_uri).or_insert(module_source);
                 }
             }
-            append_graph_diagnostic(&mut diagnostics, &graph);
+            append_graph_diagnostic(&mut diagnostics, &graph, Some(&path));
         }
         diagnostics
     }
@@ -624,7 +624,7 @@ fn analyze_at_with_sources(
     if path.is_file() {
         let graph =
             crate::module_graph::ModuleGraph::build_sources(path, source.to_string(), sources);
-        append_graph_diagnostic(&mut diagnostics, &graph);
+        append_graph_diagnostic(&mut diagnostics, &graph, Some(path));
     }
     diagnostics
 }
@@ -667,6 +667,7 @@ fn append_graph_diagnostic(
         crate::module_graph::ModuleGraph,
         crate::module_graph::ModuleGraphError,
     >,
+    current_path: Option<&Path>,
 ) {
     let Err(error) = graph else {
         return;
@@ -682,11 +683,37 @@ fn append_graph_diagnostic(
         _ => None,
     };
     if let Some((code, help)) = report {
-        diagnostics.push(to_lsp_diagnostic(
+        let mut diagnostic = to_lsp_diagnostic(
             diagnostic::Diagnostic::error(error.to_string())
                 .with_code(code.into())
                 .with_help(help.into()),
-        ));
+        );
+        if let Some(site) = error.import_site() {
+            if let ject::module_resolver::ModuleIdentity::File(path) = &site.module {
+                let range = Range::new(
+                    Position::new(
+                        site.line.saturating_sub(1) as u32,
+                        site.column.saturating_sub(1) as u32,
+                    ),
+                    Position::new(
+                        site.line.saturating_sub(1) as u32,
+                        (site.column.saturating_sub(1) + site.length) as u32,
+                    ),
+                );
+                let is_current = current_path.is_some_and(|current| {
+                    fs::canonicalize(current).ok() == fs::canonicalize(path).ok()
+                });
+                if is_current {
+                    diagnostic.range = range;
+                } else if let Ok(uri) = Url::from_file_path(path) {
+                    diagnostic.related_information = Some(vec![DiagnosticRelatedInformation {
+                        location: Location::new(uri, range),
+                        message: format!("import of `{}` occurs here", site.specifier),
+                    }]);
+                }
+            }
+        }
+        diagnostics.push(diagnostic);
     }
 }
 
@@ -2699,10 +2726,20 @@ mod tests {
         // The root import exists only in the editor buffer. Graph validation
         // must use it instead of the older contents currently on disk.
         let diagnostics = analyze_at("import \"./other\"\n", &app_path);
-        assert!(diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == Some(NumberOrString::String("E3102".into()))
-                && diagnostic.message.contains("circular module import")
-        }));
+        let cycle = diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == Some(NumberOrString::String("E3102".into()))
+                    && diagnostic.message.contains("circular module import")
+            })
+            .unwrap();
+        let related = cycle.related_information.as_ref().unwrap();
+        assert_eq!(related.len(), 1);
+        assert_eq!(
+            related[0].location.uri,
+            Url::from_file_path(other_path.canonicalize().unwrap()).unwrap()
+        );
+        assert_eq!(related[0].location.range.start, Position::new(0, 8));
         std::fs::remove_dir_all(root).unwrap();
     }
 
