@@ -175,6 +175,20 @@ impl ModuleResolver {
         })
     }
 
+    pub fn resolve_with_sources(
+        &self,
+        specifier: &str,
+        sources: &HashMap<PathBuf, String>,
+    ) -> Result<ResolvedModule, ResolveError> {
+        let mut module = self.resolve(specifier)?;
+        if let ModuleIdentity::File(path) = &module.identity {
+            if let Some(source) = sources.get(path) {
+                module.source = source.clone();
+            }
+        }
+        Ok(module)
+    }
+
     fn explicit_path(&self, specifier: &str) -> Result<Option<PathBuf>, ResolveError> {
         let looks_like_path = specifier.starts_with('~')
             || specifier.starts_with('.')

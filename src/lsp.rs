@@ -106,12 +106,22 @@ impl Backend {
     }
 
     async fn diagnostics_for(&self, uri: &Url) -> Vec<Diagnostic> {
-        let Some(text) = self.documents.read().await.get(uri).cloned() else {
+        let documents = self.documents.read().await;
+        let Some(text) = documents.get(uri).cloned() else {
             return Vec::new();
         };
+        let sources = documents
+            .iter()
+            .filter_map(|(uri, source)| {
+                let path = uri.to_file_path().ok()?;
+                let canonical = path.canonicalize().ok()?;
+                Some((canonical, source.clone()))
+            })
+            .collect();
+        drop(documents);
         uri.to_file_path()
             .ok()
-            .map(|path| analyze_at(&text, &path))
+            .map(|path| analyze_at_with_sources(&text, &path, &sources))
             .unwrap_or_else(|| analyze(&text))
     }
 }
@@ -511,6 +521,14 @@ fn analyze(source: &str) -> Vec<Diagnostic> {
 }
 
 fn analyze_at(source: &str, path: &Path) -> Vec<Diagnostic> {
+    analyze_at_with_sources(source, path, &HashMap::new())
+}
+
+fn analyze_at_with_sources(
+    source: &str,
+    path: &Path,
+    sources: &HashMap<PathBuf, String>,
+) -> Vec<Diagnostic> {
     let mut lexer = Lexer::new(source);
     let positioned: Vec<_> = lexer
         .tokenize_with_positions()
@@ -522,16 +540,19 @@ fn analyze_at(source: &str, path: &Path) -> Vec<Diagnostic> {
         Ok(statements) => {
             let mut linter = Linter::new()
                 .with_tokens_and_source(positioned, source.into())
-                .with_source_path(path);
+                .with_source_path(path)
+                .with_source_overrides(sources.clone());
             let (diagnostics, _) = linter.lint(&statements);
             let mut diagnostics = diagnostics
                 .into_iter()
                 .map(to_lsp_diagnostic)
                 .collect::<Vec<_>>();
             if path.is_file() {
-                if let Err(error) =
-                    crate::module_graph::ModuleGraph::build_source(path, source.to_string())
-                {
+                if let Err(error) = crate::module_graph::ModuleGraph::build_sources(
+                    path,
+                    source.to_string(),
+                    sources,
+                ) {
                     let report = match &error {
                         crate::module_graph::ModuleGraphError::Cycle { .. } => Some((
                             "E3102",
@@ -2194,6 +2215,31 @@ mod tests {
             dependent_documents(&indexes, &leaf_uri),
             vec![app_uri, middle_uri]
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_use_unsaved_dependency_sources() {
+        let root = std::env::temp_dir().join(format!("ject-lsp-overlay-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let app_path = root.join("app.ject");
+        let dependency_path = root.join("dependency.ject");
+        let app = "import {new_api} from \"./dependency\"\nprint new_api()\n";
+        std::fs::write(&app_path, app).unwrap();
+        std::fs::write(&dependency_path, "export old_api = 1\n").unwrap();
+
+        let disk_diagnostics = analyze_at(app, &app_path);
+        assert!(disk_diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == Some(NumberOrString::String("E3101".into())) }));
+        let sources = HashMap::from([(
+            dependency_path.canonicalize().unwrap(),
+            "export fn new_api()\n    return 1\nend\n".into(),
+        )]);
+        let overlay_diagnostics = analyze_at_with_sources(app, &app_path, &sources);
+        assert!(!overlay_diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == Some(NumberOrString::String("E3101".into())) }));
         std::fs::remove_dir_all(root).unwrap();
     }
 

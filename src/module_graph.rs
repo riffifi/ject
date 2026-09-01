@@ -66,6 +66,14 @@ impl ModuleGraph {
     /// Build from an in-memory root while loading dependencies from the resolver.
     /// This keeps editor diagnostics correct for unsaved changes.
     pub fn build_source(entry: &Path, source: String) -> Result<Self, ModuleGraphError> {
+        Self::build_sources(entry, source, &HashMap::new())
+    }
+
+    pub fn build_sources(
+        entry: &Path,
+        source: String,
+        sources: &HashMap<std::path::PathBuf, String>,
+    ) -> Result<Self, ModuleGraphError> {
         let canonical = entry
             .canonicalize()
             .map_err(|error| ModuleGraphError::Load {
@@ -85,7 +93,7 @@ impl ModuleGraph {
             nodes: HashMap::new(),
         };
         let mut active = Vec::new();
-        graph.visit(module, &resolver, &mut active)?;
+        graph.visit(module, &resolver, sources, &mut active)?;
         Ok(graph)
     }
 
@@ -93,6 +101,7 @@ impl ModuleGraph {
         &mut self,
         module: ResolvedModule,
         resolver: &ModuleResolver,
+        sources: &HashMap<std::path::PathBuf, String>,
         active: &mut Vec<ModuleIdentity>,
     ) -> Result<(), ModuleGraphError> {
         if let Some(start) = active
@@ -124,16 +133,18 @@ impl ModuleGraph {
         };
         let mut dependencies = Vec::new();
         for specifier in imports {
-            let resolved = child_resolver.resolve(&specifier).map_err(|error| {
-                let mut chain = active.iter().map(display_identity).collect::<Vec<_>>();
-                chain.push(specifier.clone());
-                ModuleGraphError::Load {
-                    chain,
-                    message: error.to_string(),
-                }
-            })?;
+            let resolved = child_resolver
+                .resolve_with_sources(&specifier, sources)
+                .map_err(|error| {
+                    let mut chain = active.iter().map(display_identity).collect::<Vec<_>>();
+                    chain.push(specifier.clone());
+                    ModuleGraphError::Load {
+                        chain,
+                        message: error.to_string(),
+                    }
+                })?;
             dependencies.push(resolved.identity.clone());
-            self.visit(resolved, &child_resolver, active)?;
+            self.visit(resolved, &child_resolver, sources, active)?;
         }
         active.pop();
         self.nodes.insert(

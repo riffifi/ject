@@ -41,6 +41,7 @@ pub struct Linter {
     source: String,
     source_path: std::path::PathBuf,
     module_interfaces: RefCell<HashMap<String, Result<ModuleInterface, String>>>,
+    source_overrides: HashMap<std::path::PathBuf, String>,
 }
 
 impl Linter {
@@ -276,6 +277,7 @@ impl Linter {
             source: String::new(),
             source_path: std::env::current_dir().unwrap_or_default(),
             module_interfaces: RefCell::new(HashMap::new()),
+            source_overrides: HashMap::new(),
         };
 
         // Add built-in functions to the functions set
@@ -522,6 +524,11 @@ impl Linter {
         self
     }
 
+    pub fn with_source_overrides(mut self, sources: HashMap<std::path::PathBuf, String>) -> Self {
+        self.source_overrides = sources;
+        self
+    }
+
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
         self.scopes.clear();
         self.scopes.push(HashMap::new()); // Global scope
@@ -741,7 +748,7 @@ impl Linter {
             return interface.clone();
         }
         let result = crate::module_resolver::ModuleResolver::for_path(&self.source_path)
-            .resolve(module_path)
+            .resolve_with_sources(module_path, &self.source_overrides)
             .map_err(|error| error.to_string())
             .and_then(|module| {
                 ModuleInterface::parse(&module.source)
