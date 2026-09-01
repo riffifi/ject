@@ -10,7 +10,7 @@ use crate::linter::Linter;
 use crate::module_interface::{ExportKind, ModuleInterface};
 use crate::parser::Parser;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::sync::RwLock;
@@ -80,21 +80,39 @@ struct DocumentIndex {
     exports: HashMap<String, crate::semantic::SymbolId>,
     selective_imports: HashMap<crate::semantic::SymbolId, (String, String)>,
     module_aliases: HashMap<String, String>,
+    imports: Vec<String>,
 }
 
 impl Backend {
     async fn publish(&self, uri: Url, text: String, version: Option<i32>) {
-        let diagnostics = uri
-            .to_file_path()
-            .ok()
-            .map(|path| analyze_at(&text, &path))
-            .unwrap_or_else(|| analyze(&text));
         let index = index_document(&text);
         self.documents.write().await.insert(uri.clone(), text);
         self.indexes.write().await.insert(uri.clone(), index);
+        let diagnostics = self.diagnostics_for(&uri).await;
         self.client
-            .publish_diagnostics(uri, diagnostics, version)
+            .publish_diagnostics(uri.clone(), diagnostics, version)
             .await;
+
+        let dependents = {
+            let indexes = self.indexes.read().await;
+            dependent_documents(&indexes, &uri)
+        };
+        for dependent in dependents {
+            let diagnostics = self.diagnostics_for(&dependent).await;
+            self.client
+                .publish_diagnostics(dependent, diagnostics, None)
+                .await;
+        }
+    }
+
+    async fn diagnostics_for(&self, uri: &Url) -> Vec<Diagnostic> {
+        let Some(text) = self.documents.read().await.get(uri).cloned() else {
+            return Vec::new();
+        };
+        uri.to_file_path()
+            .ok()
+            .map(|path| analyze_at(&text, &path))
+            .unwrap_or_else(|| analyze(&text))
     }
 }
 
@@ -192,7 +210,16 @@ impl LanguageServer for Backend {
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        if let Some(text) = params.text {
+        let text = match params.text {
+            Some(text) => Some(text),
+            None => self
+                .documents
+                .read()
+                .await
+                .get(&params.text_document.uri)
+                .cloned(),
+        };
+        if let Some(text) = text {
             self.publish(params.text_document.uri, text, None).await;
         }
     }
@@ -201,17 +228,20 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         if let Ok(path) = uri.to_file_path() {
             if let Ok(text) = fs::read_to_string(path) {
-                self.documents
-                    .write()
-                    .await
-                    .insert(uri.clone(), text.clone());
-                self.indexes
-                    .write()
-                    .await
-                    .insert(uri.clone(), index_document(&text));
+                self.publish(uri.clone(), text, None).await;
             } else {
+                let dependents = {
+                    let indexes = self.indexes.read().await;
+                    dependent_documents(&indexes, &uri)
+                };
                 self.documents.write().await.remove(&uri);
                 self.indexes.write().await.remove(&uri);
+                for dependent in dependents {
+                    let diagnostics = self.diagnostics_for(&dependent).await;
+                    self.client
+                        .publish_diagnostics(dependent, diagnostics, None)
+                        .await;
+                }
             }
         }
         self.client.publish_diagnostics(uri, vec![], None).await;
@@ -223,21 +253,27 @@ impl LanguageServer for Backend {
                 continue;
             };
             if change.typ == FileChangeType::DELETED {
+                let dependents = {
+                    let indexes = self.indexes.read().await;
+                    dependent_documents(&indexes, &change.uri)
+                };
                 self.documents.write().await.remove(&change.uri);
                 self.indexes.write().await.remove(&change.uri);
+                self.client
+                    .publish_diagnostics(change.uri, Vec::new(), None)
+                    .await;
+                for dependent in dependents {
+                    let diagnostics = self.diagnostics_for(&dependent).await;
+                    self.client
+                        .publish_diagnostics(dependent, diagnostics, None)
+                        .await;
+                }
             } else if matches!(
                 path.extension().and_then(|ext| ext.to_str()),
                 Some("ject" | "jt")
             ) {
                 if let Ok(text) = fs::read_to_string(path) {
-                    self.documents
-                        .write()
-                        .await
-                        .insert(change.uri.clone(), text.clone());
-                    self.indexes
-                        .write()
-                        .await
-                        .insert(change.uri, index_document(&text));
+                    self.publish(change.uri, text, None).await;
                 }
             }
         }
@@ -671,13 +707,14 @@ fn index_document(source: &str) -> DocumentIndex {
             previous = Some(&located.token);
         }
     }
-    let (exports, selective_imports, module_aliases) = module_metadata(&tokens, &semantic);
+    let (exports, selective_imports, module_aliases, imports) = module_metadata(&tokens, &semantic);
     DocumentIndex {
         occurrences,
         semantic,
         exports,
         selective_imports,
         module_aliases,
+        imports,
     }
 }
 
@@ -732,10 +769,12 @@ fn module_metadata(
     HashMap<String, crate::semantic::SymbolId>,
     HashMap<crate::semantic::SymbolId, (String, String)>,
     HashMap<String, String>,
+    Vec<String>,
 ) {
     let mut exports = HashMap::new();
     let mut selective_imports = HashMap::new();
     let mut module_aliases = HashMap::new();
+    let mut imports = Vec::new();
     let mut index = 0usize;
     while index < tokens.len() {
         match &tokens[index].token {
@@ -788,6 +827,7 @@ fn module_metadata(
                         ..
                     }) = tokens.get(cursor)
                     {
+                        imports.push(module.clone());
                         for (name, position) in imported {
                             if let Some(id) = semantic.symbol_at(position.line, position.column) {
                                 selective_imports.insert(id, (module.clone(), name));
@@ -799,6 +839,7 @@ fn module_metadata(
                     ..
                 }) = tokens.get(index + 1)
                 {
+                    imports.push(module.clone());
                     if matches!(
                         tokens.get(index + 2).map(|item| &item.token),
                         Some(Token::As)
@@ -817,7 +858,7 @@ fn module_metadata(
         }
         index += 1;
     }
-    (exports, selective_imports, module_aliases)
+    (exports, selective_imports, module_aliases, imports)
 }
 
 fn infer_symbol_types(
@@ -1088,6 +1129,33 @@ fn resolved_module_uri(importer: &Url, module: &str) -> Option<Url> {
         crate::module_resolver::ModuleIdentity::File(path) => Url::from_file_path(path).ok(),
         crate::module_resolver::ModuleIdentity::Embedded(_) => None,
     }
+}
+
+fn dependent_documents(indexes: &HashMap<Url, DocumentIndex>, changed: &Url) -> Vec<Url> {
+    let mut affected = HashSet::from([changed.clone()]);
+    let mut found = true;
+    while found {
+        found = false;
+        for (uri, index) in indexes {
+            if affected.contains(uri) {
+                continue;
+            }
+            let depends_on_affected = index.imports.iter().any(|module| {
+                let resolved = resolved_module_uri(uri, module);
+                affected.iter().any(|target| {
+                    resolved.as_ref() == Some(target) || module_matches(target, module)
+                })
+            });
+            if depends_on_affected {
+                affected.insert(uri.clone());
+                found = true;
+            }
+        }
+    }
+    affected.remove(changed);
+    let mut dependents = affected.into_iter().collect::<Vec<_>>();
+    dependents.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    dependents
 }
 
 fn definition_occurrence<'a>(
@@ -2090,6 +2158,42 @@ mod tests {
             diagnostic.code == Some(NumberOrString::String("E3102".into()))
                 && diagnostic.message.contains("circular module import")
         }));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dependency_invalidation_is_transitive_and_import_form_agnostic() {
+        let root = std::env::temp_dir().join(format!("ject-lsp-deps-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let leaf_path = root.join("leaf.ject");
+        let middle_path = root.join("middle.ject");
+        let app_path = root.join("app.ject");
+        std::fs::write(&leaf_path, "export value = 1\n").unwrap();
+        std::fs::write(
+            &middle_path,
+            "import {value} from \"./leaf\"\nexport middle = value\n",
+        )
+        .unwrap();
+        std::fs::write(&app_path, "import \"./middle\" as middle\n").unwrap();
+        let leaf_uri = Url::from_file_path(&leaf_path).unwrap();
+        let middle_uri = Url::from_file_path(&middle_path).unwrap();
+        let app_uri = Url::from_file_path(&app_path).unwrap();
+        let indexes = HashMap::from([
+            (leaf_uri.clone(), index_document("export value = 1\n")),
+            (
+                middle_uri.clone(),
+                index_document("import {value} from \"./leaf\"\nexport middle = value\n"),
+            ),
+            (
+                app_uri.clone(),
+                index_document("import \"./middle\" as middle\n"),
+            ),
+        ]);
+
+        assert_eq!(
+            dependent_documents(&indexes, &leaf_uri),
+            vec![app_uri, middle_uri]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
