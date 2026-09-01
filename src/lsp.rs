@@ -90,6 +90,8 @@ struct DocumentIndex {
     selective_imports: HashMap<crate::semantic::SymbolId, (String, String)>,
     module_aliases: HashMap<String, String>,
     imports: Vec<String>,
+    glob_imports: Vec<String>,
+    reexport_references: Vec<(SourceSpan, String)>,
 }
 
 impl Backend {
@@ -832,7 +834,8 @@ fn index_document(source: &str) -> DocumentIndex {
             previous = Some(&located.token);
         }
     }
-    let (exports, selective_imports, module_aliases, imports) = module_metadata(&tokens, &semantic);
+    let (exports, selective_imports, module_aliases, imports, glob_imports, reexport_references) =
+        module_metadata(&tokens, &semantic);
     DocumentIndex {
         occurrences,
         semantic,
@@ -840,6 +843,8 @@ fn index_document(source: &str) -> DocumentIndex {
         selective_imports,
         module_aliases,
         imports,
+        glob_imports,
+        reexport_references,
     }
 }
 
@@ -895,11 +900,15 @@ fn module_metadata(
     HashMap<crate::semantic::SymbolId, (String, String)>,
     HashMap<String, String>,
     Vec<String>,
+    Vec<String>,
+    Vec<(SourceSpan, String)>,
 ) {
     let mut exports = HashMap::new();
     let mut selective_imports = HashMap::new();
     let mut module_aliases = HashMap::new();
     let mut imports = Vec::new();
+    let mut glob_imports = Vec::new();
+    let mut reexport_references = Vec::new();
     let mut index = 0usize;
     while index < tokens.len() {
         match &tokens[index].token {
@@ -922,6 +931,31 @@ fn module_metadata(
                         semantic.symbol_at(located.position.line, located.position.column)
                     {
                         exports.insert(name.clone(), id);
+                    }
+                    if !matches!(
+                        tokens.get(index + 1).map(|item| &item.token),
+                        Some(Token::Fn)
+                    ) {
+                        let equals = name_index + 1;
+                        if matches!(
+                            tokens.get(equals).map(|item| &item.token),
+                            Some(Token::Equal)
+                        ) {
+                            if let Some(crate::lexer::LocatedToken {
+                                token: Token::Identifier(source_name),
+                                position,
+                            }) = tokens.get(equals + 1)
+                            {
+                                reexport_references.push((
+                                    SourceSpan::new(
+                                        position.line,
+                                        position.column,
+                                        source_name.chars().count(),
+                                    ),
+                                    source_name.clone(),
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -976,6 +1010,8 @@ fn module_metadata(
                         {
                             module_aliases.insert(alias.clone(), module.clone());
                         }
+                    } else {
+                        glob_imports.push(module.clone());
                     }
                 }
             }
@@ -983,7 +1019,14 @@ fn module_metadata(
         }
         index += 1;
     }
-    (exports, selective_imports, module_aliases, imports)
+    (
+        exports,
+        selective_imports,
+        module_aliases,
+        imports,
+        glob_imports,
+        reexport_references,
+    )
 }
 
 fn infer_symbol_types(
@@ -1199,13 +1242,70 @@ fn symbol_identity_at(
     position: Position,
 ) -> Option<SymbolIdentity> {
     let index = indexes.get(uri)?;
+    if let Some((_, name)) = index
+        .reexport_references
+        .iter()
+        .find(|(span, _)| span_contains(*span, position))
+    {
+        if let Some(identity) = imported_name_identity(indexes, uri, index, name) {
+            return Some(identity);
+        }
+    }
     if let Some(id) = semantic_symbol_at(index, position) {
         return canonical_identity(indexes, uri, id);
     }
     let source = documents.get(uri)?;
+    if let Some(name) = word_at(source, position) {
+        if let Some(identity) = glob_imported_identity(indexes, uri, index, &name) {
+            return Some(identity);
+        }
+    }
     let (alias, member) = qualified_member_at(source, position)?;
     let module = index.module_aliases.get(&alias)?;
     exported_identity(indexes, uri, module, &member)
+}
+
+fn imported_name_identity(
+    indexes: &HashMap<Url, DocumentIndex>,
+    importer: &Url,
+    index: &DocumentIndex,
+    name: &str,
+) -> Option<SymbolIdentity> {
+    let selective = index
+        .selective_imports
+        .iter()
+        .find_map(|(id, (module, imported))| {
+            (imported == name
+                && index
+                    .semantic
+                    .symbols
+                    .get(*id)
+                    .is_some_and(|symbol| symbol.name == name))
+            .then(|| exported_identity(indexes, importer, module, imported))
+            .flatten()
+        });
+    selective.or_else(|| glob_imported_identity(indexes, importer, index, name))
+}
+
+fn glob_imported_identity(
+    indexes: &HashMap<Url, DocumentIndex>,
+    importer: &Url,
+    index: &DocumentIndex,
+    name: &str,
+) -> Option<SymbolIdentity> {
+    let mut candidates = index
+        .glob_imports
+        .iter()
+        .filter_map(|module| exported_identity(indexes, importer, module, name))
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left.0
+            .as_str()
+            .cmp(right.0.as_str())
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    candidates.dedup();
+    (candidates.len() == 1).then(|| candidates.remove(0))
 }
 
 fn canonical_identity(
@@ -1349,13 +1449,22 @@ fn locations_for_identity(
             }
         }
         for reference in &index.semantic.references {
-            if let Some(id) = reference.resolved {
-                if canonical_identity(indexes, uri, id).as_ref() == Some(identity) {
-                    result.push((
-                        Location::new(uri.clone(), range_from_span(reference.span)),
-                        false,
-                    ));
-                }
+            let reexport = index
+                .reexport_references
+                .iter()
+                .find(|(span, _)| *span == reference.span)
+                .and_then(|(_, name)| imported_name_identity(indexes, uri, index, name));
+            let resolved = reexport.or_else(|| {
+                reference
+                    .resolved
+                    .and_then(|id| canonical_identity(indexes, uri, id))
+                    .or_else(|| glob_imported_identity(indexes, uri, index, &reference.name))
+            });
+            if resolved.as_ref() == Some(identity) {
+                result.push((
+                    Location::new(uri.clone(), range_from_span(reference.span)),
+                    false,
+                ));
             }
         }
         for occurrence in index
@@ -1513,6 +1622,12 @@ fn contains(range: Range, position: Position) -> bool {
     position.line == range.start.line
         && position.character >= range.start.character
         && position.character <= range.end.character
+}
+
+fn span_contains(span: SourceSpan, position: Position) -> bool {
+    position.line as usize + 1 == span.line
+        && position.character as usize + 1 >= span.column
+        && position.character as usize + 1 <= span.column + span.length
 }
 
 fn valid_identifier(name: &str) -> bool {
@@ -1804,6 +1919,26 @@ fn completion_items(
         return items;
     };
     let mut names = BTreeMap::new();
+    let mut glob_names: BTreeMap<String, (SymbolKind, Option<String>, usize)> = BTreeMap::new();
+    for module in &index.glob_imports {
+        for item in exported_completion_items(indexes, uri, module) {
+            let kind = match item.kind {
+                Some(CompletionItemKind::FUNCTION) => SymbolKind::FUNCTION,
+                Some(CompletionItemKind::STRUCT) => SymbolKind::STRUCT,
+                Some(CompletionItemKind::MODULE) => SymbolKind::MODULE,
+                _ => SymbolKind::VARIABLE,
+            };
+            glob_names
+                .entry(item.label)
+                .and_modify(|entry| entry.2 += 1)
+                .or_insert((kind, item.detail, 1));
+        }
+    }
+    for (name, (kind, detail, providers)) in glob_names {
+        if providers == 1 {
+            names.insert(name, (kind, detail));
+        }
+    }
     for id in index
         .semantic
         .visible_symbols(position.line as usize + 1, position.character as usize + 1)
@@ -2238,6 +2373,100 @@ mod tests {
         assert_eq!(
             locations_for_identity(&indexes, &documents, &identity).len(),
             2
+        );
+    }
+
+    #[test]
+    fn resolves_unaliased_import_names_to_their_export() {
+        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
+        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library = "export fn paint(text)\n    return text\nend";
+        let app = "import \"colors\"\npaint(\"hi\")";
+        let indexes = HashMap::from([
+            (library_uri.clone(), index_document(library)),
+            (app_uri.clone(), index_document(app)),
+        ]);
+        let documents = HashMap::from([
+            (library_uri.clone(), library.into()),
+            (app_uri.clone(), app.into()),
+        ]);
+
+        let identity =
+            symbol_identity_at(&indexes, &documents, &app_uri, Position::new(1, 2)).unwrap();
+        assert_eq!(identity.0, library_uri);
+        assert_eq!(
+            locations_for_identity(&indexes, &documents, &identity).len(),
+            2
+        );
+        let completions = completion_items(&indexes, &documents, &app_uri, Position::new(1, 2));
+        let paint = completions
+            .iter()
+            .find(|item| item.label == "paint")
+            .unwrap();
+        assert_eq!(paint.kind, Some(CompletionItemKind::FUNCTION));
+        assert_eq!(paint.detail.as_deref(), Some("fn paint(text)"));
+    }
+
+    #[test]
+    fn unaliased_import_names_stay_ambiguous_when_modules_collide() {
+        let colors_uri = Url::parse("file:///tmp/colors.ject").unwrap();
+        let canvas_uri = Url::parse("file:///tmp/canvas.ject").unwrap();
+        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library = "export fn paint()\nend";
+        let app = "import \"colors\"\nimport \"canvas\"\npaint()";
+        let indexes = HashMap::from([
+            (colors_uri.clone(), index_document(library)),
+            (canvas_uri, index_document(library)),
+            (app_uri.clone(), index_document(app)),
+        ]);
+        let documents =
+            HashMap::from([(colors_uri, library.into()), (app_uri.clone(), app.into())]);
+
+        assert!(symbol_identity_at(&indexes, &documents, &app_uri, Position::new(2, 2)).is_none());
+
+        let completions = completion_items(&indexes, &documents, &app_uri, Position::new(2, 5));
+        assert!(!completions.iter().any(|item| item.label == "paint"));
+    }
+
+    #[test]
+    fn same_named_reexports_keep_source_and_public_identities_separate() {
+        let base_uri = Url::parse("file:///tmp/base.ject").unwrap();
+        let facade_uri = Url::parse("file:///tmp/facade.ject").unwrap();
+        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let base = "export fn paint()\nend";
+        let facade = "import {paint} from \"base\"\nexport paint = paint";
+        let app = "import {paint} from \"facade\"\npaint()";
+        let indexes = HashMap::from([
+            (base_uri.clone(), index_document(base)),
+            (facade_uri.clone(), index_document(facade)),
+            (app_uri.clone(), index_document(app)),
+        ]);
+        let documents = HashMap::from([
+            (base_uri.clone(), base.into()),
+            (facade_uri.clone(), facade.into()),
+            (app_uri.clone(), app.into()),
+        ]);
+
+        let source_identity =
+            symbol_identity_at(&indexes, &documents, &facade_uri, Position::new(1, 16)).unwrap();
+        let public_identity =
+            symbol_identity_at(&indexes, &documents, &facade_uri, Position::new(1, 8)).unwrap();
+        assert_eq!(source_identity.0, base_uri);
+        assert_eq!(public_identity.0, facade_uri);
+        assert_ne!(source_identity, public_identity);
+        assert_eq!(
+            locations_for_identity(&indexes, &documents, &source_identity).len(),
+            3
+        );
+        assert_eq!(
+            locations_for_identity(&indexes, &documents, &public_identity).len(),
+            3
+        );
+        assert!(
+            locations_for_identity(&indexes, &documents, &public_identity)
+                .iter()
+                .all(|(location, _)| !(location.uri == facade_uri
+                    && location.range.start.character == 15))
         );
     }
 
