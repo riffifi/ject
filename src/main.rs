@@ -17,6 +17,7 @@ mod value;
 
 use diagnostic::{parse_diagnostic, runtime_diagnostic, DiagnosticRenderer};
 use interpreter::Interpreter;
+use ject::module_graph;
 use lexer::Lexer;
 use parser::Parser;
 use rustyline::error::ReadlineError;
@@ -412,6 +413,7 @@ fn run_file(filename: &str) {
 
 fn check_file(filename: &str) {
     prepare_native_for(Path::new(filename));
+    validate_module_graph_or_exit(Path::new(filename));
     match fs::read_to_string(filename) {
         Ok(source) => {
             let mut interpreter = Interpreter::new();
@@ -442,6 +444,7 @@ fn check_file(filename: &str) {
 
 fn check_project_sources(project: &package::Project) {
     prepare_native_for(&project.root);
+    validate_module_graph_or_exit(&project.entry);
     let mut projects = package::dependency_projects(project).unwrap_or_else(|error| {
         emit_cli_error(
             "E4102",
@@ -482,6 +485,26 @@ fn check_project_sources(project: &package::Project) {
         }
     }
     if !valid {
+        std::process::exit(1);
+    }
+}
+
+fn validate_module_graph_or_exit(entry: &Path) {
+    if let Err(error) = module_graph::ModuleGraph::build(entry) {
+        let (code, help) = match &error {
+            module_graph::ModuleGraphError::Cycle { .. } => (
+                "E3102",
+                "break the cycle by moving shared code into a third module",
+            ),
+            module_graph::ModuleGraphError::Load { .. } => {
+                ("E3101", "check every module in the displayed import chain")
+            }
+            module_graph::ModuleGraphError::Parse { .. } => (
+                "E1001",
+                "fix the first invalid module in the displayed import chain",
+            ),
+        };
+        emit_cli_error(code, error.to_string(), Some(help));
         std::process::exit(1);
     }
 }

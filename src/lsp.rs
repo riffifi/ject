@@ -488,7 +488,36 @@ fn analyze_at(source: &str, path: &Path) -> Vec<Diagnostic> {
                 .with_tokens_and_source(positioned, source.into())
                 .with_source_path(path);
             let (diagnostics, _) = linter.lint(&statements);
-            diagnostics.into_iter().map(to_lsp_diagnostic).collect()
+            let mut diagnostics = diagnostics
+                .into_iter()
+                .map(to_lsp_diagnostic)
+                .collect::<Vec<_>>();
+            if path.is_file() {
+                if let Err(error) =
+                    crate::module_graph::ModuleGraph::build_source(path, source.to_string())
+                {
+                    let report = match &error {
+                        crate::module_graph::ModuleGraphError::Cycle { .. } => Some((
+                            "E3102",
+                            "break the cycle by moving shared code into a third module",
+                        )),
+                        crate::module_graph::ModuleGraphError::Load { chain, .. }
+                            if chain.len() > 2 =>
+                        {
+                            Some(("E3101", "check every module in the displayed import chain"))
+                        }
+                        _ => None,
+                    };
+                    if let Some((code, help)) = report {
+                        diagnostics.push(to_lsp_diagnostic(
+                            diagnostic::Diagnostic::error(error.to_string())
+                                .with_code(code.into())
+                                .with_help(help.into()),
+                        ));
+                    }
+                }
+            }
+            diagnostics
         }
         Err(error) => vec![to_lsp_diagnostic(diagnostic::parse_diagnostic(
             &error.message,
@@ -2042,6 +2071,25 @@ mod tests {
         assert_eq!(items[0].label, "paint");
         assert_eq!(items[0].kind, Some(CompletionItemKind::FUNCTION));
         assert_eq!(items[0].detail.as_deref(), Some("fn paint(text, shade=…)"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_report_source_import_cycles() {
+        let root = std::env::temp_dir().join(format!("ject-lsp-cycle-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let app_path = root.join("app.ject");
+        let other_path = root.join("other.ject");
+        std::fs::write(&app_path, "print 1\n").unwrap();
+        std::fs::write(&other_path, "import \"./app\"\n").unwrap();
+
+        // The root import exists only in the editor buffer. Graph validation
+        // must use it instead of the older contents currently on disk.
+        let diagnostics = analyze_at("import \"./other\"\n", &app_path);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == Some(NumberOrString::String("E3102".into()))
+                && diagnostic.message.contains("circular module import")
+        }));
         std::fs::remove_dir_all(root).unwrap();
     }
 

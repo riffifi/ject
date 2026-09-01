@@ -5,6 +5,7 @@ pub mod jgui;
 pub mod jnum;
 pub mod lexer;
 pub mod linter;
+pub mod module_graph;
 pub mod module_interface;
 pub mod module_resolver;
 pub mod native;
