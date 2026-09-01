@@ -1,5 +1,7 @@
 use crate::ast::{Argument, Expr, Parameter, Stmt};
 use crate::diagnostic::Diagnostic;
+use crate::module_interface::{ExportKind, ModuleInterface};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -11,12 +13,6 @@ struct Variable {
 #[derive(Debug, Clone)]
 struct FunctionSignature {
     parameters: Vec<Parameter>,
-}
-
-#[derive(Debug, Clone)]
-struct ModuleExport {
-    name: String,
-    parameters: Option<Vec<Parameter>>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +40,7 @@ pub struct Linter {
     positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
     source: String,
     source_path: std::path::PathBuf,
+    module_interfaces: RefCell<HashMap<String, Result<ModuleInterface, String>>>,
 }
 
 impl Linter {
@@ -278,6 +275,7 @@ impl Linter {
             positioned_tokens: Vec::new(),
             source: String::new(),
             source_path: std::env::current_dir().unwrap_or_default(),
+            module_interfaces: RefCell::new(HashMap::new()),
         };
 
         // Add built-in functions to the functions set
@@ -529,6 +527,7 @@ impl Linter {
         self.scopes.push(HashMap::new()); // Global scope
         self.warnings.clear();
         self.errors.clear();
+        self.module_interfaces.borrow_mut().clear();
 
         // Re-add built-in functions (don't clear them)
         self.functions.clear();
@@ -601,6 +600,7 @@ impl Linter {
         // Only clear warnings and errors, keep global scope variables and functions
         self.warnings.clear();
         self.errors.clear();
+        self.module_interfaces.borrow_mut().clear();
 
         // Ensure we have at least the global scope
         if self.scopes.is_empty() {
@@ -727,47 +727,30 @@ impl Linter {
     }
 
     fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, String> {
-        self.get_module_api(module_path)
-            .map(|exports| exports.into_iter().map(|export| export.name).collect())
+        self.get_module_interface(module_path).map(|interface| {
+            interface
+                .exports
+                .into_iter()
+                .map(|export| export.name)
+                .collect()
+        })
     }
 
-    fn get_module_api(&self, module_path: &str) -> Result<Vec<ModuleExport>, String> {
-        let module_content = crate::module_resolver::ModuleResolver::for_path(&self.source_path)
-            .resolve(module_path)
-            .map_err(|error| error.to_string())?
-            .source;
-
-        let mut lexer = crate::lexer::Lexer::new(&module_content);
-        let located_tokens = lexer.tokenize_with_positions();
-        let tokens: Vec<crate::lexer::Token> =
-            located_tokens.into_iter().map(|lt| lt.token).collect();
-        let mut parser = crate::parser::Parser::new_simple(tokens);
-
-        let statements = parser
-            .parse()
-            .map_err(|error| format!("cannot inspect module '{module_path}': {error}"))?;
-
-        // Extract export names
-        let mut exports = Vec::new();
-        for statement in &statements {
-            match statement {
-                crate::ast::Stmt::Export { name, .. } => {
-                    exports.push(ModuleExport {
-                        name: name.clone(),
-                        parameters: None,
-                    });
-                }
-                crate::ast::Stmt::ExportFunction { name, params, .. } => {
-                    exports.push(ModuleExport {
-                        name: name.clone(),
-                        parameters: Some(params.clone()),
-                    });
-                }
-                _ => {}
-            }
+    fn get_module_interface(&self, module_path: &str) -> Result<ModuleInterface, String> {
+        if let Some(interface) = self.module_interfaces.borrow().get(module_path) {
+            return interface.clone();
         }
-
-        Ok(exports)
+        let result = crate::module_resolver::ModuleResolver::for_path(&self.source_path)
+            .resolve(module_path)
+            .map_err(|error| error.to_string())
+            .and_then(|module| {
+                ModuleInterface::parse(&module.source)
+                    .map_err(|error| format!("cannot inspect module '{module_path}': {error}"))
+            });
+        self.module_interfaces
+            .borrow_mut()
+            .insert(module_path.to_string(), result.clone());
+        result
     }
 
     fn find_variable(&self, name: &str) -> bool {
@@ -1017,8 +1000,8 @@ impl Linter {
                 let module_api = if module_path.starts_with("@native/") {
                     None
                 } else {
-                    match self.get_module_api(module_path) {
-                        Ok(exports) => Some(exports),
+                    match self.get_module_interface(module_path) {
+                        Ok(interface) => Some(interface),
                         Err(message) => {
                             self.errors.push(LintError {
                                 message,
@@ -1033,12 +1016,12 @@ impl Linter {
                     for item in item_list {
                         self.declare_variable(item.clone());
                         let mut valid_export = false;
-                        if let Some(parameters) = module_api
+                        if let Some(export) = module_api
                             .as_ref()
-                            .and_then(|exports| exports.iter().find(|export| export.name == *item))
+                            .and_then(|interface| interface.export(item))
                         {
                             valid_export = true;
-                            if let Some(parameters) = &parameters.parameters {
+                            if let ExportKind::Function { parameters } = &export.kind {
                                 self.function_signatures.insert(
                                     item.clone(),
                                     FunctionSignature {
@@ -1046,8 +1029,8 @@ impl Linter {
                                     },
                                 );
                             }
-                        } else if let Some(exports) = &module_api {
-                            if !exports.iter().any(|export| export.name == *item) {
+                        } else if let Some(interface) = &module_api {
+                            if interface.export(item).is_none() {
                                 self.errors.push(LintError {
                                     message: format!(
                                         "module '{module_path}' does not export '{item}'"
@@ -1063,10 +1046,10 @@ impl Linter {
                         }
                     }
                 } else if alias.is_none() {
-                    if let Some(exports) = &module_api {
-                        for export in exports {
+                    if let Some(interface) = &module_api {
+                        for export in &interface.exports {
                             self.declare_variable(export.name.clone());
-                            if let Some(parameters) = &export.parameters {
+                            if let ExportKind::Function { parameters } = &export.kind {
                                 self.function_signatures.insert(
                                     export.name.clone(),
                                     FunctionSignature {
@@ -1083,13 +1066,20 @@ impl Linter {
                     if module_api.is_none() {
                         self.use_variable(alias_name);
                     }
-                    if let Some(exports) = &module_api {
-                        let signatures = exports
+                    if let Some(interface) = &module_api {
+                        let signatures = interface
+                            .exports
                             .iter()
                             .filter_map(|export| {
-                                export.parameters.clone().map(|parameters| {
-                                    (export.name.clone(), FunctionSignature { parameters })
-                                })
+                                let ExportKind::Function { parameters } = &export.kind else {
+                                    return None;
+                                };
+                                Some((
+                                    export.name.clone(),
+                                    FunctionSignature {
+                                        parameters: parameters.clone(),
+                                    },
+                                ))
                             })
                             .collect();
                         self.module_signatures

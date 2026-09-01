@@ -7,6 +7,7 @@
 use crate::diagnostic::{self, DiagnosticLevel, SourceSpan};
 use crate::lexer::{Lexer, Token};
 use crate::linter::Linter;
+use crate::module_interface::{ExportKind, ModuleInterface};
 use crate::parser::Parser;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -1566,6 +1567,52 @@ fn exported_completion_items(
             );
         }
     }
+    if items.is_empty() {
+        let interface = importer
+            .to_file_path()
+            .ok()
+            .and_then(|path| {
+                crate::module_resolver::ModuleResolver::for_path(&path)
+                    .resolve(module)
+                    .ok()
+            })
+            .and_then(|resolved| ModuleInterface::parse(&resolved.source).ok());
+        if let Some(interface) = interface {
+            for export in interface.exports {
+                let (kind, detail) = match export.kind {
+                    ExportKind::Value => {
+                        (CompletionItemKind::VARIABLE, Some("exported value".into()))
+                    }
+                    ExportKind::Function { parameters } => {
+                        let parameters = parameters
+                            .iter()
+                            .map(|parameter| {
+                                if parameter.default_value.is_some() {
+                                    format!("{}=…", parameter.name)
+                                } else {
+                                    parameter.name.clone()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        (
+                            CompletionItemKind::FUNCTION,
+                            Some(format!("fn {}({parameters})", export.name)),
+                        )
+                    }
+                };
+                items.insert(
+                    export.name.clone(),
+                    CompletionItem {
+                        label: export.name,
+                        kind: Some(kind),
+                        detail,
+                        ..CompletionItem::default()
+                    },
+                );
+            }
+        }
+    }
     items.into_values().collect()
 }
 
@@ -1971,6 +2018,31 @@ mod tests {
         let items = completion_items(&indexes, &documents, &app_uri, Position::new(0, 10));
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "paint");
+    }
+
+    #[test]
+    fn completion_loads_resolved_modules_outside_the_workspace_index() {
+        let root = std::env::temp_dir().join(format!("ject-lsp-completion-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let app_path = root.join("app.ject");
+        let dependency_path = root.join("colors.ject");
+        let app = "import \"./colors.ject\" as colors\ncolors.pa";
+        std::fs::write(&app_path, app).unwrap();
+        std::fs::write(
+            &dependency_path,
+            "export fn paint(text, shade=\"blue\")\nend\nlet private = 1",
+        )
+        .unwrap();
+        let app_uri = Url::from_file_path(&app_path).unwrap();
+        let indexes = HashMap::from([(app_uri.clone(), index_document(app))]);
+        let documents = HashMap::from([(app_uri.clone(), app.into())]);
+
+        let items = completion_items(&indexes, &documents, &app_uri, Position::new(1, 9));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "paint");
+        assert_eq!(items[0].kind, Some(CompletionItemKind::FUNCTION));
+        assert_eq!(items[0].detail.as_deref(), Some("fn paint(text, shade=…)"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

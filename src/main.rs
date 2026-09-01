@@ -6,6 +6,7 @@ mod jnum;
 mod lexer;
 mod linter;
 mod lsp;
+mod module_interface;
 mod module_resolver;
 mod native;
 mod package;
