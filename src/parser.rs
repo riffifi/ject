@@ -1296,24 +1296,10 @@ impl Parser {
         // Simple index
         while self.match_token(&Token::Newline) {}
         self.consume(Token::RightBracket, "Expected ']' after array index")?;
-        // Compatibility: tests expect `matrix[0][1]` to nest with the *last* index inside.
-        // That is, the second bracket becomes the inner `Index`.
-        match object {
-            Expr::Index {
-                object: inner_object,
-                index: inner_index,
-            } => Ok(Expr::Index {
-                object: Box::new(Expr::Index {
-                    object: inner_object,
-                    index: Box::new(expr),
-                }),
-                index: inner_index,
-            }),
-            other => Ok(Expr::Index {
-                object: Box::new(other),
-                index: Box::new(expr),
-            }),
-        }
+        Ok(Expr::Index {
+            object: Box::new(object),
+            index: Box::new(expr),
+        })
     }
 
     fn parse_call_args(&mut self) -> ParseResult<Vec<crate::ast::Argument>> {

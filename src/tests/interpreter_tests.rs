@@ -14,28 +14,13 @@ mod tests {
         let mut interpreter = Interpreter::new();
 
         // Capture output by redirecting println
-        let mut output = String::new();
+        let output = String::new();
 
         // For now, just execute and check for errors
         // A more sophisticated test harness would capture stdout
         interpreter.interpret(&statements).map_err(|e| e.message)?;
 
         Ok(output)
-    }
-
-    fn run_and_get_result(input: &str) -> Result<String, String> {
-        let mut lexer = Lexer::new(input);
-        let located_tokens = lexer.tokenize_with_positions();
-        let tokens: Vec<_> = located_tokens.into_iter().map(|lt| lt.token).collect();
-        let mut parser = Parser::new_simple(tokens);
-        let statements = parser.parse().map_err(|e| e.message)?;
-
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret(&statements).map_err(|e| e.message)?;
-
-        // For tests that return a value, we'd need to modify the interpreter
-        // For now, we test via side effects (print statements)
-        Ok("success".to_string())
     }
 
     // ========== Variable Tests ==========
@@ -335,8 +320,7 @@ print !!true
 let x = false and undefined_fn()
 print x
 "#);
-        // This should fail because short-circuit isn't implemented
-        // assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     // ========== Control Flow Tests ==========
@@ -558,8 +542,7 @@ end
 let fn_ref = add
 print fn_ref(2, 3)
 "#);
-        // Note: This might not work if functions aren't fully first-class
-        // assert!(result.is_ok());
+        assert!(result.is_ok());
     }
 
     // ========== Lambda Tests ==========
@@ -642,8 +625,7 @@ print arr[4]
 let arr = [10, 20, 30, 40, 50]
 print arr[-1]
 "#);
-        // This might fail if negative indexing isn't supported
-        // assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -724,6 +706,16 @@ print matrix[1][1]
 print matrix[2][0]
 "#);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_nested_array_indexes_are_applied_left_to_right() {
+        let result = run(r#"
+let matrix = [[10, 11], [20, 21], [30, 31]]
+assert(matrix[2][0] == 30)
+assert(matrix[0][1] == 11)
+"#);
+        assert!(result.is_ok(), "nested indexing failed: {result:?}");
     }
 
     // ========== String Tests ==========

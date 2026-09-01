@@ -949,9 +949,8 @@ impl Interpreter {
                 Ok(Value::Dictionary(map))
             }
             Expr::Index { object, index } => {
-                // Parser compatibility: nested indexing can be represented right-associatively
-                // as `Index(Index(base, j), i)` for source `base[i][j]`.
-                // Flatten the chain and apply indices in source order.
+                // Flatten the canonical left-associated AST, then apply indices
+                // in the same left-to-right order as the source.
                 let mut indices: Vec<Expr> = Vec::new();
                 let mut base: &Expr = object.as_ref();
                 indices.push((**index).clone());
@@ -964,6 +963,7 @@ impl Interpreter {
                     indices.push((**inner_idx).clone());
                     base = inner_obj.as_ref();
                 }
+                indices.reverse();
 
                 let mut current = self.evaluate_expression(base)?;
                 for idx_expr in indices {

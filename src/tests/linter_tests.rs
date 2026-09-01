@@ -13,7 +13,7 @@ mod tests {
         let statements = parser.parse().unwrap();
 
         let mut linter = Linter::new();
-        let (diagnostics, has_errors) = linter.lint(&statements);
+        let (diagnostics, _) = linter.lint(&statements);
 
         let errors: Vec<String> = diagnostics
             .iter()
@@ -289,7 +289,7 @@ end
 
     #[test]
     fn test_function_scope() {
-        let (errors, warnings) = lint(
+        let (errors, _) = lint(
             r#"
 fn test()
     let x = 42
@@ -432,23 +432,20 @@ print E
 
     #[test]
     fn test_imported_variable_no_error() {
-        // This would need actual module files to test properly
-        // For now, just test that the linter doesn't crash
         let (errors, _) = lint(
             r#"
-import {PI} from "math"
-print PI
+import {PHI} from "math"
+print PHI
 "#,
         );
-        // Should not have undefined error for PI
-        // (depending on implementation, this might still error if module isn't found)
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     }
 
     // ========== Complex Programs ==========
 
     #[test]
     fn test_complex_program_no_errors() {
-        let (errors, warnings) = lint(
+        let (errors, _) = lint(
             r#"
 struct Point { x, y }
 
@@ -494,19 +491,15 @@ return 42
     #[test]
     fn test_empty_program() {
         let (errors, warnings) = lint("");
-        // Empty program should have no errors
-        assert_eq!(errors.len(), 0);
-        // Warnings are acceptable for empty programs
         assert!(errors.is_empty());
+        assert!(warnings.is_empty());
     }
 
     #[test]
     fn test_comments_only() {
         let (errors, warnings) = lint("# Just a comment");
-        // Comments are ignored by linter, no errors expected
-        assert_eq!(errors.len(), 0);
-        // Warnings may occur for programs with no executable statements
         assert!(errors.is_empty());
+        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -698,8 +691,7 @@ end
 print is_even(10)
 "#,
         );
-        // Mutual recursion might cause issues depending on implementation
-        // This tests how the linter handles forward references
+        assert!(errors.iter().any(|error| error.contains("is_odd")));
     }
 
     // ========== Suggestion Tests ==========

@@ -327,14 +327,9 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_multiline_comments() {
-        // Note: Current implementation doesn't support nesting
+    fn test_multiline_comment_stops_at_first_closer() {
         let mut lexer = Lexer::new("#* outer #* inner *# outer *#let");
-        // This should handle the comment and return Let
-        // First part closes inner, then " outer " is unexpected chars, then *# closes
-        // Actually this will fail - let's just test basic multiline for now
-        let mut lexer2 = Lexer::new("#* comment *#let");
-        assert_eq!(lexer2.next_token().token, Token::Let);
+        assert_eq!(lexer.next_token().token, Token::Identifier("outer".into()));
     }
 
     // ========== Whitespace Tests ==========

@@ -454,8 +454,8 @@ if true then 1 else 2 end";
                 .unwrap();
         assert_eq!(stmts.len(), 1);
         if let Stmt::If {
-            condition,
-            then_branch,
+            condition: _,
+            then_branch: _,
             elseif_branches,
             else_branch,
         } = &stmts[0]
@@ -475,8 +475,8 @@ if true then 1 else 2 end";
         let stmts = parse("if x > 0 then\n    print \"positive\"\nelseif x < 0 then\n    print \"negative\"\nelse\n    print \"zero\"\nend").unwrap();
         assert_eq!(stmts.len(), 1);
         if let Stmt::If {
-            condition,
-            then_branch,
+            condition: _,
+            then_branch: _,
             elseif_branches,
             else_branch,
         } = &stmts[0]
@@ -740,15 +740,15 @@ if true then 1 else 2 end";
         let stmts = parse("matrix[0][1]").unwrap();
         assert_eq!(stmts.len(), 1);
         if let Stmt::Expression(Expr::Index { object, index }) = &stmts[0] {
+            assert!(matches!(&**index, Expr::Integer(1)));
             // object should be another Index expression
             if let Expr::Index {
                 object: inner_obj,
                 index: inner_idx,
             } = &**object
             {
-                if let Expr::Integer(n) = &**inner_idx {
-                    assert_eq!(n, &1);
-                }
+                assert!(matches!(&**inner_obj, Expr::Identifier(name) if name == "matrix"));
+                assert!(matches!(&**inner_idx, Expr::Integer(0)));
             } else {
                 panic!("Expected nested Index");
             }
