@@ -611,8 +611,8 @@ assert(from_octal("100") == 64, "octal to decimal")
     #[test]
     fn test_type_of() {
         let result = run(r#"
-assert(type_of(42) == "number", "int type")
-assert(type_of(3.14) == "number", "float type")
+assert(type_of(42) == "integer", "int type")
+assert(type_of(3.14) == "float", "float type")
 assert(type_of("hello") == "string", "string type")
 assert(type_of(true) == "boolean", "bool type")
 assert(type_of(nil) == "nil", "nil type")

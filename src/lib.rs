@@ -8,6 +8,7 @@ pub mod linter;
 pub mod native;
 pub mod package;
 pub mod parser;
+pub mod semantic;
 pub mod stdlib;
 pub mod value;
 

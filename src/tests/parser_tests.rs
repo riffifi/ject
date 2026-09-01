@@ -602,6 +602,19 @@ if true then 1 else 2 end";
     }
 
     #[test]
+    fn test_required_parameter_cannot_follow_default() {
+        let error = parse("fn test(p=1, d=2, t)\nend").unwrap_err();
+        assert!(error.contains("Required parameter 't'"));
+        assert!(error.contains("give it a default"));
+    }
+
+    #[test]
+    fn test_export_required_parameter_cannot_follow_default() {
+        let error = parse("export fn test(p=1, t)\nend").unwrap_err();
+        assert!(error.contains("Required parameter 't'"));
+    }
+
+    #[test]
     fn test_function_call() {
         let stmts = parse("add(1, 2)").unwrap();
         assert_eq!(stmts.len(), 1);

@@ -445,6 +445,58 @@ greet()
     }
 
     #[test]
+    fn test_selective_import_preserves_function_signature() {
+        let (errors, _) = lint(
+            r#"
+import {clamp} from "math"
+clamp(10)
+"#,
+        );
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("missing required argument `min_val`")));
+    }
+
+    #[test]
+    fn test_imported_function_defaults_remain_optional() {
+        let (errors, _) = lint(
+            r#"
+import {window} from "jgui"
+window("My app")
+"#,
+        );
+        assert!(!errors
+            .iter()
+            .any(|error| error.contains("missing required argument")));
+    }
+
+    #[test]
+    fn test_module_alias_call_uses_exported_signature() {
+        let (errors, _) = lint(
+            r#"
+import "math" as math
+math.clamp(10)
+"#,
+        );
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("missing required argument `min_val`")));
+    }
+
+    #[test]
+    fn test_module_alias_call_honors_exported_defaults() {
+        let (errors, _) = lint(
+            r#"
+import "jgui" as gui
+gui.window("My app")
+"#,
+        );
+        assert!(!errors
+            .iter()
+            .any(|error| error.contains("missing required argument")));
+    }
+
+    #[test]
     fn test_match_expression() {
         let (errors, _) = lint(
             r#"

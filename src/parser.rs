@@ -177,6 +177,7 @@ impl Parser {
         self.consume(Token::LeftParen, "Expected '(' after function name")?;
 
         let mut params = Vec::new();
+        let mut saw_default_parameter = false;
         if !self.check(&Token::RightParen) {
             loop {
                 if let Token::Identifier(param_name) = self.advance() {
@@ -186,6 +187,14 @@ impl Parser {
                     } else {
                         None
                     };
+
+                    if default_value.is_none() && saw_default_parameter {
+                        return Err(self.error(format!(
+                            "Required parameter '{}' cannot follow a parameter with a default; move it before optional parameters or give it a default such as nil",
+                            param_name
+                        )));
+                    }
+                    saw_default_parameter |= default_value.is_some();
 
                     params.push(crate::ast::Parameter {
                         name: param_name,
@@ -622,6 +631,7 @@ impl Parser {
             self.consume(Token::LeftParen, "Expected '(' after function name")?;
 
             let mut params = Vec::new();
+            let mut saw_default_parameter = false;
             if !self.check(&Token::RightParen) {
                 loop {
                     if let Token::Identifier(param_name) = self.advance() {
@@ -631,6 +641,14 @@ impl Parser {
                         } else {
                             None
                         };
+
+                        if default_value.is_none() && saw_default_parameter {
+                            return Err(self.error(format!(
+                                "Required parameter '{}' cannot follow a parameter with a default; move it before optional parameters or give it a default such as nil",
+                                param_name
+                            )));
+                        }
+                        saw_default_parameter |= default_value.is_some();
 
                         params.push(crate::ast::Parameter {
                             name: param_name,

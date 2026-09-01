@@ -14,6 +14,12 @@ struct FunctionSignature {
 }
 
 #[derive(Debug, Clone)]
+struct ModuleExport {
+    name: String,
+    parameters: Option<Vec<Parameter>>,
+}
+
+#[derive(Debug, Clone)]
 struct LintError {
     message: String,
     position: Option<crate::lexer::SourcePosition>,
@@ -32,6 +38,7 @@ pub struct Linter {
     errors: Vec<LintError>,
     functions: HashSet<String>,
     function_signatures: HashMap<String, FunctionSignature>, // Track function signatures
+    module_signatures: HashMap<String, HashMap<String, FunctionSignature>>,
     in_function: bool,
     // Store positioned tokens to find locations of identifiers
     positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
@@ -224,6 +231,7 @@ impl Linter {
             errors: Vec::new(),
             functions: HashSet::new(),
             function_signatures: HashMap::new(),
+            module_signatures: HashMap::new(),
             in_function: false,
             positioned_tokens: Vec::new(),
             source: String::new(),
@@ -479,6 +487,7 @@ impl Linter {
         self.add_builtin_functions();
 
         self.function_signatures.clear();
+        self.module_signatures.clear();
         self.in_function = false;
 
         // Single pass: analyze all statements
@@ -658,6 +667,11 @@ impl Linter {
     }
 
     fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, ()> {
+        self.get_module_api(module_path)
+            .map(|exports| exports.into_iter().map(|export| export.name).collect())
+    }
+
+    fn get_module_api(&self, module_path: &str) -> Result<Vec<ModuleExport>, ()> {
         use std::fs;
         use std::path::Path;
 
@@ -800,10 +814,16 @@ impl Linter {
         for statement in &statements {
             match statement {
                 crate::ast::Stmt::Export { name, .. } => {
-                    exports.push(name.clone());
+                    exports.push(ModuleExport {
+                        name: name.clone(),
+                        parameters: None,
+                    });
                 }
-                crate::ast::Stmt::ExportFunction { name, .. } => {
-                    exports.push(name.clone());
+                crate::ast::Stmt::ExportFunction { name, params, .. } => {
+                    exports.push(ModuleExport {
+                        name: name.clone(),
+                        parameters: Some(params.clone()),
+                    });
                 }
                 _ => {}
             }
@@ -1063,15 +1083,28 @@ impl Linter {
             } => {
                 // Handle selective imports
                 if let Some(item_list) = items {
+                    let module_api = self.get_module_api(module_path).ok();
                     for item in item_list {
                         self.declare_variable(item.clone());
+                        if let Some(parameters) = module_api
+                            .as_ref()
+                            .and_then(|exports| exports.iter().find(|export| export.name == *item))
+                            .and_then(|export| export.parameters.clone())
+                        {
+                            self.function_signatures
+                                .insert(item.clone(), FunctionSignature { parameters });
+                        }
                     }
                 } else if alias.is_none() {
                     // Full import - need to load module to know what's exported
                     // Try to load the module and get its exports
-                    if let Ok(exports) = self.get_module_exports(module_path) {
-                        for export_name in exports {
-                            self.declare_variable(export_name);
+                    if let Ok(exports) = self.get_module_api(module_path) {
+                        for export in exports {
+                            self.declare_variable(export.name.clone());
+                            if let Some(parameters) = export.parameters {
+                                self.function_signatures
+                                    .insert(export.name, FunctionSignature { parameters });
+                            }
                         }
                     }
                     // If we can't load the module, we'll let the runtime handle the error
@@ -1079,6 +1112,18 @@ impl Linter {
 
                 if let Some(alias_name) = alias {
                     self.declare_variable(alias_name.clone());
+                    if let Ok(exports) = self.get_module_api(module_path) {
+                        let signatures = exports
+                            .into_iter()
+                            .filter_map(|export| {
+                                export.parameters.map(|parameters| {
+                                    (export.name, FunctionSignature { parameters })
+                                })
+                            })
+                            .collect();
+                        self.module_signatures
+                            .insert(alias_name.clone(), signatures);
+                    }
                 }
             }
             Stmt::Export { name, value } => {
@@ -1232,6 +1277,21 @@ impl Linter {
                 // Validate function call if it's a direct function call
                 if let Expr::Identifier(func_name) = callee.as_ref() {
                     self.validate_function_call(func_name, args);
+                } else if let Expr::StructAccess { object, field } = callee.as_ref() {
+                    if let Expr::Identifier(alias) = object.as_ref() {
+                        if let Some(signature) = self
+                            .module_signatures
+                            .get(alias)
+                            .and_then(|functions| functions.get(field))
+                            .cloned()
+                        {
+                            self.validate_call_against_signature(
+                                &format!("{alias}.{field}"),
+                                &signature,
+                                args,
+                            );
+                        }
+                    }
                 }
             }
             Expr::Index { object, index } => {
@@ -1447,81 +1507,90 @@ impl Linter {
 
     fn validate_function_call(&mut self, func_name: &str, args: &[Argument]) {
         if let Some(signature) = self.function_signatures.get(func_name).cloned() {
-            // Simulate the argument resolution logic from the interpreter
-            let mut resolved_args = vec![false; signature.parameters.len()]; // track which args are provided
-            let mut positional_count = 0;
+            self.validate_call_against_signature(func_name, &signature, args);
+        }
+        // If function signature not found, we already reported "undeclared variable" error
+    }
 
-            // First pass: handle positional arguments
-            for arg in args {
-                match arg {
-                    Argument::Positional(_) => {
-                        if positional_count >= signature.parameters.len() {
-                            let position = self.find_identifier_position(func_name);
-                            self.errors.push(LintError {
-                                message: format!("too many arguments for function `{}`", func_name),
-                                position,
-                            });
-                            return;
-                        }
-                        resolved_args[positional_count] = true;
-                        positional_count += 1;
+    fn validate_call_against_signature(
+        &mut self,
+        func_name: &str,
+        signature: &FunctionSignature,
+        args: &[Argument],
+    ) {
+        // Simulate the argument resolution logic from the interpreter
+        let mut resolved_args = vec![false; signature.parameters.len()]; // track which args are provided
+        let mut positional_count = 0;
+
+        // First pass: handle positional arguments
+        for arg in args {
+            match arg {
+                Argument::Positional(_) => {
+                    if positional_count >= signature.parameters.len() {
+                        let position = self.find_identifier_position(func_name);
+                        self.errors.push(LintError {
+                            message: format!("too many arguments for function `{}`", func_name),
+                            position,
+                        });
+                        return;
                     }
-                    Argument::Keyword { .. } => {
-                        // We'll handle keyword arguments in the second pass
-                    }
+                    resolved_args[positional_count] = true;
+                    positional_count += 1;
+                }
+                Argument::Keyword { .. } => {
+                    // We'll handle keyword arguments in the second pass
                 }
             }
+        }
 
-            // Second pass: handle keyword arguments
-            for arg in args {
-                if let Argument::Keyword { name, .. } = arg {
-                    // Find the parameter with this name
-                    let param_index = signature.parameters.iter().position(|p| p.name == *name);
+        // Second pass: handle keyword arguments
+        for arg in args {
+            if let Argument::Keyword { name, .. } = arg {
+                // Find the parameter with this name
+                let param_index = signature.parameters.iter().position(|p| p.name == *name);
 
-                    match param_index {
-                        Some(index) => {
-                            if resolved_args[index] {
-                                let position = self.find_identifier_position(func_name);
-                                self.errors.push(LintError {
-                                    message: format!(
-                                        "argument `{}` specified multiple times in call to `{}`",
-                                        name, func_name
-                                    ),
-                                    position,
-                                });
-                                return;
-                            }
-                            resolved_args[index] = true;
-                        }
-                        None => {
+                match param_index {
+                    Some(index) => {
+                        if resolved_args[index] {
                             let position = self.find_identifier_position(func_name);
                             self.errors.push(LintError {
                                 message: format!(
-                                    "unknown parameter `{}` for function `{}`",
+                                    "argument `{}` specified multiple times in call to `{}`",
                                     name, func_name
                                 ),
                                 position,
                             });
                             return;
                         }
+                        resolved_args[index] = true;
+                    }
+                    None => {
+                        let position = self.find_identifier_position(func_name);
+                        self.errors.push(LintError {
+                            message: format!(
+                                "unknown parameter `{}` for function `{}`",
+                                name, func_name
+                            ),
+                            position,
+                        });
+                        return;
                     }
                 }
             }
+        }
 
-            // Third pass: check for missing required arguments
-            for (i, param) in signature.parameters.iter().enumerate() {
-                if !resolved_args[i] && param.default_value.is_none() {
-                    let position = self.find_identifier_position(func_name);
-                    self.errors.push(LintError {
-                        message: format!(
-                            "missing required argument `{}` for function `{}`",
-                            param.name, func_name
-                        ),
-                        position,
-                    });
-                }
+        // Third pass: check for missing required arguments
+        for (i, param) in signature.parameters.iter().enumerate() {
+            if !resolved_args[i] && param.default_value.is_none() {
+                let position = self.find_identifier_position(func_name);
+                self.errors.push(LintError {
+                    message: format!(
+                        "missing required argument `{}` for function `{}`",
+                        param.name, func_name
+                    ),
+                    position,
+                });
             }
         }
-        // If function signature not found, we already reported "undeclared variable" error
     }
 }

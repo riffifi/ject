@@ -1,6 +1,6 @@
 # The Ject Language Guide
 
-Version 0.9.0
+Version 0.9.1
 
 Ject is a small, dynamically typed scripting language implemented in Rust. It is
 designed for readable programs, quick scripts, embeddable libraries, and a gradual
@@ -156,8 +156,8 @@ hold different kinds of values over its lifetime.
 ### Core value types
 
 ```ject
-let count = 12                         # number (integer)
-let ratio = 0.75                       # number (float)
+let count = 12                         # integer
+let ratio = 0.75                       # float
 let title = "Ject"                    # string
 let enabled = true                    # boolean
 let missing = nil                     # nil
@@ -168,7 +168,8 @@ let user = {name: "Ada", active: true} # dictionary
 `type_of(value)` returns the runtime type name:
 
 ```ject
-print type_of(10)          # number
+print type_of(10)          # integer
+print type_of(10.0)        # float
 print type_of("hello")     # string
 print type_of([1, 2])      # array
 print type_of(nil)         # nil

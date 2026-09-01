@@ -9,6 +9,7 @@ mod lsp;
 mod native;
 mod package;
 mod parser;
+mod semantic;
 mod stdlib;
 mod value;
 
