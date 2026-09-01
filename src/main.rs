@@ -22,7 +22,8 @@ use lexer::Lexer;
 use parser::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 #[derive(Clone, Copy)]
@@ -52,6 +53,7 @@ fn main() {
             println!("{}", stdlib::introspect_native_kernel_json());
         }
         "lsp" => lsp::run(),
+        "tree" => print_module_tree(&current_project_or_exit()),
         "run" | "check" | "build" => {
             let project = current_project_or_exit();
             if args[0] == "build" {
@@ -192,6 +194,7 @@ USAGE:
     ject add <name> --path <path>  Add a local source or mixed library
     ject remove <name>        Remove a dependency
     ject build                Validate the current source package
+    ject tree                 Show the resolved source-module dependency tree
     ject lsp                  Start the Language Server Protocol server over stdio
     ject --check <file> [...] Parse + lint only (no execution)
     ject --test <file> [...]  Run script(s); exit non-zero on failure
@@ -490,37 +493,156 @@ fn check_project_sources(project: &package::Project) {
 }
 
 fn validate_module_graph_or_exit(entry: &Path) {
-    if let Err(error) = module_graph::ModuleGraph::build(entry) {
-        let (code, help) = match &error {
-            module_graph::ModuleGraphError::Cycle { .. } => (
-                "E3102",
-                "break the cycle by moving shared code into a third module",
-            ),
-            module_graph::ModuleGraphError::Load { .. } => {
-                ("E3101", "check every module in the displayed import chain")
+    let _ = module_graph_or_exit(entry);
+}
+
+fn module_graph_or_exit(entry: &Path) -> module_graph::ModuleGraph {
+    match module_graph::ModuleGraph::build(entry) {
+        Ok(graph) => graph,
+        Err(error) => {
+            let (code, help) = match &error {
+                module_graph::ModuleGraphError::Cycle { .. } => (
+                    "E3102",
+                    "break the cycle by moving shared code into a third module",
+                ),
+                module_graph::ModuleGraphError::Load { .. } => {
+                    ("E3101", "check every module in the displayed import chain")
+                }
+                module_graph::ModuleGraphError::Parse { .. } => (
+                    "E1001",
+                    "fix the first invalid module in the displayed import chain",
+                ),
+            };
+            let mut diagnostic = diagnostic::Diagnostic::error(error.to_string())
+                .with_code(code.to_string())
+                .with_help(help.to_string());
+            let mut filename = None;
+            let mut source = None;
+            if let Some(site) = error.import_site() {
+                diagnostic = diagnostic.with_primary_label(
+                    diagnostic::SourceSpan::new(site.line, site.column, site.length),
+                    format!("failed import `{}`", site.specifier),
+                );
+                if let ject::module_resolver::ModuleIdentity::File(path) = &site.module {
+                    filename = Some(path.to_string_lossy().into_owned());
+                    source = fs::read_to_string(path).ok();
+                }
             }
-            module_graph::ModuleGraphError::Parse { .. } => (
-                "E1001",
-                "fix the first invalid module in the displayed import chain",
-            ),
-        };
-        let mut diagnostic = diagnostic::Diagnostic::error(error.to_string())
-            .with_code(code.to_string())
-            .with_help(help.to_string());
-        let mut filename = None;
-        let mut source = None;
-        if let Some(site) = error.import_site() {
-            diagnostic = diagnostic.with_primary_label(
-                diagnostic::SourceSpan::new(site.line, site.column, site.length),
-                format!("failed import `{}`", site.specifier),
-            );
-            if let ject::module_resolver::ModuleIdentity::File(path) = &site.module {
-                filename = Some(path.to_string_lossy().into_owned());
-                source = fs::read_to_string(path).ok();
-            }
+            DiagnosticRenderer::new().render(&diagnostic, filename.as_deref(), source.as_deref());
+            std::process::exit(1);
         }
-        DiagnosticRenderer::new().render(&diagnostic, filename.as_deref(), source.as_deref());
+    }
+}
+
+fn print_module_tree(project: &package::Project) {
+    if !project.entry.is_file() {
+        emit_cli_error(
+            "E4004",
+            format!("package entry does not exist: {}", project.entry.display()),
+            Some("set `[package].entry` to an existing .ject file"),
+        );
         std::process::exit(1);
+    }
+    let graph = module_graph_or_exit(&project.entry);
+    print!("{}", render_module_tree(&graph));
+}
+
+fn render_module_tree(graph: &module_graph::ModuleGraph) -> String {
+    let Some(root) = &graph.root else {
+        return String::new();
+    };
+    let mut output = format!("{}\n", module_label(root));
+    let mut seen = HashSet::from([root.clone()]);
+    render_module_children(graph, root, "", &mut seen, &mut output);
+    output
+}
+
+fn render_module_children(
+    graph: &module_graph::ModuleGraph,
+    identity: &ject::module_resolver::ModuleIdentity,
+    prefix: &str,
+    seen: &mut HashSet<ject::module_resolver::ModuleIdentity>,
+    output: &mut String,
+) {
+    let Some(node) = graph.nodes.get(identity) else {
+        return;
+    };
+    for (index, edge) in node.edges.iter().enumerate() {
+        let last = index + 1 == node.edges.len();
+        let repeated = !seen.insert(edge.target.clone());
+        output.push_str(prefix);
+        output.push_str(if last { "└── " } else { "├── " });
+        output.push_str(&module_label(&edge.target));
+        if repeated {
+            output.push_str(" (*)");
+        }
+        output.push('\n');
+        if !repeated {
+            let child_prefix = format!("{prefix}{}", if last { "    " } else { "│   " });
+            render_module_children(graph, &edge.target, &child_prefix, seen, output);
+        }
+    }
+}
+
+fn module_label(identity: &ject::module_resolver::ModuleIdentity) -> String {
+    match identity {
+        ject::module_resolver::ModuleIdentity::Embedded(name) => format!("stdlib::{name}"),
+        ject::module_resolver::ModuleIdentity::File(path) => package::discover(path)
+            .ok()
+            .map(|project| package_module_label(&project, path))
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("<module>")
+                    .to_string()
+            }),
+    }
+}
+
+fn package_module_label(project: &package::Project, path: &Path) -> String {
+    if fs::canonicalize(&project.entry).ok() == fs::canonicalize(path).ok() {
+        return project.name.clone();
+    }
+    let relative = path.strip_prefix(&project.root).unwrap_or(path);
+    let relative = relative.strip_prefix("src").unwrap_or(relative);
+    let mut module = PathBuf::from(relative);
+    module.set_extension("");
+    let suffix = module
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect::<Vec<_>>()
+        .join("::");
+    if suffix.is_empty() {
+        project.name.clone()
+    } else {
+        format!("{}::{suffix}", project.name)
+    }
+}
+
+#[cfg(test)]
+mod module_tree_tests {
+    use super::*;
+
+    #[test]
+    fn renders_shared_modules_once_with_stable_connectors() {
+        let root = std::env::temp_dir().join(format!("ject-tree-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("main.ject"),
+            "import \"./alpha\"\nimport \"./beta\"\n",
+        )
+        .unwrap();
+        fs::write(root.join("alpha.ject"), "import \"./shared\"\n").unwrap();
+        fs::write(root.join("beta.ject"), "import \"./shared\"\n").unwrap();
+        fs::write(root.join("shared.ject"), "export value = 1\n").unwrap();
+        let graph = module_graph::ModuleGraph::build(&root.join("main.ject")).unwrap();
+
+        assert_eq!(
+            render_module_tree(&graph),
+            "main\n├── alpha\n│   └── shared\n└── beta\n    └── shared (*)\n"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
