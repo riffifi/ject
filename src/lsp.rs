@@ -83,7 +83,11 @@ struct DocumentIndex {
 
 impl Backend {
     async fn publish(&self, uri: Url, text: String, version: Option<i32>) {
-        let diagnostics = analyze(&text);
+        let diagnostics = uri
+            .to_file_path()
+            .ok()
+            .map(|path| analyze_at(&text, &path))
+            .unwrap_or_else(|| analyze(&text));
         let index = index_document(&text);
         self.documents.write().await.insert(uri.clone(), text);
         self.indexes.write().await.insert(uri.clone(), index);
@@ -465,6 +469,11 @@ impl LanguageServer for Backend {
 }
 
 fn analyze(source: &str) -> Vec<Diagnostic> {
+    let base = std::env::current_dir().unwrap_or_default();
+    analyze_at(source, &base)
+}
+
+fn analyze_at(source: &str, path: &Path) -> Vec<Diagnostic> {
     let mut lexer = Lexer::new(source);
     let positioned: Vec<_> = lexer
         .tokenize_with_positions()
@@ -474,7 +483,9 @@ fn analyze(source: &str) -> Vec<Diagnostic> {
     let mut parser = Parser::new(positioned.clone());
     match parser.parse() {
         Ok(statements) => {
-            let mut linter = Linter::new().with_tokens_and_source(positioned, source.into());
+            let mut linter = Linter::new()
+                .with_tokens_and_source(positioned, source.into())
+                .with_source_path(path);
             let (diagnostics, _) = linter.lint(&statements);
             diagnostics.into_iter().map(to_lsp_diagnostic).collect()
         }
@@ -998,7 +1009,7 @@ fn symbol_identity_at(
     let source = documents.get(uri)?;
     let (alias, member) = qualified_member_at(source, position)?;
     let module = index.module_aliases.get(&alias)?;
-    exported_identity(indexes, module, &member)
+    exported_identity(indexes, uri, module, &member)
 }
 
 fn canonical_identity(
@@ -1008,7 +1019,7 @@ fn canonical_identity(
 ) -> Option<SymbolIdentity> {
     let index = indexes.get(uri)?;
     if let Some((module, imported_name)) = index.selective_imports.get(&id) {
-        exported_identity(indexes, module, imported_name)
+        exported_identity(indexes, uri, module, imported_name)
     } else {
         Some((uri.clone(), id))
     }
@@ -1016,9 +1027,19 @@ fn canonical_identity(
 
 fn exported_identity(
     indexes: &HashMap<Url, DocumentIndex>,
+    importer: &Url,
     module: &str,
     name: &str,
 ) -> Option<SymbolIdentity> {
+    if let Some(uri) = resolved_module_uri(importer, module) {
+        if let Some(id) = indexes
+            .get(&uri)
+            .and_then(|index| index.exports.get(name))
+            .copied()
+        {
+            return Some((uri, id));
+        }
+    }
     indexes.iter().find_map(|(uri, index)| {
         if module_matches(uri, module) {
             index.exports.get(name).copied().map(|id| (uri.clone(), id))
@@ -1026,6 +1047,17 @@ fn exported_identity(
             None
         }
     })
+}
+
+fn resolved_module_uri(importer: &Url, module: &str) -> Option<Url> {
+    let importer_path = importer.to_file_path().ok()?;
+    let resolved = crate::module_resolver::ModuleResolver::for_path(&importer_path)
+        .resolve(module)
+        .ok()?;
+    match resolved.identity {
+        crate::module_resolver::ModuleIdentity::File(path) => Url::from_file_path(path).ok(),
+        crate::module_resolver::ModuleIdentity::Embedded(_) => None,
+    }
 }
 
 fn definition_occurrence<'a>(
@@ -1431,11 +1463,11 @@ fn completion_items(
         let Some(module) = index.module_aliases.get(alias) else {
             return Vec::new();
         };
-        return exported_completion_items(indexes, module);
+        return exported_completion_items(indexes, uri, module);
     }
 
     if let Some(module) = selective_import_module(line, cursor) {
-        return exported_completion_items(indexes, module);
+        return exported_completion_items(indexes, uri, module);
     }
 
     let mut items = Vec::with_capacity(KEYWORDS.len() + BUILTINS.len());
@@ -1467,7 +1499,9 @@ fn completion_items(
         let imported_occurrence = index
             .selective_imports
             .get(&id)
-            .and_then(|(module, imported_name)| exported_identity(indexes, module, imported_name))
+            .and_then(|(module, imported_name)| {
+                exported_identity(indexes, uri, module, imported_name)
+            })
             .and_then(|identity| definition_occurrence(indexes, &identity))
             .map(|(_, occurrence)| occurrence);
         let occurrence = imported_occurrence.or(local_occurrence);
@@ -1503,11 +1537,15 @@ fn semantic_completion_kind(kind: crate::semantic::SymbolKind) -> SymbolKind {
 
 fn exported_completion_items(
     indexes: &HashMap<Url, DocumentIndex>,
+    importer: &Url,
     module: &str,
 ) -> Vec<CompletionItem> {
     let mut items = BTreeMap::new();
     for (uri, index) in indexes {
-        if !module_matches(uri, module) {
+        let resolved = resolved_module_uri(importer, module);
+        if resolved.as_ref().is_some_and(|target| target != uri)
+            || (resolved.is_none() && !module_matches(uri, module))
+        {
             continue;
         }
         for (name, id) in &index.exports {
@@ -1650,6 +1688,20 @@ mod tests {
         assert!(analyze("let =")
             .iter()
             .any(|d| d.severity == Some(DiagnosticSeverity::ERROR)));
+    }
+
+    #[test]
+    fn reports_unresolved_imports_with_the_import_error_code() {
+        let path = std::env::temp_dir().join(format!(
+            "ject-lsp-missing-import-{}-{:?}.ject",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let diagnostics = analyze_at("import \"./not_here\" as nope", &path);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == Some(NumberOrString::String("E3101".into()))
+                && diagnostic.range.start.line == 0
+        }));
     }
 
     #[test]
@@ -1827,6 +1879,42 @@ mod tests {
         let (definition_uri, occurrence) = definition_occurrence(&indexes, &identity).unwrap();
         assert_eq!(definition_uri, &colors_uri);
         assert_eq!(occurrence.detail.as_deref(), Some("fn paint(text)"));
+    }
+
+    #[test]
+    fn imported_identity_uses_the_importers_real_relative_path() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-lsp-resolver-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let app_dir = root.join("app");
+        let other_dir = root.join("other");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let app_path = app_dir.join("main.ject");
+        let expected_path = app_dir.join("colors.ject");
+        let unrelated_path = other_dir.join("colors.ject");
+        let app = "import {paint} from \"./colors\"\npaint(\"hi\")";
+        let expected = "export fn paint(text)\nend";
+        let unrelated = "export fn paint(canvas, brush)\nend";
+        std::fs::write(&app_path, app).unwrap();
+        std::fs::write(&expected_path, expected).unwrap();
+        std::fs::write(&unrelated_path, unrelated).unwrap();
+        let app_uri = Url::from_file_path(app_path.canonicalize().unwrap()).unwrap();
+        let expected_uri = Url::from_file_path(expected_path.canonicalize().unwrap()).unwrap();
+        let unrelated_uri = Url::from_file_path(unrelated_path.canonicalize().unwrap()).unwrap();
+        let indexes = HashMap::from([
+            (app_uri.clone(), index_document(app)),
+            (expected_uri.clone(), index_document(expected)),
+            (unrelated_uri, index_document(unrelated)),
+        ]);
+        let documents = HashMap::from([(app_uri.clone(), app.into())]);
+
+        let identity =
+            symbol_identity_at(&indexes, &documents, &app_uri, Position::new(1, 1)).unwrap();
+        assert_eq!(identity.0, expected_uri);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

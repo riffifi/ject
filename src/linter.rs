@@ -43,9 +43,21 @@ pub struct Linter {
     // Store positioned tokens to find locations of identifiers
     positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
     source: String,
+    source_path: std::path::PathBuf,
 }
 
 impl Linter {
+    fn error_code(message: &str) -> &'static str {
+        if message.contains("module '")
+            || message.contains("cannot inspect module")
+            || message.contains("does not export")
+        {
+            "E3101"
+        } else {
+            "E2001"
+        }
+    }
+
     fn should_skip_unused_warning(name: &str) -> bool {
         if name.starts_with('_') {
             return true;
@@ -235,6 +247,7 @@ impl Linter {
             in_function: false,
             positioned_tokens: Vec::new(),
             source: String::new(),
+            source_path: std::env::current_dir().unwrap_or_default(),
         };
 
         // Add built-in functions to the functions set
@@ -476,6 +489,11 @@ impl Linter {
         self
     }
 
+    pub fn with_source_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.source_path = path.into();
+        self
+    }
+
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
         self.scopes.clear();
         self.scopes.push(HashMap::new()); // Global scope
@@ -514,8 +532,13 @@ impl Linter {
 
         for error in &self.errors {
             has_errors = true;
-            let mut diagnostic =
-                Diagnostic::error(error.message.clone()).with_code("E2001".to_string());
+            let mut diagnostic = Diagnostic::error(error.message.clone())
+                .with_code(Self::error_code(&error.message).to_string());
+            if Self::error_code(&error.message) == "E3101" {
+                diagnostic = diagnostic.with_help(
+                    "check the import path, package dependency, and exported name".into(),
+                );
+            }
             if let Some(pos) = &error.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
                 // Add source line context
@@ -571,8 +594,13 @@ impl Linter {
 
         for error in &self.errors {
             has_errors = true;
-            let mut diagnostic =
-                Diagnostic::error(error.message.clone()).with_code("E2001".to_string());
+            let mut diagnostic = Diagnostic::error(error.message.clone())
+                .with_code(Self::error_code(&error.message).to_string());
+            if Self::error_code(&error.message) == "E3101" {
+                diagnostic = diagnostic.with_help(
+                    "check the import path, package dependency, and exported name".into(),
+                );
+            }
             if let Some(pos) = &error.position {
                 diagnostic = diagnostic.with_location(pos.line, pos.column);
                 // Add source line context
@@ -666,137 +694,16 @@ impl Linter {
         }
     }
 
-    fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, ()> {
+    fn get_module_exports(&self, module_path: &str) -> Result<Vec<String>, String> {
         self.get_module_api(module_path)
             .map(|exports| exports.into_iter().map(|export| export.name).collect())
     }
 
-    fn get_module_api(&self, module_path: &str) -> Result<Vec<ModuleExport>, ()> {
-        use std::fs;
-        use std::path::Path;
-
-        // Get the directory where the executable is located for resolving stdlib paths
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-        // Try to find project root (go up from target/release or target/debug)
-        let project_root = exe_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| exe_dir.clone());
-
-        // Get current working directory
-        let cwd = std::env::current_dir().unwrap_or_default();
-
-        // Determine module source (same logic as interpreter with embedded stdlib fallback)
-        let mut embedded_module_content: Option<String> = None;
-        let module_file_path = if module_path.starts_with("~/") {
-            // Home directory path
-            if let Ok(home) = std::env::var("HOME") {
-                let path_without_tilde = module_path.trim_start_matches("~/");
-                let path_with_ext = if path_without_tilde.ends_with(".ject") {
-                    path_without_tilde.to_string()
-                } else {
-                    format!("{}.ject", path_without_tilde)
-                };
-                let full_path = std::path::PathBuf::from(home).join(&path_with_ext);
-                if full_path.exists() {
-                    full_path.to_string_lossy().to_string()
-                } else {
-                    return Err(());
-                }
-            } else {
-                return Err(());
-            }
-        } else if module_path.starts_with("/") {
-            // Absolute path
-            let path_with_ext = if module_path.ends_with(".ject") {
-                module_path.to_string()
-            } else {
-                format!("{}.ject", module_path)
-            };
-            let full_path = std::path::PathBuf::from(&path_with_ext);
-            if full_path.exists() {
-                full_path.to_string_lossy().to_string()
-            } else {
-                return Err(());
-            }
-        } else if module_path.starts_with("./") || module_path.starts_with("../") {
-            // Relative path from cwd
-            let path_with_ext = if module_path.ends_with(".ject") {
-                module_path.to_string()
-            } else {
-                format!("{}.ject", module_path)
-            };
-            let full_path = cwd.join(&path_with_ext);
-            if full_path.exists() {
-                full_path.to_string_lossy().to_string()
-            } else {
-                return Err(());
-            }
-        } else if module_path.contains("/") {
-            // Path relative to project root
-            let path_with_ext = if module_path.ends_with(".ject") {
-                module_path.to_string()
-            } else {
-                format!("{}.ject", module_path)
-            };
-            let full_path = project_root.join(&path_with_ext);
-            if full_path.exists() {
-                full_path.to_string_lossy().to_string()
-            } else {
-                let cwd_path = cwd.join(&path_with_ext);
-                if cwd_path.exists() {
-                    cwd_path.to_string_lossy().to_string()
-                } else {
-                    return Err(());
-                }
-            }
-        } else {
-            // Simple module name - check stdlib directory
-            let module_name = if module_path.ends_with(".ject") {
-                module_path.trim_end_matches(".ject").to_string()
-            } else {
-                module_path.to_string()
-            };
-
-            let stdlib_path = project_root
-                .join("stdlib")
-                .join(format!("{}.ject", module_name));
-            if stdlib_path.exists() {
-                stdlib_path.to_string_lossy().to_string()
-            } else {
-                let cwd_stdlib = cwd.join("stdlib").join(format!("{}.ject", module_name));
-                if cwd_stdlib.exists() {
-                    cwd_stdlib.to_string_lossy().to_string()
-                } else {
-                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name)
-                    {
-                        embedded_module_content = Some(source.to_string());
-                        format!("<embedded:{module_name}>")
-                    } else {
-                        return Err(());
-                    }
-                }
-            }
-        };
-
-        if embedded_module_content.is_none() && !Path::new(&module_file_path).exists() {
-            return Err(());
-        }
-
-        // Read and parse the module file
-        let module_content = if let Some(content) = embedded_module_content {
-            content
-        } else {
-            match fs::read_to_string(&module_file_path) {
-                Ok(content) => content,
-                Err(_) => return Err(()),
-            }
-        };
+    fn get_module_api(&self, module_path: &str) -> Result<Vec<ModuleExport>, String> {
+        let module_content = crate::module_resolver::ModuleResolver::for_path(&self.source_path)
+            .resolve(module_path)
+            .map_err(|error| error.to_string())?
+            .source;
 
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
@@ -804,10 +711,9 @@ impl Linter {
             located_tokens.into_iter().map(|lt| lt.token).collect();
         let mut parser = crate::parser::Parser::new_simple(tokens);
 
-        let statements = match parser.parse() {
-            Ok(stmts) => stmts,
-            Err(_) => return Err(()),
-        };
+        let statements = parser
+            .parse()
+            .map_err(|error| format!("cannot inspect module '{module_path}': {error}"))?;
 
         // Extract export names
         let mut exports = Vec::new();
@@ -1081,43 +987,84 @@ impl Linter {
                 items,
                 alias,
             } => {
+                // Private native backends are supplied by the package ABI loader,
+                // not by a .ject source module. Their public facade is still
+                // checked normally; this boundary only skips source lookup.
+                let module_api = if module_path.starts_with("@native/") {
+                    None
+                } else {
+                    match self.get_module_api(module_path) {
+                        Ok(exports) => Some(exports),
+                        Err(message) => {
+                            self.errors.push(LintError {
+                                message,
+                                position: self.find_module_position(module_path),
+                            });
+                            None
+                        }
+                    }
+                };
                 // Handle selective imports
                 if let Some(item_list) = items {
-                    let module_api = self.get_module_api(module_path).ok();
                     for item in item_list {
                         self.declare_variable(item.clone());
+                        let mut valid_export = false;
                         if let Some(parameters) = module_api
                             .as_ref()
                             .and_then(|exports| exports.iter().find(|export| export.name == *item))
-                            .and_then(|export| export.parameters.clone())
                         {
-                            self.function_signatures
-                                .insert(item.clone(), FunctionSignature { parameters });
+                            valid_export = true;
+                            if let Some(parameters) = &parameters.parameters {
+                                self.function_signatures.insert(
+                                    item.clone(),
+                                    FunctionSignature {
+                                        parameters: parameters.clone(),
+                                    },
+                                );
+                            }
+                        } else if let Some(exports) = &module_api {
+                            if !exports.iter().any(|export| export.name == *item) {
+                                self.errors.push(LintError {
+                                    message: format!(
+                                        "module '{module_path}' does not export '{item}'"
+                                    ),
+                                    position: self.find_identifier_position(item),
+                                });
+                            }
+                        }
+                        if module_api.is_none() || !valid_export {
+                            // Keep recovery symbols from producing a secondary
+                            // unused warning after the actionable import error.
+                            self.use_variable(item);
                         }
                     }
                 } else if alias.is_none() {
-                    // Full import - need to load module to know what's exported
-                    // Try to load the module and get its exports
-                    if let Ok(exports) = self.get_module_api(module_path) {
+                    if let Some(exports) = &module_api {
                         for export in exports {
                             self.declare_variable(export.name.clone());
-                            if let Some(parameters) = export.parameters {
-                                self.function_signatures
-                                    .insert(export.name, FunctionSignature { parameters });
+                            if let Some(parameters) = &export.parameters {
+                                self.function_signatures.insert(
+                                    export.name.clone(),
+                                    FunctionSignature {
+                                        parameters: parameters.clone(),
+                                    },
+                                );
                             }
                         }
                     }
-                    // If we can't load the module, we'll let the runtime handle the error
                 }
 
                 if let Some(alias_name) = alias {
                     self.declare_variable(alias_name.clone());
-                    if let Ok(exports) = self.get_module_api(module_path) {
+                    if module_api.is_none() {
+                        self.use_variable(alias_name);
+                    }
+                    if let Some(exports) = &module_api {
                         let signatures = exports
-                            .into_iter()
+                            .iter()
                             .filter_map(|export| {
-                                export.parameters.map(|parameters| {
-                                    (export.name, FunctionSignature { parameters })
+                                export.parameters.clone().map(|parameters| {
+                                    (export.name.clone(), FunctionSignature { parameters })
                                 })
                             })
                             .collect();
@@ -1481,6 +1428,13 @@ impl Linter {
             }
         }
         None
+    }
+
+    fn find_module_position(&self, module: &str) -> Option<crate::lexer::SourcePosition> {
+        self.positioned_tokens.iter().find_map(|(token, position)| {
+            matches!(token, crate::lexer::Token::String(value) if value == module)
+                .then(|| position.clone())
+        })
     }
 
     fn find_module_exporting_symbol(&self, symbol: &str) -> Option<String> {

@@ -1820,194 +1820,17 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Standard library / user modules — load from .ject file
-        // Get the directory where the executable is located for resolving stdlib paths
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-        // Try to find project root (go up from target/release or target/debug)
-        let project_root = exe_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| exe_dir.clone());
-
-        // Get home directory for ~ expansion
-        let home_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| std::path::PathBuf::from(h));
-
-        // Get current working directory
-        let cwd = std::env::current_dir().unwrap_or_default();
-
-        // Determine module source from file path or embedded stdlib fallback.
-        let mut embedded_module_content: Option<String> = None;
-        // Determine the module file path based on import style
-        let module_file_path = if let Some(dependency_entry) = self.package_modules.get(module_path)
-        {
-            dependency_entry
-                .canonicalize()
-                .unwrap_or_else(|_| dependency_entry.clone())
-                .to_string_lossy()
-                .to_string()
-        } else if module_path.starts_with("~/") {
-            // Home directory path: import "~/Documents/MyModule"
-            if let Some(ref home) = home_dir {
-                let path_without_tilde = module_path.trim_start_matches("~/");
-                let path_with_ext = if path_without_tilde.ends_with(".ject") {
-                    path_without_tilde.to_string()
-                } else {
-                    format!("{}.ject", path_without_tilde)
-                };
-                let full_path = home.join(&path_with_ext);
-                if full_path.exists() {
-                    full_path
-                        .canonicalize()
-                        .unwrap_or(full_path)
-                        .to_string_lossy()
-                        .to_string()
-                } else {
-                    return Err(RuntimeError {
-                        message: format!(
-                            "Module '{}' not found at {}",
-                            module_path,
-                            full_path.display()
-                        ),
-                    });
-                }
-            } else {
-                return Err(RuntimeError {
-                    message: "Could not determine home directory for '~' path".to_string(),
-                });
-            }
-        } else if module_path.starts_with("/") {
-            // Absolute path: import "/home/user/mymodule"
-            let path_with_ext = if module_path.ends_with(".ject") {
-                module_path.to_string()
-            } else {
-                format!("{}.ject", module_path)
-            };
-            let full_path = std::path::PathBuf::from(&path_with_ext);
-            if full_path.exists() {
-                full_path
-                    .canonicalize()
-                    .unwrap_or(full_path)
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                return Err(RuntimeError {
-                    message: format!(
-                        "Module '{}' not found at {}",
-                        module_path,
-                        full_path.display()
-                    ),
-                });
-            }
-        } else if module_path.starts_with("./") || module_path.starts_with("../") {
-            // Relative path: resolves against the directory of the module doing the
-            // importing (not the process's working directory) -- see module_dir_stack.
-            let path_with_ext = if module_path.ends_with(".ject") {
-                module_path.to_string()
-            } else {
-                format!("{}.ject", module_path)
-            };
-            let full_path = self.current_import_base().join(&path_with_ext);
-            if full_path.exists() {
-                full_path
-                    .canonicalize()
-                    .unwrap_or(full_path)
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                return Err(RuntimeError {
-                    message: format!(
-                        "Module '{}' not found at {}",
-                        module_path,
-                        full_path.display()
-                    ),
-                });
-            }
-        } else if module_path.contains("/") {
-            // Path relative to project root (e.g., "modules/math" or "lib/utils")
-            let path_with_ext = if module_path.ends_with(".ject") {
-                module_path.to_string()
-            } else {
-                format!("{}.ject", module_path)
-            };
-            let full_path = project_root.join(&path_with_ext);
-            if full_path.exists() {
-                full_path
-                    .canonicalize()
-                    .unwrap_or(full_path)
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                // Try cwd as fallback
-                let cwd_path = cwd.join(&path_with_ext);
-                if cwd_path.exists() {
-                    cwd_path
-                        .canonicalize()
-                        .unwrap_or(cwd_path)
-                        .to_string_lossy()
-                        .to_string()
-                } else {
-                    return Err(RuntimeError {
-                        message: format!(
-                            "Module '{}' not found at {}",
-                            module_path,
-                            full_path.display()
-                        ),
-                    });
-                }
-            }
-        } else {
-            // Simple module name - check stdlib directory (relative to project root first, then cwd)
-            let module_name = if module_path.ends_with(".ject") {
-                module_path.trim_end_matches(".ject").to_string()
-            } else {
-                module_path.to_string()
-            };
-
-            // Try project root stdlib first
-            let stdlib_path = project_root
-                .join("stdlib")
-                .join(format!("{}.ject", module_name));
-            if stdlib_path.exists() {
-                stdlib_path
-                    .canonicalize()
-                    .unwrap_or(stdlib_path)
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                // Try cwd stdlib
-                let cwd_stdlib = cwd.join("stdlib").join(format!("{}.ject", module_name));
-                if cwd_stdlib.exists() {
-                    cwd_stdlib
-                        .canonicalize()
-                        .unwrap_or(cwd_stdlib)
-                        .to_string_lossy()
-                        .to_string()
-                } else {
-                    if let Some(source) = crate::stdlib::embedded_stdlib_module_source(&module_name)
-                    {
-                        embedded_module_content = Some(source.to_string());
-                        format!("<embedded:{module_name}>")
-                    } else {
-                        return Err(RuntimeError {
-                            message: format!("Module '{}' not found. Expected at 'stdlib/{}.ject' or provide a path.", module_path, module_name),
-                        });
-                    }
-                }
-            }
-        };
-
-        if embedded_module_content.is_none() && !Path::new(&module_file_path).exists() {
-            return Err(RuntimeError {
-                message: format!("Module '{}' not found at {}", module_path, module_file_path),
-            });
-        }
+        // Standard-library, package, and path imports share the same canonical
+        // resolver used by diagnostics and editor tooling.
+        let resolved =
+            crate::module_resolver::ModuleResolver::for_path(&self.current_import_base())
+                .resolve(module_path)
+                .map_err(|error| RuntimeError {
+                    message: error.to_string(),
+                })?;
+        let module_file_path = resolved.identity.cache_key();
+        let module_dir = resolved.directory;
+        let module_content = resolved.source;
 
         // Already loaded this exact module before: reuse its exports instead of
         // re-parsing and re-executing the file. This also makes a module's top-level
@@ -2029,19 +1852,9 @@ impl Interpreter {
         }
 
         self.import_stack.push(module_file_path.clone());
-        let module_dir = if module_file_path.starts_with("<embedded:") {
-            // Embedded modules have no real file location; inherit whatever base is
-            // currently active so the push/pop stays balanced.
-            self.current_import_base()
-        } else {
-            Path::new(&module_file_path)
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| self.current_import_base())
-        };
         self.module_dir_stack.push(module_dir);
         let body_result =
-            self.execute_module_file(module_path, &module_file_path, embedded_module_content);
+            self.execute_module_file(module_path, &module_file_path, Some(module_content));
         self.module_dir_stack.pop();
         self.import_stack.pop();
         let exports = body_result?;

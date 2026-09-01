@@ -436,5 +436,13 @@ mod tests {
                 .as_deref(),
             Some("E3202")
         );
+        assert_eq!(
+            runtime_diagnostic(
+                "module './missing' not found as a package, path, or standard module"
+            )
+            .code
+            .as_deref(),
+            Some("E3101")
+        );
     }
 }

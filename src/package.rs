@@ -275,6 +275,38 @@ pub fn dependency_projects(project: &Project) -> Result<Vec<Project>, String> {
     Ok(output)
 }
 
+/// Return every Ject source owned by a package in deterministic order.
+/// The configured entry is included even when it lives outside `src/`.
+pub fn source_files(project: &Project) -> Result<Vec<PathBuf>, String> {
+    fn visit(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+        if !directory.is_dir() {
+            return Ok(());
+        }
+        let entries = fs::read_dir(directory)
+            .map_err(|error| format!("failed to read {}: {error}", directory.display()))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|error| format!("failed to read {}: {error}", directory.display()))?
+                .path();
+            if path.is_dir() {
+                visit(&path, files)?;
+            } else if path.extension().and_then(|value| value.to_str()) == Some("ject") {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = Vec::new();
+    visit(&project.root.join("src"), &mut files)?;
+    if project.entry.is_file() && !files.contains(&project.entry) {
+        files.push(project.entry.clone());
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
 pub fn build_native(project: &Project, release: bool) -> Result<Option<PathBuf>, String> {
     let Some(native) = &project.native else {
         return Ok(None);
@@ -451,6 +483,35 @@ mod tests {
         let project = load(&root).unwrap();
         assert_eq!(project.native.unwrap().library, "mixed_impl");
         assert_eq!(project.dependencies["helper"], root.join("../helper"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn source_files_include_nested_modules_and_external_entry() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-package-sources-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(root.join("src/nested")).unwrap();
+        fs::create_dir_all(root.join("app")).unwrap();
+        fs::write(
+            root.join(MANIFEST_FILE),
+            "[package]\nname = \"sources\"\nentry = \"app/start.ject\"\n",
+        )
+        .unwrap();
+        fs::write(root.join("src/lib.ject"), "export value = 1").unwrap();
+        fs::write(root.join("src/nested/tool.ject"), "export value = 2").unwrap();
+        fs::write(root.join("src/ignored.txt"), "not Ject").unwrap();
+        fs::write(root.join("app/start.ject"), "print \"start\"").unwrap();
+
+        let files = source_files(&load(&root).unwrap()).unwrap();
+        assert_eq!(files.len(), 3);
+        assert!(files.iter().any(|path| path.ends_with("app/start.ject")));
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with("src/nested/tool.ject")));
+        assert!(!files.iter().any(|path| path.ends_with("ignored.txt")));
         fs::remove_dir_all(root).unwrap();
     }
 

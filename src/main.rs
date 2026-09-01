@@ -6,6 +6,7 @@ mod jnum;
 mod lexer;
 mod linter;
 mod lsp;
+mod module_resolver;
 mod native;
 mod package;
 mod parser;
@@ -87,7 +88,7 @@ fn main() {
             if args[0] == "run" {
                 run_file(&entry);
             } else {
-                check_file(&entry);
+                check_project_sources(&project);
                 if args[0] == "build" {
                     println!("Built package '{}' (source checked)", project.name);
                 }
@@ -388,12 +389,14 @@ fn run_file(filename: &str) {
                     interpreter.set_script_dir(dir.to_path_buf());
                 }
             }
-            execute_source(
+            if !execute_source(
                 &source,
                 &mut interpreter,
                 Some(filename.to_string()),
                 ExecutionMode::Run,
-            );
+            ) {
+                std::process::exit(1);
+            }
         }
         Err(error) => {
             emit_cli_error(
@@ -416,12 +419,14 @@ fn check_file(filename: &str) {
                     interpreter.set_script_dir(dir.to_path_buf());
                 }
             }
-            execute_source(
+            if !execute_source(
                 &source,
                 &mut interpreter,
                 Some(filename.to_string()),
                 ExecutionMode::CheckOnly,
-            );
+            ) {
+                std::process::exit(1);
+            }
         }
         Err(error) => {
             emit_cli_error(
@@ -431,6 +436,52 @@ fn check_file(filename: &str) {
             );
             std::process::exit(1);
         }
+    }
+}
+
+fn check_project_sources(project: &package::Project) {
+    prepare_native_for(&project.root);
+    let mut projects = package::dependency_projects(project).unwrap_or_else(|error| {
+        emit_cli_error(
+            "E4102",
+            error,
+            Some("check each path dependency in Ject.toml"),
+        );
+        std::process::exit(1);
+    });
+    projects.push(project.clone());
+    let mut valid = true;
+    for package in projects {
+        let files = package::source_files(&package).unwrap_or_else(|error| {
+            emit_cli_error(
+                "E4004",
+                error,
+                Some("check that package sources are readable"),
+            );
+            std::process::exit(1);
+        });
+        for path in files {
+            let filename = path.to_string_lossy().into_owned();
+            let source = fs::read_to_string(&path).unwrap_or_else(|error| {
+                emit_cli_error(
+                    "E4004",
+                    format!("could not read `{filename}`: {error}"),
+                    Some("check that the path exists and is readable"),
+                );
+                std::process::exit(1);
+            });
+            let mut interpreter = Interpreter::new();
+            interpreter.set_script_dir(path.parent().unwrap_or(&path).to_path_buf());
+            valid &= execute_source(
+                &source,
+                &mut interpreter,
+                Some(filename),
+                ExecutionMode::CheckOnly,
+            );
+        }
+    }
+    if !valid {
+        std::process::exit(1);
     }
 }
 
@@ -703,7 +754,7 @@ fn execute_source(
     interpreter: &mut Interpreter,
     filename: Option<String>,
     mode: ExecutionMode,
-) {
+) -> bool {
     let mut lexer = Lexer::new(source);
     let located_tokens = lexer.tokenize_with_positions();
     let positioned_tokens: Vec<(lexer::Token, lexer::SourcePosition)> = located_tokens
@@ -720,6 +771,9 @@ fn execute_source(
             // Run linter to detect errors and warnings
             let mut linter = linter::Linter::new()
                 .with_tokens_and_source(positioned_tokens_for_linter, source.to_string());
+            if let Some(path) = filename.as_deref() {
+                linter = linter.with_source_path(path);
+            }
             let (diagnostics, has_errors) = linter.lint(&statements);
 
             // Create diagnostic renderer for beautiful output
@@ -742,23 +796,18 @@ fn execute_source(
             // Only run interpreter if no errors were found
             if !has_errors {
                 match mode {
-                    ExecutionMode::CheckOnly => {}
+                    ExecutionMode::CheckOnly => return true,
                     ExecutionMode::Run => match interpreter.interpret(&statements) {
-                        Ok(_) => {}
+                        Ok(_) => return true,
                         Err(error) => {
                             let runtime_diagnostic = runtime_diagnostic(&error.message);
                             renderer.render(&runtime_diagnostic, filename.as_deref(), Some(source));
-                            if filename.is_some() {
-                                std::process::exit(1);
-                            }
+                            return false;
                         }
                     },
                 }
             } else {
-                // Exit with error code when running files with linter errors
-                if filename.is_some() {
-                    std::process::exit(1);
-                }
+                return false;
             }
         }
         Err(error) => {
@@ -768,9 +817,7 @@ fn execute_source(
 
             renderer.render(&parse_diagnostic, filename.as_deref(), Some(source));
 
-            if filename.is_some() {
-                std::process::exit(1);
-            }
+            return false;
         }
     }
 }

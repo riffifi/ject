@@ -3,6 +3,7 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::linter::Linter;
     use crate::parser::Parser;
+    use std::fs;
 
     fn lint(input: &str) -> (Vec<String>, Vec<String>) {
         let mut lexer = Lexer::new(input);
@@ -27,6 +28,110 @@ mod tests {
             .collect();
 
         (errors, warnings)
+    }
+
+    #[test]
+    fn relative_import_signatures_resolve_from_the_source_file() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-linter-relative-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let main = root.join("main.ject");
+        fs::write(
+            root.join("helper.ject"),
+            "export fn combine(left, right)\nend\n",
+        )
+        .unwrap();
+        let source = "import \"./helper\" as helper\nhelper.combine(1)";
+        fs::write(&main, source).unwrap();
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| token.token)
+            .collect();
+        let statements = Parser::new_simple(tokens).parse().unwrap();
+        let mut linter = Linter::new().with_source_path(&main);
+        let (diagnostics, _) = linter.lint(&statements);
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("missing required argument `right`")
+        }));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_module_is_an_import_error() {
+        let source = "import \"./definitely_missing\" as missing";
+        let mut lexer = Lexer::new(source);
+        let positioned = lexer.tokenize_with_positions();
+        let tokens = positioned.iter().map(|token| token.token.clone()).collect();
+        let statements = Parser::new_simple(tokens).parse().unwrap();
+        let mut linter = Linter::new().with_tokens_and_source(
+            positioned
+                .into_iter()
+                .map(|token| (token.token, token.position))
+                .collect(),
+            source.into(),
+        );
+        let (diagnostics, has_errors) = linter.lint(&statements);
+
+        assert!(has_errors);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("E3101")
+                && diagnostic
+                    .message
+                    .contains("module './definitely_missing' not found")
+                && diagnostic.line == Some(1)
+        }));
+    }
+
+    #[test]
+    fn missing_selective_export_is_an_import_error() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-linter-export-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("helper.ject"), "export present = 1").unwrap();
+        let main = root.join("main.ject");
+        let source = "import {absent} from \"./helper\"\nprint absent";
+        fs::write(&main, source).unwrap();
+        let mut lexer = Lexer::new(source);
+        let positioned = lexer.tokenize_with_positions();
+        let tokens = positioned.iter().map(|token| token.token.clone()).collect();
+        let statements = Parser::new_simple(tokens).parse().unwrap();
+        let mut linter = Linter::new()
+            .with_tokens_and_source(
+                positioned
+                    .into_iter()
+                    .map(|token| (token.token, token.position))
+                    .collect(),
+                source.into(),
+            )
+            .with_source_path(&main);
+        let (diagnostics, has_errors) = linter.lint(&statements);
+
+        assert!(has_errors);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code.as_deref() == Some("E3101")
+                && diagnostic.message.contains("does not export 'absent'")
+        }));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn private_native_backend_is_not_treated_as_a_source_module() {
+        let (errors, warnings) = lint(
+            "import {window, run} from \"@native/jgui\"\nexport fn app()\n    return window(\"Demo\")\nend",
+        );
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
     }
 
     // ========== Unused Variable Tests ==========
