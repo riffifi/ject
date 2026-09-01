@@ -62,6 +62,15 @@ struct Backend {
     client: Client,
     documents: RwLock<HashMap<Url, String>>,
     indexes: RwLock<HashMap<Url, DocumentIndex>>,
+    graph_cache: RwLock<
+        HashMap<
+            Url,
+            std::result::Result<
+                crate::module_graph::ModuleGraph,
+                crate::module_graph::ModuleGraphError,
+            >,
+        >,
+    >,
 }
 
 #[derive(Clone)]
@@ -88,15 +97,22 @@ impl Backend {
         let index = index_document(&text);
         self.documents.write().await.insert(uri.clone(), text);
         self.indexes.write().await.insert(uri.clone(), index);
+        let dependents = {
+            let indexes = self.indexes.read().await;
+            dependent_documents(&indexes, &uri)
+        };
+        {
+            let mut cache = self.graph_cache.write().await;
+            cache.remove(&uri);
+            for dependent in &dependents {
+                cache.remove(dependent);
+            }
+        }
         let diagnostics = self.diagnostics_for(&uri).await;
         self.client
             .publish_diagnostics(uri.clone(), diagnostics, version)
             .await;
 
-        let dependents = {
-            let indexes = self.indexes.read().await;
-            dependent_documents(&indexes, &uri)
-        };
         for dependent in dependents {
             let diagnostics = self.diagnostics_for(&dependent).await;
             self.client
@@ -119,10 +135,41 @@ impl Backend {
             })
             .collect();
         drop(documents);
-        uri.to_file_path()
-            .ok()
-            .map(|path| analyze_at_with_sources(&text, &path, &sources))
-            .unwrap_or_else(|| analyze(&text))
+        let Some(path) = uri.to_file_path().ok() else {
+            return analyze(&text);
+        };
+        let mut diagnostics = analyze_at_with_sources_without_graph(&text, &path, &sources);
+        if path.is_file() {
+            let cached = self.graph_cache.read().await.get(uri).cloned();
+            let graph = match cached {
+                Some(graph) => graph,
+                None => {
+                    let graph = crate::module_graph::ModuleGraph::build_sources(
+                        &path,
+                        text.clone(),
+                        &sources,
+                    );
+                    self.graph_cache
+                        .write()
+                        .await
+                        .insert(uri.clone(), graph.clone());
+                    graph
+                }
+            };
+            if let Ok(graph) = &graph {
+                let discovered = graph_documents(graph, &sources);
+                let mut documents = self.documents.write().await;
+                let mut indexes = self.indexes.write().await;
+                for (module_uri, module_source) in discovered {
+                    indexes
+                        .entry(module_uri.clone())
+                        .or_insert_with(|| index_document(&module_source));
+                    documents.entry(module_uri).or_insert(module_source);
+                }
+            }
+            append_graph_diagnostic(&mut diagnostics, &graph);
+        }
+        diagnostics
     }
 }
 
@@ -246,6 +293,13 @@ impl LanguageServer for Backend {
                 };
                 self.documents.write().await.remove(&uri);
                 self.indexes.write().await.remove(&uri);
+                self.graph_cache.write().await.remove(&uri);
+                {
+                    let mut cache = self.graph_cache.write().await;
+                    for dependent in &dependents {
+                        cache.remove(dependent);
+                    }
+                }
                 for dependent in dependents {
                     let diagnostics = self.diagnostics_for(&dependent).await;
                     self.client
@@ -269,6 +323,13 @@ impl LanguageServer for Backend {
                 };
                 self.documents.write().await.remove(&change.uri);
                 self.indexes.write().await.remove(&change.uri);
+                self.graph_cache.write().await.remove(&change.uri);
+                {
+                    let mut cache = self.graph_cache.write().await;
+                    for dependent in &dependents {
+                        cache.remove(dependent);
+                    }
+                }
                 self.client
                     .publish_diagnostics(change.uri, Vec::new(), None)
                     .await;
@@ -529,6 +590,20 @@ fn analyze_at_with_sources(
     path: &Path,
     sources: &HashMap<PathBuf, String>,
 ) -> Vec<Diagnostic> {
+    let mut diagnostics = analyze_at_with_sources_without_graph(source, path, sources);
+    if path.is_file() {
+        let graph =
+            crate::module_graph::ModuleGraph::build_sources(path, source.to_string(), sources);
+        append_graph_diagnostic(&mut diagnostics, &graph);
+    }
+    diagnostics
+}
+
+fn analyze_at_with_sources_without_graph(
+    source: &str,
+    path: &Path,
+    sources: &HashMap<PathBuf, String>,
+) -> Vec<Diagnostic> {
     let mut lexer = Lexer::new(source);
     let positioned: Vec<_> = lexer
         .tokenize_with_positions()
@@ -543,44 +618,45 @@ fn analyze_at_with_sources(
                 .with_source_path(path)
                 .with_source_overrides(sources.clone());
             let (diagnostics, _) = linter.lint(&statements);
-            let mut diagnostics = diagnostics
+            diagnostics
                 .into_iter()
                 .map(to_lsp_diagnostic)
-                .collect::<Vec<_>>();
-            if path.is_file() {
-                if let Err(error) = crate::module_graph::ModuleGraph::build_sources(
-                    path,
-                    source.to_string(),
-                    sources,
-                ) {
-                    let report = match &error {
-                        crate::module_graph::ModuleGraphError::Cycle { .. } => Some((
-                            "E3102",
-                            "break the cycle by moving shared code into a third module",
-                        )),
-                        crate::module_graph::ModuleGraphError::Load { chain, .. }
-                            if chain.len() > 2 =>
-                        {
-                            Some(("E3101", "check every module in the displayed import chain"))
-                        }
-                        _ => None,
-                    };
-                    if let Some((code, help)) = report {
-                        diagnostics.push(to_lsp_diagnostic(
-                            diagnostic::Diagnostic::error(error.to_string())
-                                .with_code(code.into())
-                                .with_help(help.into()),
-                        ));
-                    }
-                }
-            }
-            diagnostics
+                .collect::<Vec<_>>()
         }
         Err(error) => vec![to_lsp_diagnostic(diagnostic::parse_diagnostic(
             &error.message,
             error.line,
             error.column,
         ))],
+    }
+}
+
+fn append_graph_diagnostic(
+    diagnostics: &mut Vec<Diagnostic>,
+    graph: &std::result::Result<
+        crate::module_graph::ModuleGraph,
+        crate::module_graph::ModuleGraphError,
+    >,
+) {
+    let Err(error) = graph else {
+        return;
+    };
+    let report = match error {
+        crate::module_graph::ModuleGraphError::Cycle { .. } => Some((
+            "E3102",
+            "break the cycle by moving shared code into a third module",
+        )),
+        crate::module_graph::ModuleGraphError::Load { chain, .. } if chain.len() > 2 => {
+            Some(("E3101", "check every module in the displayed import chain"))
+        }
+        _ => None,
+    };
+    if let Some((code, help)) = report {
+        diagnostics.push(to_lsp_diagnostic(
+            diagnostic::Diagnostic::error(error.to_string())
+                .with_code(code.into())
+                .with_help(help.into()),
+        ));
     }
 }
 
@@ -1177,6 +1253,28 @@ fn dependent_documents(indexes: &HashMap<Url, DocumentIndex>, changed: &Url) -> 
     let mut dependents = affected.into_iter().collect::<Vec<_>>();
     dependents.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     dependents
+}
+
+fn graph_documents(
+    graph: &crate::module_graph::ModuleGraph,
+    sources: &HashMap<PathBuf, String>,
+) -> Vec<(Url, String)> {
+    let mut documents = graph
+        .nodes
+        .keys()
+        .filter_map(|identity| {
+            let ject::module_resolver::ModuleIdentity::File(path) = identity else {
+                return None;
+            };
+            let source = sources
+                .get(path)
+                .cloned()
+                .or_else(|| fs::read_to_string(path).ok())?;
+            Some((Url::from_file_path(path).ok()?, source))
+        })
+        .collect::<Vec<_>>();
+    documents.sort_by(|left, right| left.0.as_str().cmp(right.0.as_str()));
+    documents
 }
 
 fn definition_occurrence<'a>(
@@ -1836,6 +1934,7 @@ pub fn run() {
             client,
             documents: RwLock::new(HashMap::new()),
             indexes: RwLock::new(HashMap::new()),
+            graph_cache: RwLock::new(HashMap::new()),
         });
         Server::new(stdin, stdout, socket).serve(service).await;
     });
@@ -2240,6 +2339,36 @@ mod tests {
         assert!(!overlay_diagnostics
             .iter()
             .any(|diagnostic| { diagnostic.code == Some(NumberOrString::String("E3101".into())) }));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resolved_graph_modules_enable_navigation_without_workspace_scan() {
+        let root =
+            std::env::temp_dir().join(format!("ject-lsp-graph-index-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let app_path = root.join("app.ject");
+        let dependency_path = root.join("dependency.ject");
+        let app = "import \"./dependency\" as dep\ndep.paint()\n";
+        let dependency = "export fn paint()\nend\n";
+        std::fs::write(&app_path, app).unwrap();
+        std::fs::write(&dependency_path, dependency).unwrap();
+        let app_uri = Url::from_file_path(app_path.canonicalize().unwrap()).unwrap();
+        let dependency_uri = Url::from_file_path(dependency_path.canonicalize().unwrap()).unwrap();
+        let graph = crate::module_graph::ModuleGraph::build(&app_path).unwrap();
+        let discovered = graph_documents(&graph, &HashMap::new());
+        let mut indexes = HashMap::from([(app_uri.clone(), index_document(app))]);
+        let mut documents = HashMap::from([(app_uri.clone(), app.to_string())]);
+        for (uri, source) in discovered {
+            indexes
+                .entry(uri.clone())
+                .or_insert_with(|| index_document(&source));
+            documents.entry(uri).or_insert(source);
+        }
+
+        let identity =
+            symbol_identity_at(&indexes, &documents, &app_uri, Position::new(1, 5)).unwrap();
+        assert_eq!(identity.0, dependency_uri);
         std::fs::remove_dir_all(root).unwrap();
     }
 
