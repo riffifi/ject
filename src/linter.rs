@@ -47,6 +47,36 @@ pub struct Linter {
 }
 
 impl Linter {
+    fn predeclare_functions(&mut self, statements: &[Stmt]) {
+        let mut declared_here = HashSet::new();
+        for statement in statements {
+            let (name, params) = match statement {
+                Stmt::Function { name, params, .. } | Stmt::ExportFunction { name, params, .. } => {
+                    (name, params)
+                }
+                _ => continue,
+            };
+            if self.functions.contains(name) && !declared_here.contains(name) {
+                self.warnings.push(LintWarning {
+                    message: format!("warning: function `{name}` is already defined"),
+                    position: self.find_identifier_position(name),
+                });
+            } else if !declared_here.insert(name.clone()) {
+                self.warnings.push(LintWarning {
+                    message: format!("warning: function `{name}` is already defined"),
+                    position: self.find_identifier_position(name),
+                });
+            }
+            self.functions.insert(name.clone());
+            self.function_signatures.insert(
+                name.clone(),
+                FunctionSignature {
+                    parameters: params.clone(),
+                },
+            );
+        }
+    }
+
     fn error_code(message: &str) -> &'static str {
         if message.contains("module '")
             || message.contains("cannot inspect module")
@@ -507,6 +537,7 @@ impl Linter {
         self.function_signatures.clear();
         self.module_signatures.clear();
         self.in_function = false;
+        self.predeclare_functions(statements);
 
         // Single pass: analyze all statements
         for stmt in statements {
@@ -580,6 +611,7 @@ impl Linter {
         self.add_builtin_functions();
 
         self.in_function = false;
+        self.predeclare_functions(statements);
 
         // Single pass: analyze all statements
         for stmt in statements {
@@ -855,14 +887,6 @@ impl Linter {
                 }
             }
             Stmt::Function { name, params, body } => {
-                // Check for function redeclaration
-                if self.functions.contains(name) {
-                    let position = self.find_identifier_position(name);
-                    self.warnings.push(LintWarning {
-                        message: format!("warning: function `{}` is already defined", name),
-                        position,
-                    });
-                }
                 self.functions.insert(name.clone());
 
                 // Store function signature for validation
@@ -1081,14 +1105,6 @@ impl Linter {
                 self.use_variable(name);
             }
             Stmt::ExportFunction { name, params, body } => {
-                // Check for function redeclaration
-                if self.functions.contains(name) {
-                    let position = self.find_identifier_position(name);
-                    self.warnings.push(LintWarning {
-                        message: format!("warning: function `{}` is already defined", name),
-                        position,
-                    });
-                }
                 self.functions.insert(name.clone());
 
                 // Store function signature for validation

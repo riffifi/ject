@@ -691,7 +691,49 @@ end
 print is_even(10)
 "#,
         );
-        assert!(errors.iter().any(|error| error.contains("is_odd")));
+        assert!(
+            errors.is_empty(),
+            "mutual recursion should lint: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn forward_function_calls_use_the_declared_signature() {
+        let (errors, _) = lint(
+            r#"
+fn first()
+    return later(1)
+end
+
+fn later(left, right)
+    return left + right
+end
+"#,
+        );
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("missing required argument `right`")));
+    }
+
+    #[test]
+    fn exported_functions_can_refer_to_later_exports() {
+        let (errors, _) = lint(
+            r#"
+export fn odd(n)
+    if n == 0 then return false end
+    return even(n - 1)
+end
+
+export fn even(n)
+    if n == 0 then return true end
+    return odd(n - 1)
+end
+"#,
+        );
+        assert!(
+            errors.is_empty(),
+            "export recursion should lint: {errors:?}"
+        );
     }
 
     // ========== Suggestion Tests ==========
