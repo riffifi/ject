@@ -477,9 +477,21 @@ impl LanguageServer for Backend {
         params: TextDocumentPositionParams,
     ) -> Result<Option<PrepareRenameResponse>> {
         let indexes = self.indexes.read().await;
+        let documents = self.documents.read().await;
         let Some(index) = indexes.get(&params.text_document.uri) else {
             return Ok(None);
         };
+        if symbol_identity_at(
+            &indexes,
+            &documents,
+            &params.text_document.uri,
+            params.position,
+        )
+        .and_then(|identity| definition_occurrence(&indexes, &identity))
+        .is_none()
+        {
+            return Ok(None);
+        }
         Ok(index
             .occurrences
             .iter()
@@ -507,6 +519,9 @@ impl LanguageServer for Backend {
         ) else {
             return Ok(None);
         };
+        if let Some(message) = rename_conflict(&indexes, &documents, &identity, &params.new_name) {
+            return Err(tower_lsp::jsonrpc::Error::invalid_params(message));
+        }
         let mut changes = HashMap::new();
         for (location, _) in locations_for_identity(&indexes, &documents, &identity) {
             changes
@@ -554,25 +569,38 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<SymbolInformation>>> {
         let query = params.query.to_lowercase();
         let indexes = self.indexes.read().await;
-        Ok(Some(
-            indexes
-                .iter()
-                .flat_map(|(uri, index)| {
-                    index
-                        .occurrences
-                        .iter()
-                        .filter(|item| item.definition && item.name.to_lowercase().contains(&query))
-                        .map(|item| SymbolInformation {
-                            name: item.name.clone(),
-                            kind: item.kind,
-                            tags: None,
-                            deprecated: None,
-                            location: Location::new(uri.clone(), item.range),
-                            container_name: None,
-                        })
+        let mut symbols = indexes
+            .iter()
+            .flat_map(|(uri, index)| {
+                let container = symbol_container(uri);
+                index
+                    .occurrences
+                    .iter()
+                    .filter(|item| item.definition && item.name.to_lowercase().contains(&query))
+                    .map(move |item| SymbolInformation {
+                        name: item.name.clone(),
+                        kind: item.kind,
+                        tags: None,
+                        deprecated: None,
+                        location: Location::new(uri.clone(), item.range),
+                        container_name: container.clone(),
+                    })
+            })
+            .collect::<Vec<_>>();
+        symbols.sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then_with(|| left.container_name.cmp(&right.container_name))
+                .then_with(|| left.location.uri.as_str().cmp(right.location.uri.as_str()))
+                .then_with(|| {
+                    left.location
+                        .range
+                        .start
+                        .line
+                        .cmp(&right.location.range.start.line)
                 })
-                .collect(),
-        ))
+        });
+        Ok(Some(symbols))
     }
 }
 
@@ -1342,7 +1370,80 @@ fn locations_for_identity(
             }
         }
     }
+    result.sort_by(|left, right| {
+        left.0
+            .uri
+            .as_str()
+            .cmp(right.0.uri.as_str())
+            .then_with(|| left.0.range.start.line.cmp(&right.0.range.start.line))
+            .then_with(|| {
+                left.0
+                    .range
+                    .start
+                    .character
+                    .cmp(&right.0.range.start.character)
+            })
+    });
+    result.dedup_by(|left, right| left.0 == right.0);
     result
+}
+
+fn rename_conflict(
+    indexes: &HashMap<Url, DocumentIndex>,
+    documents: &HashMap<Url, String>,
+    identity: &SymbolIdentity,
+    new_name: &str,
+) -> Option<String> {
+    let definition = indexes.get(&identity.0)?.semantic.symbols.get(identity.1)?;
+    if definition.name == new_name {
+        return None;
+    }
+    if let Some(existing) = indexes
+        .get(&identity.0)
+        .and_then(|index| index.exports.get(new_name))
+    {
+        if existing != &identity.1 {
+            return Some(format!(
+                "cannot rename `{}` to `{new_name}`: the module already exports `{new_name}`",
+                definition.name
+            ));
+        }
+    }
+
+    for (location, _) in locations_for_identity(indexes, documents, identity) {
+        if documents
+            .get(&location.uri)
+            .and_then(|source| qualified_member_at(source, location.range.start))
+            .is_some()
+        {
+            continue;
+        }
+        let Some(index) = indexes.get(&location.uri) else {
+            continue;
+        };
+        let line = location.range.start.line as usize + 1;
+        let column = location.range.start.character as usize + 1;
+        for candidate in index.semantic.visible_symbols(line, column) {
+            let Some(symbol) = index.semantic.symbols.get(candidate) else {
+                continue;
+            };
+            if symbol.name == new_name
+                && canonical_identity(indexes, &location.uri, candidate).as_ref() != Some(identity)
+            {
+                let path = location
+                    .uri
+                    .to_file_path()
+                    .ok()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| location.uri.to_string());
+                return Some(format!(
+                    "cannot rename `{}` to `{new_name}`: `{new_name}` is already visible at {path}:{line}",
+                    definition.name
+                ));
+            }
+        }
+    }
+    None
 }
 
 fn document_highlights_for_identity(
@@ -1872,6 +1973,31 @@ fn module_name(uri: &Url) -> Option<String> {
     path.file_stem()?.to_str().map(str::to_owned)
 }
 
+fn symbol_container(uri: &Url) -> Option<String> {
+    let path = uri.to_file_path().ok()?;
+    let project = crate::package::discover(&path).ok()?;
+    if fs::canonicalize(&project.entry).ok() == fs::canonicalize(&path).ok() {
+        return Some(project.name);
+    }
+    let relative = path.strip_prefix(&project.root).ok()?;
+    let relative = relative.strip_prefix("src").unwrap_or(relative);
+    let mut parts = relative
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if let Some(last) = parts.last_mut() {
+        if let Some(stem) = Path::new(last).file_stem().and_then(|stem| stem.to_str()) {
+            *last = stem.to_string();
+        }
+    }
+    Some(if parts.is_empty() {
+        project.name
+    } else {
+        format!("{}::{}", project.name, parts.join("::"))
+    })
+}
+
 fn completion_kind(kind: SymbolKind) -> CompletionItemKind {
     if kind == SymbolKind::FUNCTION {
         CompletionItemKind::FUNCTION
@@ -2143,6 +2269,76 @@ mod tests {
         let (definition_uri, occurrence) = definition_occurrence(&indexes, &identity).unwrap();
         assert_eq!(definition_uri, &colors_uri);
         assert_eq!(occurrence.detail.as_deref(), Some("fn paint(text)"));
+    }
+
+    #[test]
+    fn rename_rejects_export_and_visible_scope_collisions() {
+        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
+        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library = "export fn paint()\nend\nexport fn draw()\nend";
+        let app = "import {paint} from \"colors\"\nlet replacement = 1\npaint()";
+        let indexes = HashMap::from([
+            (library_uri.clone(), index_document(library)),
+            (app_uri.clone(), index_document(app)),
+        ]);
+        let documents = HashMap::from([
+            (library_uri.clone(), library.into()),
+            (app_uri.clone(), app.into()),
+        ]);
+        let identity =
+            symbol_identity_at(&indexes, &documents, &app_uri, Position::new(2, 1)).unwrap();
+
+        assert!(rename_conflict(&indexes, &documents, &identity, "draw")
+            .unwrap()
+            .contains("already exports"));
+        assert!(
+            rename_conflict(&indexes, &documents, &identity, "replacement")
+                .unwrap()
+                .contains("already visible")
+        );
+        assert!(rename_conflict(&indexes, &documents, &identity, "render").is_none());
+    }
+
+    #[test]
+    fn qualified_export_rename_ignores_unrelated_local_names() {
+        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
+        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library = "export fn paint()\nend";
+        let app = "import \"colors\" as colors\nlet render = 1\ncolors.paint()";
+        let indexes = HashMap::from([
+            (library_uri.clone(), index_document(library)),
+            (app_uri.clone(), index_document(app)),
+        ]);
+        let documents =
+            HashMap::from([(library_uri, library.into()), (app_uri.clone(), app.into())]);
+        let identity =
+            symbol_identity_at(&indexes, &documents, &app_uri, Position::new(2, 9)).unwrap();
+
+        assert!(rename_conflict(&indexes, &documents, &identity, "render").is_none());
+    }
+
+    #[test]
+    fn workspace_symbols_use_package_qualified_containers() {
+        let root =
+            std::env::temp_dir().join(format!("ject-symbol-container-{}", std::process::id()));
+        let module_path = root.join("src/tools/color.ject");
+        std::fs::create_dir_all(module_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            root.join("Ject.toml"),
+            "[package]\nname = \"palette\"\nentry = \"src/main.ject\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("src/main.ject"), "print 1\n").unwrap();
+        std::fs::write(&module_path, "export red = 1\n").unwrap();
+        let entry_uri = Url::from_file_path(root.join("src/main.ject")).unwrap();
+        let module_uri = Url::from_file_path(&module_path).unwrap();
+
+        assert_eq!(symbol_container(&entry_uri).as_deref(), Some("palette"));
+        assert_eq!(
+            symbol_container(&module_uri).as_deref(),
+            Some("palette::tools::color")
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
