@@ -15,11 +15,13 @@ pub enum Value {
     Dictionary(std::collections::HashMap<String, Value>),
     Collection(std::collections::HashSet<String>),
     Function {
+        name: String,
         params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,
     },
     ModuleFunction {
+        name: String,
         params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,

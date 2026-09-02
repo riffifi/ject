@@ -1327,4 +1327,14 @@ print "Program completed successfully!"
 "#);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn runtime_errors_collect_named_function_frames() {
+        let error = run(
+            "fn inner()\n    return missing\nend\nfn outer()\n    return inner()\nend\nouter()",
+        )
+        .unwrap_err();
+        assert!(error.contains("Undefined variable 'missing'"));
+        assert!(error.contains("\n  at inner\n  at outer"));
+    }
 }

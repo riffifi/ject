@@ -58,6 +58,14 @@ pub struct RuntimeError {
     pub message: String,
 }
 
+impl RuntimeError {
+    fn with_frame(mut self, name: &str) -> Self {
+        self.message.push_str("\n  at ");
+        self.message.push_str(name);
+        self
+    }
+}
+
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -390,6 +398,7 @@ impl Interpreter {
             }
             Stmt::Function { name, params, body } => {
                 let func = Value::Function {
+                    name: name.clone(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -533,6 +542,7 @@ impl Interpreter {
             }
             Stmt::ExportFunction { name, params, body } => {
                 let func = Value::Function {
+                    name: name.clone(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -1948,6 +1958,7 @@ impl Interpreter {
         for statement in statements {
             if let Stmt::ExportFunction { name, params, body } = statement {
                 let func = Value::Function {
+                    name: name.clone(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -1968,6 +1979,7 @@ impl Interpreter {
                     // Create ModuleFunction with the current module environment as closure
                     // This captures all the module's variables and functions
                     let func = Value::ModuleFunction {
+                        name: name.clone(),
                         params: params.clone(),
                         body: body.clone(),
                         closure_env: self.environment.clone(),
@@ -2182,6 +2194,7 @@ impl Interpreter {
                 result
             }
             Value::Function {
+                name,
                 params,
                 body,
                 closure_env,
@@ -2216,9 +2229,10 @@ impl Interpreter {
 
                 self.environment.pop_scope();
                 self.environment = saved_env;
-                result
+                result.map_err(|error| error.with_frame(name))
             }
             Value::ModuleFunction {
+                name,
                 params,
                 body,
                 closure_env,
@@ -2253,7 +2267,7 @@ impl Interpreter {
 
                 self.environment.pop_scope();
                 self.environment = saved_env;
-                result
+                result.map_err(|error| error.with_frame(name))
             }
             Value::BuiltinFunction(name) => crate::stdlib::call_builtin_function(name, arg_values),
             Value::NativeFunction { module, name } => {

@@ -332,6 +332,8 @@ pub fn parse_diagnostic(message: &str, line: Option<usize>, column: Option<usize
 }
 
 pub fn runtime_diagnostic(message: &str) -> Diagnostic {
+    let mut lines = message.lines();
+    let message = lines.next().unwrap_or(message);
     let lower = message.to_lowercase();
     let (code, help) = if lower.contains("undefined variable") {
         (
@@ -381,6 +383,9 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
         ("E3999", None)
     };
     let mut d = Diagnostic::error(message.into()).with_code(code.into());
+    for frame in lines.filter_map(|line| line.trim().strip_prefix("at ")) {
+        d = d.with_note(format!("at {frame}"));
+    }
     if let Some(help) = help {
         d = d.with_help(help.into());
     }
@@ -444,5 +449,15 @@ mod tests {
             .as_deref(),
             Some("E3101")
         );
+    }
+
+    #[test]
+    fn runtime_stack_frames_render_as_notes() {
+        let diagnostic = runtime_diagnostic("Undefined variable: x\n  at inner\n  at outer");
+        assert_eq!(diagnostic.message, "Undefined variable: x");
+        assert_eq!(diagnostic.notes, vec!["at inner", "at outer"]);
+        let rendered = DiagnosticRenderer::plain().render_to_string(&diagnostic, None, None);
+        assert!(rendered.contains("= note: at inner"));
+        assert!(rendered.contains("= note: at outer"));
     }
 }
