@@ -362,7 +362,7 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `jgui` module
 - [x] REPL with history
 - [x] VS Code extension
 - [x] Local package manager (`add --path`, `remove`, `install`, lockfiles, native builds)
-- [ ] Remote package registry and publishing
+- [x] Remote package registries and publishing (immutable HTTP(S) archives)
 - [ ] Performance optimizations (array/dict value semantics still copy-heavy)
 - [ ] AST source spans and runtime stack traces (runtime errors have stable codes and help, but not expression-level locations yet)
 

@@ -4,6 +4,9 @@
 
 ### Diagnostics and local installation
 
+- Added exact-version HTTP(S) registries, immutable package publishing, verified
+  archives, an offline package cache, and registry provenance in `Ject.lock`.
+
 - Replaced generic output with one Rust-style renderer for parser, linter, runtime,
   command, package, and native failures. Diagnostics use stable subsystem codes,
   stderr, terminal-aware color, source underlines, notes, help, and summaries.

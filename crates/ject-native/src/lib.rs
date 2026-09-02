@@ -56,7 +56,13 @@ unsafe impl Sync for PluginV1 {}
 pub type EntryFn = unsafe extern "C" fn() -> *const PluginV1;
 pub type Handler = fn(&str, Vec<serde_json::Value>) -> Result<serde_json::Value, String>;
 
-pub fn dispatch(
+/// Decode and dispatch one call from the native ABI.
+///
+/// # Safety
+///
+/// Each non-null pointer must reference a readable buffer of its paired length for
+/// the duration of this call. Null pointers are only valid when their length is zero.
+pub unsafe fn dispatch(
     handler: Handler,
     function_ptr: *const u8,
     function_len: usize,
@@ -131,7 +137,9 @@ macro_rules! ject_plugin {
             arguments_ptr: *const u8,
             arguments_len: usize,
         ) -> $crate::Buffer {
-            $crate::dispatch($handler, function_ptr, function_len, arguments_ptr, arguments_len)
+            unsafe {
+                $crate::dispatch($handler, function_ptr, function_len, arguments_ptr, arguments_len)
+            }
         }
 
         unsafe extern "C" fn __ject_drop_resource(id: u64) {
@@ -187,11 +195,11 @@ mod tests {
     #[test]
     fn dispatches_success_and_error_envelopes() {
         let args = serde_json::to_vec(&vec![json!(20), json!(22)]).unwrap();
-        let result = dispatch(handler, b"add".as_ptr(), 3, args.as_ptr(), args.len());
+        let result = unsafe { dispatch(handler, b"add".as_ptr(), 3, args.as_ptr(), args.len()) };
         assert_eq!(decode(result), json!({ "ok": 42 }));
 
         let args = b"[]";
-        let result = dispatch(handler, b"fail".as_ptr(), 4, args.as_ptr(), args.len());
+        let result = unsafe { dispatch(handler, b"fail".as_ptr(), 4, args.as_ptr(), args.len()) };
         assert_eq!(decode(result), json!({ "error": "intentional failure" }));
     }
 
@@ -207,7 +215,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_abi_input_without_panicking() {
-        let result = dispatch(handler, std::ptr::null(), 1, b"[]".as_ptr(), 2);
+        let result = unsafe { dispatch(handler, std::ptr::null(), 1, b"[]".as_ptr(), 2) };
         assert_eq!(
             decode(result),
             json!({ "error": "host passed an invalid ABI buffer" })

@@ -910,8 +910,16 @@ ject build --release
 - `remove` deletes a dependency and refreshes the lockfile.
 - `build` checks Ject source and builds native components when present.
 
-Commit `Ject.lock` for applications. Remote registries, git dependencies, and
-publishing are not completed in 0.9; installation currently uses explicit local paths.
+Commit `Ject.lock` for applications. Registry packages use exact versions and
+immutable checksum-verified archives:
+
+```bash
+ject add colors --version 1.2.0 --registry https://registry.example
+ject publish --registry https://registry.example
+```
+
+Set `JECT_REGISTRY` for the default URL and `JECT_REGISTRY_TOKEN` when publishing to
+an authenticated registry. `file://` URLs are supported for local registries.
 
 ## 13. Standard library reference
 

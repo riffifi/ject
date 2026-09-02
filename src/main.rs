@@ -90,6 +90,7 @@ fn main() {
         "install" => install_project(args.iter().any(|arg| arg == "--locked")),
         "add" => add_dependency(&args[1..]),
         "remove" => remove_dependency(&args[1..]),
+        "publish" => publish_project(&args[1..]),
         "init" => {
             let library = args.iter().any(|arg| arg == "--lib");
             let native = args.iter().any(|arg| arg == "--native");
@@ -180,7 +181,9 @@ USAGE:
     ject test                 Run tests/*.ject in the current package
     ject install [--locked]   Resolve, lock, and build dependencies
     ject add <name> --path <path>  Add a local source or mixed library
+    ject add <name> --version <version> [--registry <url>]
     ject remove <name>        Remove a dependency
+    ject publish --registry <url>  Publish the current package
     ject build                Validate the current source package
     ject tree                 Show the resolved source-module dependency tree
     ject lsp                  Start the Language Server Protocol server over stdio
@@ -245,24 +248,77 @@ fn add_dependency(args: &[String]) {
         .windows(2)
         .find(|pair| pair[0] == "--path")
         .map(|pair| Path::new(&pair[1]));
-    let Some(path) = path else {
+    let version = args
+        .windows(2)
+        .find(|pair| pair[0] == "--version")
+        .map(|pair| pair[1].as_str());
+    let registry = args
+        .windows(2)
+        .find(|pair| pair[0] == "--registry")
+        .map(|pair| pair[1].as_str());
+    if path.is_none() && version.is_none() {
         emit_cli_error(
             "E4002",
-            "local installation requires `--path <path>`",
-            Some("registry packages are not available yet; use `ject add name --path ../name`"),
+            "dependency requires `--path <path>` or `--version <version>`",
+            Some("try `ject add my_lib --version 1.2.0`"),
         );
         std::process::exit(2);
-    };
+    }
+    if path.is_some() && version.is_some() {
+        emit_cli_error(
+            "E4002",
+            "choose either a path or registry version for a dependency",
+            None,
+        );
+        std::process::exit(2);
+    }
     let project = current_project_or_exit();
-    match package::add_path_dependency(&project, name, path)
-        .and_then(|updated| package::install(&updated).map(|_| updated))
-    {
-        Ok(_) => println!("Added {name} from {}", path.display()),
+    let updated = if let Some(path) = path {
+        package::add_path_dependency(&project, name, path)
+    } else {
+        package::add_registry_dependency(&project, name, version.unwrap(), registry)
+    };
+    match updated.and_then(|updated| package::install(&updated).map(|_| updated)) {
+        Ok(_) => {
+            if let Some(path) = path {
+                println!("Added {name} from {}", path.display());
+            } else {
+                println!("Added {name}@{}", version.unwrap());
+            }
+        }
         Err(error) => {
             emit_cli_error(
                 "E4103",
                 error,
                 Some("the path must contain a valid Ject.toml whose package name matches"),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn publish_project(args: &[String]) {
+    let environment_registry = std::env::var("JECT_REGISTRY").ok();
+    let registry = args
+        .windows(2)
+        .find(|pair| pair[0] == "--registry")
+        .map(|pair| pair[1].as_str())
+        .or(environment_registry.as_deref())
+        .unwrap_or("https://packages.ject.dev");
+    let project = current_project_or_exit();
+    let token = std::env::var("JECT_REGISTRY_TOKEN").ok();
+    match package::publish(&project, registry, token.as_deref()) {
+        Ok(checksum) => println!(
+            "Published {}@{} ({})",
+            project.name,
+            project.version,
+            &checksum[..12]
+        ),
+        Err(error) => {
+            emit_cli_error(
+                "E4105",
+                error,
+                Some("set JECT_REGISTRY_TOKEN if the registry requires authentication"),
             );
             std::process::exit(1);
         }

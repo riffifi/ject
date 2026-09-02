@@ -17,9 +17,9 @@ The local mixed-package workflow is operational:
 - The `ject-native-1` ABI discovers functions and transports ordinary values plus
   opaque typed resources with plugin-owned destruction.
 
-Registry dependencies, capability grants, callbacks, and publishing are later
-layers. The 0.9 lockfile supports local path packages; future source kinds can be
-added without changing imports or the native ABI.
+Path and registry dependencies, authenticated publishing, and checksum-verified
+archives are implemented. Capability grants, callbacks, and sandboxed providers are
+later layers and do not change imports or the native ABI.
 
 This document defines the target architecture for the package system. The package
 manager is part of the `ject` executable; it is not a second tool.
@@ -88,17 +88,30 @@ ject run [-- <args>]
 ject check
 ject test
 ject add <package> --path <directory>
+ject add <package> --version <exact-version> [--registry <url>]
 ject remove <package>
 ject install
 ject install --locked
-ject update [package]
 ject build [--release]
-ject publish
+ject publish [--registry <url>]
 ```
 
-The existing `ject file.ject`, `--check`, and `--test` forms remain valid. In 0.9,
-`add` accepts local paths. A missing `--path` produces an explicit diagnostic rather
-than pretending that a public registry already exists.
+The existing `ject file.ject`, `--check`, and `--test` forms remain valid. Registry
+versions are exact in 0.9; version-range solving can be added later without changing
+the archive protocol or manifest shape.
+
+### Registry protocol
+
+A registry is an HTTP(S) base URL. Packages are immutable gzip-compressed tar
+archives at `<base>/<name>/<version>.tar.gz`; the adjacent `.tar.gz.sha256` object
+contains the archive digest. Publishing uses conditional HTTP PUT and optionally
+sends `JECT_REGISTRY_TOKEN` as a bearer token. `JECT_REGISTRY` selects the default
+base URL. A `file://` base implements the same layout for private or local registries.
+
+Published archives exclude `.git`, `target`, `Ject.lock`, and Ject's internal source
+metadata. Installation verifies the archive before extraction, records provenance in
+the cache, and normal execution uses that cache without downloading during imports.
+Published versions cannot be overwritten.
 
 ### Installing a local library
 

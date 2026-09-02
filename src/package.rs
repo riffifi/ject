@@ -2,10 +2,15 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use sha2::{Digest, Sha256};
+use tar::{Archive, Builder};
 
 pub const MANIFEST_FILE: &str = "Ject.toml";
 pub const LOCK_FILE: &str = "Ject.lock";
@@ -18,6 +23,20 @@ pub struct Project {
     pub entry: PathBuf,
     pub native: Option<NativeConfig>,
     pub dependencies: HashMap<String, PathBuf>,
+    pub registry_dependencies: HashMap<String, RegistryDependency>,
+    pub registry_source: Option<RegistrySource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryDependency {
+    pub version: String,
+    pub registry: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistrySource {
+    pub registry: String,
+    pub archive_checksum: String,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +69,7 @@ pub fn load(root: &Path) -> Result<Project, String> {
     let mut native_path = None;
     let mut native_library = None;
     let mut dependencies = HashMap::new();
+    let mut registry_dependencies = HashMap::new();
 
     for raw_line in source.lines() {
         let line = raw_line.split('#').next().unwrap_or("").trim();
@@ -71,6 +91,18 @@ pub fn load(root: &Path) -> Result<Project, String> {
             ("dependencies", dependency) => {
                 if let Some(path) = dependency_path(raw_value) {
                     dependencies.insert(dependency.to_string(), root.join(path));
+                } else if let Some(version) = dependency_version(raw_value) {
+                    let registry = dependency_registry(raw_value)
+                        .or_else(|| std::env::var("JECT_REGISTRY").ok())
+                        .unwrap_or_else(|| "https://packages.ject.dev".to_string());
+                    dependencies.insert(
+                        dependency.to_string(),
+                        registry_cache_root()?.join(dependency).join(&version),
+                    );
+                    registry_dependencies.insert(
+                        dependency.to_string(),
+                        RegistryDependency { version, registry },
+                    );
                 }
             }
             _ => {}
@@ -83,6 +115,7 @@ pub fn load(root: &Path) -> Result<Project, String> {
         path: root.join(path),
         library: native_library.unwrap_or_else(|| name.replace('-', "_")),
     });
+    let registry_source = read_registry_source(root)?;
     Ok(Project {
         root: root.to_path_buf(),
         name,
@@ -90,6 +123,8 @@ pub fn load(root: &Path) -> Result<Project, String> {
         entry,
         native,
         dependencies,
+        registry_dependencies,
+        registry_source,
     })
 }
 
@@ -132,7 +167,46 @@ pub fn add_path_dependency(project: &Project, name: &str, path: &Path) -> Result
             dependency.name
         ));
     }
-    update_dependency_line(&project.root.join(MANIFEST_FILE), name, Some(path))?;
+    update_dependency_value(
+        &project.root.join(MANIFEST_FILE),
+        name,
+        Some(dependency_line(path)),
+    )?;
+    load(&project.root)
+}
+
+pub fn add_registry_dependency(
+    project: &Project,
+    name: &str,
+    version: &str,
+    registry: Option<&str>,
+) -> Result<Project, String> {
+    validate_package_name(name)?;
+    validate_version(version)?;
+    let registry = registry
+        .map(str::to_string)
+        .or_else(|| std::env::var("JECT_REGISTRY").ok())
+        .unwrap_or_else(|| "https://packages.ject.dev".to_string());
+    let dependency = RegistryDependency {
+        version: version.to_string(),
+        registry: registry.clone(),
+    };
+    let destination = registry_cache_root()?.join(name).join(version);
+    if !destination.join(MANIFEST_FILE).is_file() {
+        download_registry_package(name, &dependency, &destination)?;
+    }
+    let installed = load(&destination)?;
+    if installed.name != name || installed.version != version {
+        return Err(format!(
+            "registry package {name}@{version} identifies itself as {}@{}",
+            installed.name, installed.version
+        ));
+    }
+    let value = format!(
+        "{{ version = \"{version}\", registry = \"{}\" }}",
+        registry.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    update_dependency_value(&project.root.join(MANIFEST_FILE), name, Some(value))?;
     load(&project.root)
 }
 
@@ -140,7 +214,7 @@ pub fn remove_dependency(project: &Project, name: &str) -> Result<Project, Strin
     if !project.dependencies.contains_key(name) {
         return Err(format!("package '{name}' is not a dependency"));
     }
-    update_dependency_line(&project.root.join(MANIFEST_FILE), name, None)?;
+    update_dependency_value(&project.root.join(MANIFEST_FILE), name, None)?;
     load(&project.root)
 }
 
@@ -157,7 +231,11 @@ fn validate_package_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn update_dependency_line(manifest: &Path, name: &str, path: Option<&Path>) -> Result<(), String> {
+fn update_dependency_value(
+    manifest: &Path,
+    name: &str,
+    value: Option<String>,
+) -> Result<(), String> {
     let source = fs::read_to_string(manifest)
         .map_err(|e| format!("failed to read {}: {e}", manifest.display()))?;
     let mut output = Vec::new();
@@ -168,8 +246,8 @@ fn update_dependency_line(manifest: &Path, name: &str, path: Option<&Path>) -> R
         let trimmed = line.trim();
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             if in_dependencies && !written {
-                if let Some(path) = path {
-                    output.push(dependency_line(name, path));
+                if let Some(value) = &value {
+                    output.push(format!("{name} = {value}"));
                 }
                 written = true;
             }
@@ -177,8 +255,8 @@ fn update_dependency_line(manifest: &Path, name: &str, path: Option<&Path>) -> R
             found_section |= in_dependencies;
         }
         if in_dependencies && trimmed.split_once('=').map(|(key, _)| key.trim()) == Some(name) {
-            if let Some(path) = path {
-                output.push(dependency_line(name, path));
+            if let Some(value) = &value {
+                output.push(format!("{name} = {value}"));
             }
             written = true;
             continue;
@@ -190,8 +268,8 @@ fn update_dependency_line(manifest: &Path, name: &str, path: Option<&Path>) -> R
         output.push("[dependencies]".into());
     }
     if !written {
-        if let Some(path) = path {
-            output.push(dependency_line(name, path));
+        if let Some(value) = &value {
+            output.push(format!("{name} = {value}"));
         }
     }
     let updated = format!("{}\n", output.join("\n"));
@@ -202,27 +280,31 @@ fn update_dependency_line(manifest: &Path, name: &str, path: Option<&Path>) -> R
         .map_err(|e| format!("failed to replace {}: {e}", manifest.display()))
 }
 
-fn dependency_line(name: &str, path: &Path) -> String {
+fn dependency_line(path: &Path) -> String {
     let escaped = path
         .to_string_lossy()
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
-    format!("{name} = {{ path = \"{escaped}\" }}")
+    format!("{{ path = \"{escaped}\" }}")
 }
 
 /// Resolve every dependency and write a deterministic, content-verified lockfile.
 pub fn install(project: &Project) -> Result<Vec<Project>, String> {
-    let dependencies = dependency_projects(project)?;
-    let lock = render_lockfile(project, &dependencies)?;
-    write_lockfile(project, &lock)?;
+    materialize_dependencies(project)?;
+    let project = load(&project.root)?;
+    let dependencies = dependency_projects(&project)?;
+    let lock = render_lockfile(&project, &dependencies)?;
+    write_lockfile(&project, &lock)?;
     Ok(dependencies)
 }
 
 /// Verify that the existing lockfile exactly describes the current dependency graph.
 /// This never changes the lockfile and is intended for reproducible CI builds.
 pub fn verify_lockfile(project: &Project) -> Result<Vec<Project>, String> {
-    let dependencies = dependency_projects(project)?;
-    let expected = render_lockfile(project, &dependencies)?;
+    materialize_dependencies(project)?;
+    let project = load(&project.root)?;
+    let dependencies = dependency_projects(&project)?;
+    let expected = render_lockfile(&project, &dependencies)?;
     let path = project.root.join(LOCK_FILE);
     let actual = fs::read_to_string(&path).map_err(|error| {
         format!(
@@ -252,7 +334,18 @@ fn render_lockfile(project: &Project, dependencies: &[Project]) -> Result<String
         lock.push_str("\n[[package]]\n");
         lock.push_str(&format!("name = \"{}\"\n", package.name));
         lock.push_str(&format!("version = \"{}\"\n", package.version));
-        lock.push_str(&format!("source = \"path+{}\"\n", canonical.display()));
+        if let Some(source) = &package.registry_source {
+            lock.push_str(&format!(
+                "source = \"registry+{}\"\n",
+                source.registry.replace('"', "\\\"")
+            ));
+            lock.push_str(&format!(
+                "archive-checksum = \"{}\"\n",
+                source.archive_checksum
+            ));
+        } else {
+            lock.push_str(&format!("source = \"path+{}\"\n", canonical.display()));
+        }
         lock.push_str(&format!("checksum = \"{}\"\n", package_checksum(package)?));
         lock.push_str(&format!("native = {}\n", package.native.is_some()));
     }
@@ -288,7 +381,7 @@ pub fn package_checksum(project: &Project) -> Result<String, String> {
                 collect(root, &path, files)?;
             } else if !matches!(
                 relative.file_name().and_then(|name| name.to_str()),
-                Some(LOCK_FILE | "Ject.lock.tmp")
+                Some(LOCK_FILE | "Ject.lock.tmp" | ".ject-source")
             ) {
                 files.push(path);
             }
@@ -331,6 +424,255 @@ fn dependency_path(value: &str) -> Option<PathBuf> {
     Some(PathBuf::from(&rest[..end]))
 }
 
+fn inline_string(value: &str, key: &str) -> Option<String> {
+    let start = value.find(key)? + key.len();
+    let after = &value[start..];
+    let equals = after.find('=')?;
+    let after = &after[equals + 1..];
+    let quote = after.find('"')?;
+    let after = &after[quote + 1..];
+    let end = after.find('"')?;
+    Some(after[..end].to_string())
+}
+
+fn dependency_version(value: &str) -> Option<String> {
+    if value.starts_with('"') {
+        return Some(value.trim_matches('"').to_string());
+    }
+    inline_string(value, "version")
+}
+
+fn dependency_registry(value: &str) -> Option<String> {
+    inline_string(value, "registry")
+}
+
+fn registry_cache_root() -> Result<PathBuf, String> {
+    if let Some(root) = std::env::var_os("JECT_HOME") {
+        return Ok(PathBuf::from(root).join("registry/src"));
+    }
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|root| root.join(".ject/registry/src"))
+        .ok_or_else(|| "cannot locate Ject cache; set JECT_HOME".to_string())
+}
+
+fn read_registry_source(root: &Path) -> Result<Option<RegistrySource>, String> {
+    let path = root.join(".ject-source");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let source = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let mut lines = source.lines();
+    let registry = lines.next().unwrap_or("").to_string();
+    let archive_checksum = lines.next().unwrap_or("").to_string();
+    if registry.is_empty() || archive_checksum.len() != 64 {
+        return Err(format!("invalid registry metadata in {}", path.display()));
+    }
+    Ok(Some(RegistrySource {
+        registry,
+        archive_checksum,
+    }))
+}
+
+fn validate_version(version: &str) -> Result<(), String> {
+    if version.is_empty()
+        || !version
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || ".+-_".contains(character))
+    {
+        return Err(format!("invalid package version '{version}'"));
+    }
+    Ok(())
+}
+
+fn registry_url(registry: &str, name: &str, version: &str, suffix: &str) -> String {
+    format!(
+        "{}/{name}/{version}.tar.gz{suffix}",
+        registry.trim_end_matches('/')
+    )
+}
+
+fn read_registry_object(url: &str) -> Result<Vec<u8>, String> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return fs::read(path).map_err(|error| format!("failed to read {url}: {error}"));
+    }
+    let response = ureq::get(url)
+        .call()
+        .map_err(|error| format!("failed to download {url}: {error}"))?;
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read response from {url}: {error}"))?;
+    Ok(bytes)
+}
+
+fn write_registry_object(url: &str, bytes: &[u8], token: Option<&str>) -> Result<(), String> {
+    if let Some(path) = url.strip_prefix("file://") {
+        let path = Path::new(path);
+        if path.exists() {
+            return Err(format!(
+                "registry object {url} already exists; published versions are immutable"
+            ));
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+        }
+        let temporary = path.with_extension("tmp");
+        fs::write(&temporary, bytes)
+            .map_err(|error| format!("failed to write {}: {error}", temporary.display()))?;
+        return fs::rename(&temporary, path)
+            .map_err(|error| format!("failed to publish {}: {error}", path.display()));
+    }
+    let mut request = ureq::put(url)
+        .set("Content-Type", "application/octet-stream")
+        .set("If-None-Match", "*");
+    if let Some(token) = token {
+        request = request.set("Authorization", &format!("Bearer {token}"));
+    }
+    request
+        .send_bytes(bytes)
+        .map_err(|error| format!("failed to publish {url}: {error}"))?;
+    Ok(())
+}
+
+/// Publish an immutable package archive and checksum to an HTTP(S) or file registry.
+pub fn publish(project: &Project, registry: &str, token: Option<&str>) -> Result<String, String> {
+    validate_package_name(&project.name)?;
+    validate_version(&project.version)?;
+    if project.version == "0.0.0" {
+        return Err("set [package].version before publishing".to_string());
+    }
+    if project.dependencies.len() != project.registry_dependencies.len() {
+        return Err(
+            "published packages cannot contain path dependencies; use registry versions"
+                .to_string(),
+        );
+    }
+    if !project.entry.is_file() {
+        return Err(format!(
+            "package entry does not exist: {}",
+            project.entry.display()
+        ));
+    }
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    {
+        let mut archive = Builder::new(&mut encoder);
+        append_package_directory(&mut archive, &project.root, &project.root)?;
+        archive
+            .finish()
+            .map_err(|error| format!("failed to finish package archive: {error}"))?;
+    }
+    let bytes = encoder
+        .finish()
+        .map_err(|error| format!("failed to compress package archive: {error}"))?;
+    let checksum = format!("{:x}", Sha256::digest(&bytes));
+    let archive_url = registry_url(registry, &project.name, &project.version, "");
+    let checksum_url = registry_url(registry, &project.name, &project.version, ".sha256");
+    write_registry_object(&archive_url, &bytes, token)?;
+    write_registry_object(&checksum_url, format!("{checksum}\n").as_bytes(), token)?;
+    Ok(checksum)
+}
+
+fn append_package_directory<W: Write>(
+    archive: &mut Builder<W>,
+    root: &Path,
+    directory: &Path,
+) -> Result<(), String> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("failed to read {}: {error}", directory.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read {}: {error}", directory.display()))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let name = entry.file_name();
+        if matches!(
+            name.to_str(),
+            Some("target" | ".git" | LOCK_FILE | "Ject.lock.tmp" | ".ject-source")
+        ) {
+            continue;
+        }
+        if path.is_dir() {
+            append_package_directory(archive, root, &path)?;
+        } else if path.is_file() {
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            archive
+                .append_path_with_name(&path, relative)
+                .map_err(|error| format!("failed to archive {}: {error}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn materialize_dependencies(project: &Project) -> Result<(), String> {
+    for (name, dependency) in &project.registry_dependencies {
+        validate_package_name(name)?;
+        validate_version(&dependency.version)?;
+        let destination = project
+            .dependencies
+            .get(name)
+            .ok_or_else(|| format!("registry dependency '{name}' has no cache destination"))?;
+        if !destination.join(MANIFEST_FILE).is_file() {
+            download_registry_package(name, dependency, destination)?;
+        }
+        let installed = load(destination)?;
+        if installed.name != *name || installed.version != dependency.version {
+            return Err(format!(
+                "registry package {name}@{} identifies itself as {}@{}",
+                dependency.version, installed.name, installed.version
+            ));
+        }
+        materialize_dependencies(&installed)?;
+    }
+    Ok(())
+}
+
+fn download_registry_package(
+    name: &str,
+    dependency: &RegistryDependency,
+    destination: &Path,
+) -> Result<(), String> {
+    let archive_url = registry_url(&dependency.registry, name, &dependency.version, "");
+    let checksum_url = registry_url(&dependency.registry, name, &dependency.version, ".sha256");
+    let expected = String::from_utf8(read_registry_object(&checksum_url)?)
+        .map_err(|_| format!("registry checksum for {name} is not UTF-8"))?;
+    let expected = expected.split_whitespace().next().unwrap_or("");
+    let bytes = read_registry_object(&archive_url)?;
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    if actual != expected {
+        return Err(format!(
+            "checksum mismatch for {name}@{}: expected {expected}, got {actual}",
+            dependency.version
+        ));
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| format!("invalid cache path {}", destination.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let temporary = parent.join(format!(".{}-{}.tmp", name, std::process::id()));
+    if temporary.exists() {
+        fs::remove_dir_all(&temporary)
+            .map_err(|error| format!("failed to clear {}: {error}", temporary.display()))?;
+    }
+    fs::create_dir(&temporary)
+        .map_err(|error| format!("failed to create {}: {error}", temporary.display()))?;
+    let mut archive = Archive::new(GzDecoder::new(bytes.as_slice()));
+    archive
+        .unpack(&temporary)
+        .map_err(|error| format!("failed to unpack {archive_url}: {error}"))?;
+    fs::write(
+        temporary.join(".ject-source"),
+        format!("{}\n{actual}\n", dependency.registry),
+    )
+    .map_err(|error| format!("failed to write registry metadata: {error}"))?;
+    fs::rename(&temporary, destination)
+        .map_err(|error| format!("failed to install {}: {error}", destination.display()))
+}
+
 pub fn dependency_projects(project: &Project) -> Result<Vec<Project>, String> {
     fn visit(
         project: &Project,
@@ -340,7 +682,7 @@ pub fn dependency_projects(project: &Project) -> Result<Vec<Project>, String> {
         output: &mut Vec<Project>,
     ) -> Result<(), String> {
         let mut dependencies: Vec<_> = project.dependencies.iter().collect();
-        dependencies.sort_by(|(left, _), (right, _)| left.cmp(right));
+        dependencies.sort_by_key(|(name, _)| *name);
         for (declared_name, root) in dependencies {
             let canonical = root.canonicalize().map_err(|e| {
                 format!("failed to resolve dependency path {}: {e}", root.display())
@@ -715,6 +1057,49 @@ mod tests {
         fs::write(root.join("src/lib.ject"), "export value = 2\n").unwrap();
         assert_ne!(original, package_checksum(&project).unwrap());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn publishes_and_installs_a_checksummed_registry_archive() {
+        let base = std::env::temp_dir().join(format!(
+            "ject-registry-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let source = base.join("source");
+        let registry = base.join("registry");
+        let destination = base.join("cache/demo/0.1.0");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&source).unwrap();
+        let project = init(&source, "demo", true, false).unwrap();
+        fs::create_dir_all(source.join("target")).unwrap();
+        fs::write(source.join("target/ignored"), "build output").unwrap();
+        let registry_url = format!("file://{}", registry.display());
+
+        let checksum = publish(&project, &registry_url, None).unwrap();
+        assert!(registry.join("demo/0.1.0.tar.gz").is_file());
+        let dependency = RegistryDependency {
+            version: "0.1.0".to_string(),
+            registry: registry_url.clone(),
+        };
+        download_registry_package("demo", &dependency, &destination).unwrap();
+        assert!(destination.join("src/lib.ject").is_file());
+        assert!(!destination.join("target").exists());
+        let installed = load(&destination).unwrap();
+        assert_eq!(
+            installed.registry_source.as_ref().unwrap().archive_checksum,
+            checksum
+        );
+        let lock = render_lockfile(&installed, &[]).unwrap();
+        assert!(lock.contains(&format!("source = \"registry+{registry_url}\"")));
+        assert!(lock.contains(&format!("archive-checksum = \"{checksum}\"")));
+        let error = publish(&project, &registry_url, None).unwrap_err();
+        assert!(error.contains("published versions are immutable"));
+
+        fs::write(registry.join("demo/0.1.0.tar.gz.sha256"), "00\n").unwrap();
+        let error = download_registry_package("demo", &dependency, &base.join("bad")).unwrap_err();
+        assert!(error.contains("checksum mismatch"));
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
