@@ -383,8 +383,18 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
         ("E3999", None)
     };
     let mut d = Diagnostic::error(message.into()).with_code(code.into());
-    for frame in lines.filter_map(|line| line.trim().strip_prefix("at ")) {
-        d = d.with_note(format!("at {frame}"));
+    for detail in lines {
+        let detail = detail.trim();
+        if let Some(location) = detail.strip_prefix("-->") {
+            let mut parts = location.trim().split(':');
+            if let (Some(line), Some(column)) = (parts.next(), parts.next()) {
+                if let (Ok(line), Ok(column)) = (line.parse(), column.parse()) {
+                    d = d.with_span(line, column, 1);
+                }
+            }
+        } else if let Some(frame) = detail.strip_prefix("at ") {
+            d = d.with_note(format!("at {frame}"));
+        }
     }
     if let Some(help) = help {
         d = d.with_help(help.into());
@@ -459,5 +469,17 @@ mod tests {
         let rendered = DiagnosticRenderer::plain().render_to_string(&diagnostic, None, None);
         assert!(rendered.contains("= note: at inner"));
         assert!(rendered.contains("= note: at outer"));
+    }
+
+    #[test]
+    fn runtime_locations_render_source_spans() {
+        let diagnostic = runtime_diagnostic("Undefined variable 'x'.\n  --> 2:7\n  at main");
+        let rendered = DiagnosticRenderer::plain().render_to_string(
+            &diagnostic,
+            Some("main.ject"),
+            Some("let x = 1\nprint missing\n"),
+        );
+        assert!(rendered.contains("--> main.ject:2:7"));
+        assert!(rendered.contains("= note: at main"));
     }
 }

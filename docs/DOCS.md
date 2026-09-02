@@ -765,6 +765,11 @@ Every diagnostic consists of a severity, a stable code, a short explanation, and
 when useful, a source label, note, and actionable help. Color is enabled only when
 standard error is a terminal, so redirected output contains no escape sequences.
 
+Runtime diagnostics retain source spans from the positioned AST. The primary marker
+points to the expression that produced the error, including operator expressions
+such as division by zero. When an error crosses named Ject functions, the diagnostic
+also prints the call chain as `at function_name` notes, innermost frame first.
+
 Code families identify the subsystem:
 
 | Range | Meaning |

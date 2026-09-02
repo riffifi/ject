@@ -364,7 +364,7 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `jgui` module
 - [x] Local package manager (`add --path`, `remove`, `install`, lockfiles, native builds)
 - [x] Remote package registries and publishing (immutable HTTP(S) archives)
 - [ ] Performance optimizations (array/dict value semantics still copy-heavy)
-- [ ] AST source spans and runtime stack traces (runtime errors have stable codes and help, but not expression-level locations yet)
+- [x] AST source spans and runtime stack traces
 
 ---
 

@@ -4,6 +4,8 @@ use crate::lexer::Token;
 pub struct Parser {
     tokens: Vec<(Token, crate::lexer::SourcePosition)>,
     current: usize,
+    positioned: bool,
+    expression_depth: usize,
 }
 
 #[derive(Debug)]
@@ -25,7 +27,12 @@ type ParseResult<T> = Result<T, ParseError>;
 
 impl Parser {
     pub fn new(tokens: Vec<(Token, crate::lexer::SourcePosition)>) -> Self {
-        Parser { tokens, current: 0 }
+        Parser {
+            tokens,
+            current: 0,
+            positioned: true,
+            expression_depth: 0,
+        }
     }
 
     pub fn new_simple(tokens: Vec<Token>) -> Self {
@@ -37,6 +44,8 @@ impl Parser {
         Parser {
             tokens: positioned_tokens,
             current: 0,
+            positioned: false,
+            expression_depth: 0,
         }
     }
 
@@ -509,6 +518,7 @@ impl Parser {
 
     fn lhs_expr_to_assign_target(&mut self, expr: Expr) -> ParseResult<crate::ast::AssignTarget> {
         match expr {
+            Expr::Located { expression, .. } => self.lhs_expr_to_assign_target(*expression),
             Expr::Identifier(name) => Ok(crate::ast::AssignTarget::Identifier(name)),
             Expr::Index { .. } => match crate::ast::flatten_index_assignment_lhs(expr) {
                 Some((obj_name, indices)) if indices.len() == 1 => {
@@ -918,7 +928,38 @@ impl Parser {
     }
 
     fn expression(&mut self) -> ParseResult<Expr> {
-        self.or()
+        let outer = self.expression_depth == 0;
+        let start = self
+            .tokens
+            .get(self.current)
+            .map(|(_, position)| position.clone());
+        self.expression_depth += 1;
+        let result = self.or();
+        self.expression_depth -= 1;
+        let end = self
+            .current
+            .checked_sub(1)
+            .and_then(|index| self.tokens.get(index))
+            .map(|(_, position)| position.clone());
+        result.map(|expression| {
+            if outer {
+                if let Some(position) = start.filter(|_| self.positioned) {
+                    let length = end
+                        .filter(|end| end.line == position.line)
+                        .map(|end| end.position.saturating_sub(position.position) + 1)
+                        .unwrap_or(1);
+                    return Expr::Located {
+                        expression: Box::new(expression),
+                        span: crate::diagnostic::SourceSpan::new(
+                            position.line,
+                            position.column,
+                            length,
+                        ),
+                    };
+                }
+            }
+            expression
+        })
     }
 
     fn or(&mut self) -> ParseResult<Expr> {

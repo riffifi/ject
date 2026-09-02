@@ -1182,6 +1182,7 @@ impl Linter {
 
     fn analyze_expr(&mut self, expr: &Expr) {
         match expr {
+            Expr::Located { expression, .. } => self.analyze_expr(expression),
             Expr::Identifier(name) => {
                 // Check if it's a function first, then check if it's a variable
                 // Prefer lexical variable bindings over builtins (e.g. param `min` vs `min()`)

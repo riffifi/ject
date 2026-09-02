@@ -21,6 +21,7 @@ pub fn flatten_index_assignment_lhs(mut expr: Expr) -> Option<(String, Vec<Expr>
     let mut indices = Vec::new();
     loop {
         match expr {
+            Expr::Located { expression, .. } => expr = *expression,
             Expr::Index { object, index } => {
                 indices.push(*index);
                 expr = *object;
@@ -70,6 +71,10 @@ pub fn assign_target_read_expr(target: &AssignTarget) -> Expr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
+    Located {
+        expression: Box<Expr>,
+        span: crate::diagnostic::SourceSpan,
+    },
     Integer(i64),
     Float(f64),
     String(String),
@@ -308,6 +313,7 @@ pub enum Stmt {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Expr::Located { expression, .. } => write!(f, "{expression}"),
             Expr::Integer(n) => write!(f, "{}", n),
             Expr::Float(n) => write!(f, "{}", n),
             Expr::String(s) => write!(f, "\"{}\"", s),

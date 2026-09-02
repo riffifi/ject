@@ -1337,4 +1337,33 @@ print "Program completed successfully!"
         assert!(error.contains("Undefined variable 'missing'"));
         assert!(error.contains("\n  at inner\n  at outer"));
     }
+
+    #[test]
+    fn positioned_ast_attaches_runtime_error_locations() {
+        let source = "let value = 1\nprint missing\n";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let statements = Parser::new(tokens).parse().unwrap();
+        let error = Interpreter::new().interpret(&statements).unwrap_err();
+        assert!(error.message.contains("\n  --> 2:7"));
+    }
+
+    #[test]
+    fn positioned_ast_locates_operator_failures() {
+        let source = "let value = 10 / 0\n";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let statements = Parser::new(tokens).parse().unwrap();
+        let error = Interpreter::new().interpret(&statements).unwrap_err();
+        assert!(error.message.contains("Division by zero"));
+        assert!(error.message.contains("\n  --> 1:13"));
+    }
 }

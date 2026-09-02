@@ -64,6 +64,18 @@ impl RuntimeError {
         self.message.push_str(name);
         self
     }
+
+    fn with_location(mut self, span: crate::diagnostic::SourceSpan) -> Self {
+        if !self
+            .message
+            .lines()
+            .any(|line| line.trim_start().starts_with("-->"))
+        {
+            self.message
+                .push_str(&format!("\n  --> {}:{}", span.line, span.column));
+        }
+        self
+    }
 }
 
 impl fmt::Display for RuntimeError {
@@ -643,6 +655,9 @@ impl Interpreter {
 
     fn evaluate_expression(&mut self, expr: &Expr) -> RuntimeResult<Value> {
         match expr {
+            Expr::Located { expression, span } => self
+                .evaluate_expression(expression)
+                .map_err(|error| error.with_location(*span)),
             Expr::Integer(n) => Ok(Value::Integer(*n)),
             Expr::Float(f) => Ok(Value::Float(*f)),
             Expr::String(s) => Ok(Value::String(s.clone())),

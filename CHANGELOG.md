@@ -6,6 +6,8 @@
 
 - Added exact-version HTTP(S) registries, immutable package publishing, verified
   archives, an offline package cache, and registry provenance in `Ject.lock`.
+- Added positioned AST expressions and named runtime stack frames, so runtime
+  diagnostics point at the failing expression and retain the user call chain.
 
 - Replaced generic output with one Rust-style renderer for parser, linter, runtime,
   command, package, and native failures. Diagnostics use stable subsystem codes,
