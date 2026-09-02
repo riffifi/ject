@@ -84,6 +84,7 @@ impl ModuleGraphError {
     }
 }
 
+#[allow(clippy::result_large_err)]
 impl ModuleGraph {
     pub fn build(entry: &Path) -> Result<Self, ModuleGraphError> {
         let canonical = entry

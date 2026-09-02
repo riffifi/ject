@@ -481,9 +481,9 @@ return 42
 "#,
         );
         // Should have multiple errors
-        assert!(errors.len() > 0);
+        assert!(!errors.is_empty());
         // Should have unused variable warnings
-        assert!(warnings.len() > 0);
+        assert!(!warnings.is_empty());
     }
 
     // ========== Edge Cases ==========

@@ -198,29 +198,34 @@ CLI / project discovery
         -> interpreter
 ```
 
-`NativeRegistry` is a provider for built-in and dynamically discovered ABI modules;
-it contains no package function names. The next structural refactor should wrap all
-source, standard-library, and native resolution in explicit `ModuleProvider` values
-before adding git, registry, or WebAssembly providers.
+`NativeRegistry` provides built-in and dynamically discovered ABI modules and
+contains no package function names. `ModuleResolver` owns source, standard-library,
+and installed-package policy; `ModuleGraph` gives the CLI and LSP one canonical,
+cached view of those resolutions.
 
 ## Security and reproducibility
 
 - Source packages run with the program's normal Ject permissions.
-- Native components receive no filesystem, network, environment, clock, process, or
-  GUI capability unless the package declares it and the application grants it.
-- Lockfile checksums are verified before loading.
-- Native artifacts are keyed by package checksum, ABI version, OS, architecture, and
-  debug/release profile.
-- Installation never executes arbitrary build scripts silently; native builds and
-  requested capabilities are shown explicitly.
+- Native components are trusted in-process code and currently have the same operating-
+  system access as Ject. Archive verification is integrity protection, not a sandbox.
+- Registry archives are SHA-256 verified before extraction; `install --locked`
+  verifies package contents and the complete resolved graph.
+- Registry downloads are immutable and cached. Native artifacts remain target- and
+  profile-specific Cargo outputs inside the installed package.
+- Installing a mixed package invokes Cargo and therefore its build scripts. Review
+  native dependencies before installation.
 
-## Delivery plan
+## Implemented delivery milestones
 
-1. Complete: mixed facades, private native imports, local manifests, path dependencies,
-   Rust SDK, dynamic ABI, generic resources, scaffolding, and native build graphs.
-2. Introduce explicit `ModuleLoader`/`ModuleProvider` types around the now-generic
-   resolution paths.
-3. Add deterministic git/registry resolution and `Ject.lock`.
-4. Add capability declarations/enforcement and callback/event handles.
-5. Add a WebAssembly component provider for portable and untrusted plugins.
-6. Add registry download/publish, checksums, and cache management.
+1. Mixed facades, private native imports, local manifests, path dependencies, Rust
+   SDK, dynamic ABI, generic resources, scaffolding, and native build graphs.
+2. Shared module resolution and cached module graphs across the CLI and LSP.
+3. Deterministic path/registry resolution and content-verified `Ject.lock` files.
+4. Registry download/publish, immutable checksums, provenance, and cache management.
+
+## Post-0.9 research
+
+- Git dependency sources and version-range solving.
+- Capability declarations and sandbox enforcement.
+- Callback/event handles across the native ABI.
+- A WebAssembly component provider for portable, untrusted plugins.

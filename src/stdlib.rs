@@ -1856,7 +1856,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
         }
         "random" => {
-            if args.len() != 0 {
+            if !args.is_empty() {
                 return Err(RuntimeError {
                     message: "random() takes no arguments".to_string(),
                 });
@@ -2401,8 +2401,8 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     let mut chars: Vec<char> = s.chars().collect();
                     if !chars.is_empty() {
                         chars[0] = chars[0].to_uppercase().next().unwrap_or(chars[0]);
-                        for i in 1..chars.len() {
-                            chars[i] = chars[i].to_lowercase().next().unwrap_or(chars[i]);
+                        for character in chars.iter_mut().skip(1) {
+                            *character = character.to_lowercase().next().unwrap_or(*character);
                         }
                     }
                     Ok(Value::String(chars.into_iter().collect()))
@@ -2861,7 +2861,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
         }
         "assert" => {
-            if args.len() < 1 || args.len() > 2 {
+            if args.is_empty() || args.len() > 2 {
                 return Err(RuntimeError {
                     message: "assert() takes 1 or 2 arguments (condition, optional message)"
                         .to_string(),
@@ -3065,7 +3065,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
         }
         "to_array" => {
-            if args.len() < 1 || args.len() > 2 {
+            if args.is_empty() || args.len() > 2 {
                 return Err(RuntimeError {
                     message:
                         "to_array() takes 1 or 2 arguments (collection/string, optional delimiter)"
@@ -3133,7 +3133,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
         }
 
         "input" => {
-            let prompt = if args.len() > 0 {
+            let prompt = if !args.is_empty() {
                 match &args[0] {
                     Value::String(s) => s.clone(),
                     _ => "".to_string(),
@@ -3187,7 +3187,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
         }
 
         "exit" => {
-            let code = if args.len() > 0 {
+            let code = if !args.is_empty() {
                 match &args[0] {
                     Value::Integer(n) => *n as i32,
                     Value::Float(f) => *f as i32,

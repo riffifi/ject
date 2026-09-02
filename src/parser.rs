@@ -1248,10 +1248,8 @@ impl Parser {
             if matches!(self.tokens[pos].0, Token::DotDot) {
                 found_dotdot = true;
             }
-            if matches!(self.tokens[pos].0, Token::Colon) {
-                if !found_dotdot {
-                    found_colon_before_dotdot = true;
-                }
+            if matches!(self.tokens[pos].0, Token::Colon) && !found_dotdot {
+                found_colon_before_dotdot = true;
             }
             pos += 1;
         }
@@ -1553,9 +1551,7 @@ impl Parser {
                 }
 
                 // Accept both |} and } as terminators (}| for consistency, } for empty {|})
-                if self.check(&Token::RightPipeBrace) {
-                    self.advance();
-                } else if self.check(&Token::RightBrace) {
+                if self.check(&Token::RightPipeBrace) || self.check(&Token::RightBrace) {
                     self.advance();
                 } else {
                     return Err(self.error("Expected '|}' after unique array elements".to_string()));

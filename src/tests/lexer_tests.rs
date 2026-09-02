@@ -23,7 +23,8 @@ mod tests {
     #[test]
     fn test_float_literals() {
         let mut lexer = Lexer::new("3.14");
-        assert_eq!(lexer.next_token().token, Token::Float(3.14));
+        let expected = 314.0 / 100.0;
+        assert_eq!(lexer.next_token().token, Token::Float(expected));
 
         let mut lexer = Lexer::new("0.5");
         assert_eq!(lexer.next_token().token, Token::Float(0.5));
@@ -534,7 +535,7 @@ mod tests {
         let mut lexer = Lexer::new("let x = 42");
         let tokens = lexer.tokenize_with_positions();
 
-        assert!(tokens.len() > 0);
+        assert!(!tokens.is_empty());
         assert_eq!(tokens[0].token, Token::Let);
         assert_eq!(tokens[0].position.line, 1);
         assert_eq!(tokens[0].position.column, 1);

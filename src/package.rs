@@ -413,26 +413,18 @@ pub fn package_checksum(project: &Project) -> Result<String, String> {
 }
 
 fn dependency_path(value: &str) -> Option<PathBuf> {
-    if value.starts_with('"') {
-        return Some(PathBuf::from(value.trim_matches('"')));
-    }
-    let path_at = value.find("path")?;
-    let after = &value[path_at + 4..];
-    let quote = after.find('"')?;
-    let rest = &after[quote + 1..];
-    let end = rest.find('"')?;
-    Some(PathBuf::from(&rest[..end]))
+    inline_string(value, "path").map(PathBuf::from)
 }
 
 fn inline_string(value: &str, key: &str) -> Option<String> {
-    let start = value.find(key)? + key.len();
-    let after = &value[start..];
-    let equals = after.find('=')?;
-    let after = &after[equals + 1..];
-    let quote = after.find('"')?;
-    let after = &after[quote + 1..];
-    let end = after.find('"')?;
-    Some(after[..end].to_string())
+    value
+        .trim()
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split(',')
+        .filter_map(|field| field.split_once('='))
+        .find(|(field, _)| field.trim() == key)
+        .map(|(_, value)| value.trim().trim_matches('"').to_string())
 }
 
 fn dependency_version(value: &str) -> Option<String> {
@@ -949,6 +941,19 @@ mod tests {
         assert_eq!(project.native.unwrap().library, "mixed_impl");
         assert_eq!(project.dependencies["helper"], root.join("../helper"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parses_registry_dependencies_by_exact_inline_keys() {
+        assert_eq!(dependency_version("\"1.2.0\""), Some("1.2.0".into()));
+        assert_eq!(dependency_path("\"1.2.0\""), None);
+        let value = "{ version = \"1.2.0\", registry = \"https://example.test/path/packages\" }";
+        assert_eq!(dependency_version(value), Some("1.2.0".into()));
+        assert_eq!(
+            dependency_registry(value),
+            Some("https://example.test/path/packages".into())
+        );
+        assert_eq!(dependency_path(value), None);
     }
 
     #[test]

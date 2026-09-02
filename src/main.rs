@@ -672,6 +672,7 @@ fn package_module_label(project: &package::Project, path: &Path) -> String {
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod module_tree_tests {
     use super::*;
@@ -1010,18 +1011,18 @@ fn execute_source(
             // Only run interpreter if no errors were found
             if !has_errors {
                 match mode {
-                    ExecutionMode::CheckOnly => return true,
+                    ExecutionMode::CheckOnly => true,
                     ExecutionMode::Run => match interpreter.interpret(&statements) {
-                        Ok(_) => return true,
+                        Ok(_) => true,
                         Err(error) => {
                             let runtime_diagnostic = runtime_diagnostic(&error.message);
                             renderer.render(&runtime_diagnostic, filename.as_deref(), Some(source));
-                            return false;
+                            false
                         }
                     },
                 }
             } else {
-                return false;
+                false
             }
         }
         Err(error) => {
@@ -1031,7 +1032,7 @@ fn execute_source(
 
             renderer.render(&parse_diagnostic, filename.as_deref(), Some(source));
 
-            return false;
+            false
         }
     }
 }

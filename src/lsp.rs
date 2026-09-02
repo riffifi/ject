@@ -919,17 +919,19 @@ fn normalize_parameter_list(raw: &str) -> String {
         .join(", ")
 }
 
-fn module_metadata(
-    tokens: &[crate::lexer::LocatedToken],
-    semantic: &crate::semantic::SemanticIndex,
-) -> (
+type ModuleMetadata = (
     HashMap<String, crate::semantic::SymbolId>,
     HashMap<crate::semantic::SymbolId, (String, String)>,
     HashMap<String, String>,
     Vec<String>,
     Vec<String>,
     Vec<(SourceSpan, String)>,
-) {
+);
+
+fn module_metadata(
+    tokens: &[crate::lexer::LocatedToken],
+    semantic: &crate::semantic::SemanticIndex,
+) -> ModuleMetadata {
     let mut exports = HashMap::new();
     let mut selective_imports = HashMap::new();
     let mut module_aliases = HashMap::new();
@@ -1654,7 +1656,7 @@ fn contains(range: Range, position: Position) -> bool {
 fn span_contains(span: SourceSpan, position: Position) -> bool {
     position.line as usize + 1 == span.line
         && position.character as usize + 1 >= span.column
-        && position.character as usize + 1 <= span.column + span.length
+        && (position.character as usize) < span.column + span.length
 }
 
 fn valid_identifier(name: &str) -> bool {

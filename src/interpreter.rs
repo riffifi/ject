@@ -119,6 +119,12 @@ pub struct Interpreter {
     interrupt_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub enum ControlFlow {
     None,
@@ -326,7 +332,7 @@ impl Interpreter {
 
                 match target {
                     crate::ast::AssignTarget::Identifier(name) => {
-                        if self.environment.set(&name, val) {
+                        if self.environment.set(name, val) {
                             Ok(ControlFlow::None)
                         } else {
                             Err(RuntimeError {
@@ -335,11 +341,11 @@ impl Interpreter {
                         }
                     }
                     crate::ast::AssignTarget::Index { object, index } => {
-                        let obj = self.environment.get(&object).ok_or_else(|| RuntimeError {
+                        let obj = self.environment.get(object).ok_or_else(|| RuntimeError {
                             message: format!("Undefined variable '{}'", object),
                         })?;
 
-                        let idx = self.evaluate_expression(&index)?;
+                        let idx = self.evaluate_expression(index)?;
 
                         if let Value::Array(arr) = &obj {
                             if let Value::Integer(i) = idx {
@@ -373,11 +379,11 @@ impl Interpreter {
                         }
                     }
                     crate::ast::AssignTarget::IndexChain { object, indices } => {
-                        self.assign_index_chain(&object, indices.as_slice(), val)?;
+                        self.assign_index_chain(object, indices.as_slice(), val)?;
                         Ok(ControlFlow::None)
                     }
                     crate::ast::AssignTarget::Field { object, field } => {
-                        let obj = self.environment.get(&object).ok_or_else(|| RuntimeError {
+                        let obj = self.environment.get(object).ok_or_else(|| RuntimeError {
                             message: format!("Undefined variable '{}'", object),
                         })?;
 
@@ -391,7 +397,7 @@ impl Interpreter {
                         {
                             fields.insert(field.clone(), val);
                             self.environment.set(
-                                &object,
+                                object,
                                 Value::StructInstance {
                                     struct_name,
                                     fields,

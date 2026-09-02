@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.9.0
+## 0.9.1
 
-### Diagnostics and local installation
+### Packages, runtime diagnostics, and performance
 
 - Added exact-version HTTP(S) registries, immutable package publishing, verified
   archives, an offline package cache, and registry provenance in `Ject.lock`.
@@ -10,6 +10,11 @@
   diagnostics point at the failing expression and retain the user call chain.
 - Moved dictionaries to shared storage, making assignment, argument passing, and
   closure capture constant-time while preserving functional copy-returning helpers.
+- Added strict workspace linting and removed duplicate compiler modules from the CLI.
+
+## 0.9.0
+
+### Diagnostics and local installation
 
 - Replaced generic output with one Rust-style renderer for parser, linter, runtime,
   command, package, and native failures. Diagnostics use stable subsystem codes,

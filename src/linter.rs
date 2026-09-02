@@ -44,6 +44,12 @@ pub struct Linter {
     source_overrides: HashMap<std::path::PathBuf, String>,
 }
 
+impl Default for Linter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Linter {
     fn predeclare_functions(&mut self, statements: &[Stmt]) {
         let mut declared_here = HashSet::new();
@@ -54,12 +60,9 @@ impl Linter {
                 }
                 _ => continue,
             };
-            if self.functions.contains(name) && !declared_here.contains(name) {
-                self.warnings.push(LintWarning {
-                    message: format!("warning: function `{name}` is already defined"),
-                    position: self.find_identifier_position(name),
-                });
-            } else if !declared_here.insert(name.clone()) {
+            if (self.functions.contains(name) && !declared_here.contains(name))
+                || !declared_here.insert(name.clone())
+            {
                 self.warnings.push(LintWarning {
                     message: format!("warning: function `{name}` is already defined"),
                     position: self.find_identifier_position(name),
@@ -823,8 +826,8 @@ impl Linter {
                 // Check if variable exists based on target type
                 match target {
                     crate::ast::AssignTarget::Identifier(name) => {
-                        if !self.use_variable(&name) {
-                            let position = self.find_identifier_position(&name);
+                        if !self.use_variable(name) {
+                            let position = self.find_identifier_position(name);
                             self.errors.push(LintError {
                                 message: format!("cannot assign to undeclared variable `{}`", name),
                                 position,
@@ -833,8 +836,8 @@ impl Linter {
                     }
                     crate::ast::AssignTarget::Index { object, index } => {
                         // Check if the array variable exists
-                        if !self.use_variable(&object) {
-                            let position = self.find_identifier_position(&object);
+                        if !self.use_variable(object) {
+                            let position = self.find_identifier_position(object);
                             self.errors.push(LintError {
                                 message: format!(
                                     "cannot index into undeclared variable `{}`",
@@ -844,7 +847,7 @@ impl Linter {
                             });
                         }
                         // Analyze the index expression
-                        self.analyze_expr(&index);
+                        self.analyze_expr(index);
                     }
                     crate::ast::AssignTarget::IndexChain { object, indices } => {
                         if !self.use_variable(object) {
@@ -863,8 +866,8 @@ impl Linter {
                     }
                     crate::ast::AssignTarget::Field { object, field: _ } => {
                         // Check if the object variable exists
-                        if !self.use_variable(&object) {
-                            let position = self.find_identifier_position(&object);
+                        if !self.use_variable(object) {
+                            let position = self.find_identifier_position(object);
                             self.errors.push(LintError {
                                 message: format!(
                                     "cannot assign field on undeclared variable `{}`",

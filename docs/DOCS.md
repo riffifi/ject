@@ -1311,11 +1311,11 @@ resource.
 
 ### Trust model
 
-Version 0.8 native libraries are in-process dynamic libraries. They are appropriate
+Native libraries are in-process dynamic libraries. They are appropriate
 for trusted local code and have the same operating-system access as Ject itself.
-Capability enforcement, signed registry artifacts, lockfiles, callbacks, and a
-sandboxed WebAssembly provider are future layers. Do not load untrusted native
-packages.
+Registry archives and lockfiles protect integrity and reproducibility, but do not
+sandbox code. Capability enforcement, callbacks, signatures, and a sandboxed
+WebAssembly provider remain post-0.9 research. Do not load untrusted native packages.
 
 ## 17. Command-line reference
 

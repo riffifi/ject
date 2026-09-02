@@ -89,10 +89,7 @@ impl crate::native::NativeObject for NdArray {
     }
 
     fn native_eq(&self, other: &dyn crate::native::NativeObject) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<NdArray>()
-            .map_or(false, |o| self == o)
+        other.as_any().downcast_ref::<NdArray>() == Some(self)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -1134,13 +1131,8 @@ fn np_array(args: Vec<Value>) -> Result<Value, RuntimeError> {
                 .map(|v| match v {
                     Value::Integer(i) => *i as f64,
                     Value::Float(f) => *f,
-                    Value::Bool(b) => {
-                        if *b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
+                    Value::Bool(true) => 1.0,
+                    Value::Bool(false) => 0.0,
                     _ => 0.0,
                 })
                 .collect();
