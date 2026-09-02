@@ -1,0 +1,23 @@
+import "../src/lib" as gui
+
+let changed = fn(event) -> event.value
+let clicked = fn(event) -> event.id
+
+let input = gui.text_input("title", "Title")
+assert(input.value == "", "text input must apply its default value")
+assert(input.on_change == nil, "text input callback must be optional")
+
+let area = gui.multiline("notes", "Notes", "hello", changed)
+assert(area.value == "hello", "multiline initial value must be preserved")
+assert(type_of(area.on_change) == "lambda", "multiline callback must be preserved")
+
+let check = gui.checkbox("done", "Done")
+assert(check.value == false, "checkbox must default to unchecked")
+
+let range = gui.slider("priority", "Priority", 3, 1, 5, changed)
+assert(range.min == 1 and range.max == 5, "slider bounds must be preserved")
+assert(type_of(range.on_change) == "lambda", "slider callback must be preserved")
+
+let button = gui.button("save", "Save", true, clicked)
+assert(button.close == true, "button close behavior must be preserved")
+assert(type_of(button.on_click) == "lambda", "button callback must be preserved")

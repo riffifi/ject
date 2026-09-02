@@ -1,0 +1,57 @@
+# JGUI's public API is ordinary Ject. Rust receives a declarative document only.
+import "@native/jgui" as native
+
+export fn heading(text)
+    return {kind: "heading", text: text}
+end
+
+export fn label(text)
+    return {kind: "label", text: text}
+end
+
+export fn separator()
+    return {kind: "separator"}
+end
+
+export fn text_input(id, label_text, initial = "", on_change = nil)
+    return {kind: "text_input", id: id, label: label_text, value: initial, on_change: on_change}
+end
+
+export fn multiline(id, label_text, initial = "", on_change = nil)
+    return {kind: "multiline", id: id, label: label_text, value: initial, on_change: on_change}
+end
+
+export fn checkbox(id, text, checked = false, on_change = nil)
+    return {kind: "checkbox", id: id, text: text, value: checked, on_change: on_change}
+end
+
+export fn slider(id, text, value = 0, minimum = 0, maximum = 100, on_change = nil)
+    return {kind: "slider", id: id, text: text, value: value, min: minimum, max: maximum, on_change: on_change}
+end
+
+export fn progress(value, text = "")
+    return {kind: "progress", value: value, text: text}
+end
+
+export fn button(id, text, closes_window = false, on_click = nil)
+    return {kind: "button", id: id, text: text, close: closes_window, on_click: on_click}
+end
+
+export fn spacer(points = 8)
+    return {kind: "spacer", value: points}
+end
+
+export fn run(title, widgets, width = 680, height = 560)
+    assert(type_of(title) == "string", "window title must be a string")
+    assert(type_of(widgets) == "array", "widgets must be an array")
+    assert(width > 0 and height > 0, "window dimensions must be positive")
+    return native.run({title: title, width: width, height: height, widgets: widgets})
+end
+
+export fn message(title, text)
+    return run(title, [heading(title), label(text), spacer(), button("ok", "OK", true)], 440, 220)
+end
+
+export fn confirm(title, question)
+    return run(title, [heading(title), label(question), separator(), button("yes", "Yes", true), button("no", "No", true)], 460, 240)
+end

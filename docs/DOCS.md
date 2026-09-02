@@ -1129,41 +1129,42 @@ Provides helpers for constructing and formatting text tables.
 ## 14. JGUI
 
 JGUI is a mixed library. Its public API and convenience dialogs are Ject source;
-the private Rust backend uses egui/eframe for operating-system windows.
+the private Rust backend uses egui/eframe for operating-system windows. Add it to a
+project before importing it:
+
+```bash
+ject add jgui --path packages/jgui
+```
 
 ```ject
 import "jgui" as gui
 
-let app = gui.window("Profile", 560, 380)
-gui.label(app, "Enter your details")
-gui.separator(app)
-gui.input(app, "name", "Name:", "")
-gui.button(app, "save", "Save")
-
-let result = gui.run(app)
-print result["buttons"]
-print result["inputs"]
+let widgets = [
+    gui.heading("Profile"),
+    gui.text_input("name", "Name", ""),
+    gui.button("save", "Save", true)
+]
+let result = gui.run("Profile", widgets, 560, 380)
+print result.values
 ```
 
 ### JGUI functions
 
 | Function | Purpose |
 |---|---|
-| `window(title, width=640, height=480)` | Create a native window resource |
-| `label(app, text)` | Add text |
-| `separator(app)` | Add a visual separator |
-| `button(app, id, text)` | Add a button |
-| `input(app, id, label, initial="")` | Add a single-line input |
-| `run(app)` | Run until the window closes and return results |
-| `message(title, text, width=420, height=180)` | Display a message dialog |
-| `confirm(title, question, width=420, height=200)` | Display yes/no buttons |
+| `heading(text)`, `label(text)`, `separator()` | Create display widgets |
+| `text_input(id, label, initial="", on_change=nil)` | Create a single-line input |
+| `multiline(id, label, initial="", on_change=nil)` | Create a multiline input |
+| `checkbox(id, text, checked=false, on_change=nil)` | Create a checkbox |
+| `slider(id, text, value=0, minimum=0, maximum=100, on_change=nil)` | Create a slider |
+| `button(id, text, closes_window=false, on_click=nil)` | Create a button |
+| `progress(value, text="")`, `spacer(points=8)` | Create layout/status widgets |
+| `run(title, widgets, width=680, height=560)` | Run a document and return its state |
+| `message(title, text)`, `confirm(title, question)` | Convenience dialogs |
 
-A window has runtime type `jgui_window`. It is a generic native resource, not an
-integer ID. Application code cannot import `@native/jgui`; only the public JGUI
-facade may access that implementation module.
-
-The bundled compatibility API above uses a blocking, declarative window lifecycle.
-The installable JGUI package uses the newer document API: `heading`, `label`,
+Application code cannot import `@native/jgui`; only the public JGUI facade may
+access that implementation module. The package uses a blocking, declarative window
+lifecycle with the document API: `heading`, `label`,
 `text_input`, `multiline`, `checkbox`, `slider`, `progress`, `button`, and `run`.
 Its input widgets accept an optional `on_change` callback and buttons accept an
 optional `on_click` callback. Rust invokes these callbacks synchronously through ABI
@@ -1174,7 +1175,8 @@ rendering and operating-system integration.
 
 ## 15. JNUM
 
-JNUM is Ject's native numerical-array library:
+JNUM is Ject's native numerical-array package. Declare it in `Ject.toml` with
+`ject add jnum ...` before importing it:
 
 ```ject
 import "jnum" as numbers
@@ -1184,8 +1186,8 @@ print numbers.mean(data)
 print numbers.shape(data)
 ```
 
-Its public Ject facade provides defaults and convenience wrappers. Rust and ndarray
-own numerical storage and kernels. Array values have runtime type `ndarray`.
+Its public Ject facade provides defaults and convenience wrappers. Rust owns
+numerical storage and kernels. Array values have runtime type `ndarray`.
 
 ### Creation
 

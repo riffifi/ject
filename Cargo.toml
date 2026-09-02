@@ -2,7 +2,7 @@
 name = "ject"
 version = "0.9.1"
 edition = "2021"
-description = "A general-purpose scripting language: readable syntax, native numeric arrays, and a native JGUI module, all in one binary."
+description = "A general-purpose scripting language with readable syntax and a mixed Ject/Rust package system."
 license = "MIT"
 repository = "https://github.com/riffifi/ject"
 readme = "README.md"
@@ -27,9 +27,6 @@ flate2 = "1.0"
 tar = "0.4"
 ureq = "2.12"
 colored = "2.0"
-ndarray = "0.15"
-rand = "0.8"
-eframe = "0.34.2"
 ject-native = { path = "crates/ject-native" }
 libloading = "0.8"
 tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread", "sync"] }

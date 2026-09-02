@@ -2,7 +2,7 @@
 //!
 //! Before this module, the interpreter had numeric and GUI modules special-cased directly:
 //! `Value::NdArray(NdArray)` was a hardcoded variant in the core `Value` enum,
-//! `is_native_only_module()` hardcoded `"base" | "jgui" | "jnum"`, and function
+//! `is_native_only_module()` hardcoded module names, and function
 //! dispatch sniffed a `"np_"`/`"gui_"` prefix on the function name string to decide
 //! which Rust backend to call. None of that generalizes to a third native
 //! extension without editing the interpreter itself.
@@ -142,15 +142,6 @@ impl NativeRegistry {
         }
     }
 
-    fn register(&mut self, module: Box<dyn NativeModule>) -> Result<(), String> {
-        let name = module.name().to_string();
-        if self.modules.contains_key(&name) {
-            return Err(format!("native module '{name}' is already registered"));
-        }
-        self.modules.insert(name, module);
-        Ok(())
-    }
-
     fn replace(&mut self, module: Box<dyn NativeModule>) {
         self.modules.insert(module.name().to_string(), module);
     }
@@ -167,16 +158,7 @@ impl NativeRegistry {
 fn native_registry() -> &'static std::sync::RwLock<NativeRegistry> {
     static REGISTRY: std::sync::OnceLock<std::sync::RwLock<NativeRegistry>> =
         std::sync::OnceLock::new();
-    REGISTRY.get_or_init(|| {
-        let mut registry = NativeRegistry::new();
-        registry
-            .register(Box::new(crate::jnum::JnumModule))
-            .expect("unique built-in module");
-        registry
-            .register(Box::new(crate::jgui::JguiModule))
-            .expect("unique built-in module");
-        std::sync::RwLock::new(registry)
-    })
+    REGISTRY.get_or_init(|| std::sync::RwLock::new(NativeRegistry::new()))
 }
 
 pub fn module_exports(name: &str) -> Option<HashMap<String, Value>> {

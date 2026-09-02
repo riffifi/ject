@@ -330,7 +330,7 @@ let output = exec("ls")
 let home = env("HOME")
 ```
 
-The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `jgui` modules extend this further. See [DOCS.md](DOCS.md) for the full reference.
+The `math`, `string`, `array`, `io`, `json`, `color`, and `table` modules extend this further. JGUI and JNUM are installable mixed packages. See [DOCS.md](DOCS.md) for the full reference.
 
 ---
 
@@ -348,7 +348,7 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `jgui` module
 - `try`/`catch`/`throw` error handling (throw any value, not just strings)
 - Built-in math, string, array, I/O, JSON
 - NumPy-like numerical arrays (Rust-backed)
-- Native JGUI module
+- Versioned JGUI and JNUM packages with private Rust backends
 - ANSI colors and table formatting (`color`, `table` -- pure Ject, no native code)
 - Smarter REPL: auto-prints expression results, multi-line input for unfinished blocks, Ctrl+C interrupts a running script (not just line input)
 

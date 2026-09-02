@@ -1,0 +1,20 @@
+import "../src/lib" as numbers
+
+let values = numbers.arange(1, 6)
+assert(numbers.shape(values) == [5], "arange shape")
+assert(numbers.to_array(values) == [1.0, 2.0, 3.0, 4.0, 5.0], "arange values")
+assert(numbers.sum(values) == 15.0, "sum")
+assert(numbers.mean(values) == 3.0, "mean")
+
+let matrix = numbers.reshape(values, [1, 5])
+assert(numbers.shape(matrix) == [1, 5], "reshape")
+assert(numbers.shape(numbers.transpose(matrix)) == [5, 1], "transpose")
+
+let roots = numbers.sqrt(numbers.array([1, 4, 9]))
+assert(numbers.to_array(roots) == [1.0, 2.0, 3.0], "elementwise square root")
+assert(numbers.to_array(numbers.sort(numbers.array([3, 1, 2]))) == [1.0, 2.0, 3.0], "sort")
+
+let product = numbers.matmul(numbers.array([[1, 2], [3, 4]]), numbers.eye(2))
+assert(numbers.to_array(product) == [1.0, 2.0, 3.0, 4.0], "matrix multiplication")
+assert(numbers.INF > 1000000, "infinity crosses the native ABI")
+assert(numbers.NAN != numbers.NAN, "NaN crosses the native ABI")

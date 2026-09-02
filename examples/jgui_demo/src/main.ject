@@ -1,0 +1,12 @@
+import "jgui" as gui
+
+let widgets = [
+    gui.heading("JGUI Demo"),
+    gui.label("This window comes from an ordinary mixed package."),
+    gui.separator(),
+    gui.text_input("name", "Name", "Ject"),
+    gui.button("close", "Close", true)
+]
+
+let result = gui.run("JGUI Demo", widgets)
+print result.values

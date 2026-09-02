@@ -2915,7 +2915,9 @@ mod tests {
     #[test]
     fn workspace_scan_ignores_build_outputs() {
         let files = collect_ject_files(Path::new(env!("CARGO_MANIFEST_DIR")));
-        assert!(files.iter().any(|path| path.ends_with("stdlib/jnum.ject")));
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with("packages/jnum/src/lib.ject")));
         assert!(!files
             .iter()
             .any(|path| path.components().any(|part| part.as_os_str() == "target")));

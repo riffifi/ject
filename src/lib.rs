@@ -1,8 +1,6 @@
 pub mod ast;
 pub mod diagnostic;
 pub mod interpreter;
-pub mod jgui;
-pub mod jnum;
 pub mod lexer;
 pub mod linter;
 pub mod module_graph;

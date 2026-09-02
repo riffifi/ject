@@ -34,6 +34,9 @@
 - Native package scaffolding now vendors `ject-native` and uses a package-relative
   Cargo dependency, making published mixed libraries independent of the author's
   Ject checkout.
+- Removed the bundled JGUI/JNUM backends and their hardcoded registry entries.
+  Both libraries now live under `packages/`, require normal dependency declarations,
+  and no longer add eframe, ndarray, or rand to the interpreter binary.
 
 ## 0.9.0
 

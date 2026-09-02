@@ -1,66 +1,56 @@
-# Ject packages and native extensions
+# Making packages and libraries in Ject
 
-## Implemented in Ject 0.9
+Ject packages are a simple way to split a project into reusable pieces. A package can be:
 
-The local mixed-package workflow is operational:
+- a plain Ject library with no Rust toolchain
+- a mixed library where Ject exposes the public API and Rust handles the low-level work
+- an application that depends on other packages
 
-- `ject new <name> --native` scaffolds the Ject and Rust sides.
-- `ject build` invokes Cargo for the package and native path dependencies.
-- `ject run`, `check`, and `test` load the built platform artifacts.
-- Path dependencies use `name = { path = "../name" }`.
-- Git dependencies are cached and pinned to exact commits in the manifest and lockfile.
-- `ject add <name> --path <path>` validates and records a local dependency.
-- `ject remove <name>` removes it, and `ject install` resolves the complete local
-  graph, writes a deterministic `Ject.lock`, and builds all native components.
-- `ject install --locked` verifies the exact graph and package checksums without
-  changing the lockfile, making drift a hard error in CI.
-- Public package source imports its backend as `@native/<package-name>`.
-- The `ject-native-1` ABI discovers functions and transports ordinary values plus
-  opaque typed resources with plugin-owned destruction.
+The important idea is that the package system stays out of the way. You usually write normal Ject code, add a manifest, and let `ject` handle dependency resolution and builds.
 
-Path, registry, and Git dependencies, authenticated publishing, checksum-verified
-archives, and synchronous native callbacks are implemented. Capability enforcement
-and sandboxed providers are later layers and do not change imports.
+## A package is just a folder with a manifest
 
-This document defines the target architecture for the package system. The package
-manager is part of the `ject` executable; it is not a second tool.
-
-`Ject.toml` is parsed as standard TOML. Invalid field types, misspelled dependency
-fields, conflicting dependency sources, and selected versions outside their saved
-requirements are errors. Package commands preserve unrelated formatting and comments.
-
-## Goals
-
-- A normal library is Ject source and needs no Rust toolchain.
-- A mixed library presents one Ject API while hiding its native implementation.
-- Installing a third-party native library never requires editing or rebuilding Ject.
-- Resolution is reproducible from a lockfile and safe by default.
-- Built-in modules (`jnum` and `jgui`) use the same runtime call boundary as installed
-  native modules, even though they ship with the interpreter.
-
-## Project layout
+The smallest package looks like this:
 
 ```text
 my_app/
   Ject.toml
-  Ject.lock
-  src/main.ject
-  tests/*.ject
+  src/
+    main.ject
 ```
 
-A library uses `src/lib.ject`. A mixed library additionally contains a native
-component, initially Rust:
+A library looks like this:
+
+```text
+my_lib/
+  Ject.toml
+  src/
+    lib.ject
+```
+
+A mixed library has a native part too:
 
 ```text
 image_filters/
   Ject.toml
-  src/lib.ject          # public Ject facade
-  native/Cargo.toml
-  native/src/lib.rs     # private native implementation
-  native/ject-native/   # vendored stable ABI SDK
+  src/
+    lib.ject
+  native/
+    Cargo.toml
+    src/
+      lib.rs
 ```
 
-Example manifest:
+This is the usual layout:
+
+- `Ject.toml` describes the package
+- `src/main.ject` is the app entry point
+- `src/lib.ject` is the library entry point
+- `native` is optional and used for Rust-backed functionality
+
+## The manifest
+
+`Ject.toml` is the package file. It tells Ject the package name, version, and dependencies.
 
 ```toml
 [package]
@@ -78,188 +68,251 @@ abi = "ject-native-1"
 library = "image_filters"
 ```
 
-The manifest records requested versions. The version 2 `Ject.lock` records exact
-versions, canonical sources, SHA-256 checksums, and whether a package has a native
-component. Applications commit the lockfile; published libraries normally do not.
-Build output and VCS metadata are excluded from the checksum.
+That is enough to describe a normal package or a mixed package. The key pieces are:
 
-## Commands
+- `[package]` gives the package identity
+- `[dependencies]` lists other packages it uses
+- `[native]` tells Ject that this package has a native implementation
 
-The intended command surface is:
+Keep the manifest clear and explicit. Avoid adding unrelated fields or using shortcut names that are easy to mistype.
+
+## Creating a new package
+
+The usual flow is:
 
 ```text
-ject new <name> [--lib]
-ject init [--lib]
-ject run [-- <args>]
-ject check
-ject test
-ject add <package> --path <directory>
-ject add <package> --version <version-requirement> [--registry <url>]
-ject add <package> --git <url> [--rev <commit> | --branch <name> | --tag <tag>]
-ject remove <package>
-ject install
-ject install --locked
-ject update [package]
-ject build [--release]
-ject publish [--registry <url>]
+ject new my_app
 ```
 
-The existing `ject file.ject`, `--check`, and `--test` forms remain valid. Registry
-requirements use SemVer syntax such as `1.2.3`, `^1.2`, `~1.4`, or `>=1, <2`.
-Manifests retain both the requirement and selected exact version. Normal installation
-uses that selection; `ject update [package]` queries the index and refreshes it.
-Git dependencies always record a full commit ID. HEAD and branch dependencies advance
-with `ject update`; an explicit `--rev` remains pinned. Tags are re-resolved on update,
-although moving a published tag is discouraged.
+For a library:
 
-### Registry protocol
+```text
+ject new my_lib --lib
+```
 
-A registry is an HTTP(S) base URL. Each package has a sorted `index.json` version
-list. Releases are immutable gzip-compressed tar archives at
-`<base>/<name>/<version>.tar.gz`; the adjacent `.tar.gz.sha256` object contains the
-archive digest. Publishing uses conditional HTTP PUT and optionally
-sends `JECT_REGISTRY_TOKEN` as a bearer token. `JECT_REGISTRY` selects the default
-base URL. A `file://` base implements the same layout for private or local registries.
+For a mixed package with native Rust support:
 
-Published archives exclude `.git`, `target`, `Ject.lock`, and Ject's internal source
-metadata. Installation verifies the archive before extraction, records provenance in
-the cache, and revalidates extracted contents whenever the package is loaded. Normal
-execution uses that cache without downloading during imports. Published versions
-cannot be overwritten.
+```text
+ject new image_filters --native
+```
 
-Mixed packages must publish `native/Cargo.lock`; registry-native builds always pass
-`--locked` to Cargo. Path-native packages may generate or update their Cargo lockfile,
-so `ject install` records the final package checksum after native builds finish.
+This creates the basic structure and wiring. You can then edit the generated files and start adding your code.
 
-### Installing a local library
+## Writing a normal library
 
-From the application package:
+A source-only library is the easiest kind to make. It has no Rust component and no native build step.
+
+```text
+// src/lib.ject
+pub fn greet(name) {
+  return "hello, " + name
+}
+```
+
+Then another project can import it by name:
+
+```text
+import "image_filters"
+
+print(image_filters.greet("world"))
+```
+
+A package should expose a small, stable public API. Keep the implementation details in private modules if needed.
+
+## Importing modules and packages
+
+Ject has a few simple rules:
+
+- `import "./x"` or `import "../x"` resolves relative to the current file
+- `import "foo"` looks for package `foo` first
+- `import "foo/bar"` imports a module inside that package
+
+That means your package can be structured cleanly without leaking implementation details.
+
+```text
+src/
+  lib.ject
+  math.ject
+```
+
+Inside `lib.ject` you might do:
+
+```text
+import "./math"
+
+pub fn add(a, b) {
+  return math.sum(a, b)
+}
+```
+
+In a package, only files and modules that are meant to be public should be exposed. The rest stays internal.
+
+## Local dependencies
+
+If you are working on a package locally, add it like this:
 
 ```text
 ject add image_filters --path ../image_filters
+```
+
+That records the dependency in the manifest and refreshes the lockfile. Then run:
+
+```text
 ject install
+```
+
+This resolves the dependency graph, downloads or prepares what is needed, and builds any native pieces.
+
+A local dependency is often the easiest way to develop multiple packages together. It keeps the workflow fast while still keeping the dependency graph clean.
+
+## Git and registry dependencies
+
+Packages can also come from:
+
+- a local path
+- a Git repository
+- a registry
+
+Example registry dependency:
+
+```toml
+[dependencies]
+colors = { version = "2.4.0", requirement = "^2.1", registry = "https://packages.ject.dev" }
+```
+
+Git dependencies are pinned to a specific commit, so the exact source is reproducible.
+
+```text
+ject add my_dep --git https://github.com/example/my_dep --rev <commit>
+```
+
+This is especially useful when you want a known-good version rather than moving targets.
+
+## Mixed Ject/Rust libraries
+
+A mixed library keeps the public Ject API in `src/lib.ject` and hides the Rust implementation in `native/src/lib.rs`.
+
+The Ject side should be the stable interface. It validates inputs, provides friendly helpers, and exposes a clean API.
+
+```text
+// src/lib.ject
+pub fn blur(image, radius) {
+  if radius < 0 {
+    error("radius must be >= 0")
+  }
+  return @native/image_filters.blur(image, radius)
+}
+```
+
+The Rust side is private and only does the heavy lifting. It is not the public API contract. This keeps the native code isolated and makes compatibility easier to manage.
+
+A good rule is:
+
+- Ject handles user-facing behavior
+- native code handles the engine or OS integration
+- the boundary is small and controlled
+
+## How native code is loaded
+
+Mixed packages declare their native configuration in the manifest:
+
+```toml
+[native]
+language = "rust"
+path = "native"
+abi = "ject-native-1"
+library = "image_filters"
+```
+
+This tells Ject how to find and build the Rust component. When the package is installed or built, Ject runs Cargo for the native part and loads the resulting artifact.
+
+This makes mixed packages feel like regular packages to users. They just import the package and use it, without manually editing Ject internals or rebuilding the interpreter.
+
+## Lockfiles and reproducibility
+
+`Ject.lock` records the exact versions and sources used for a project. This is important because it makes builds reproducible.
+
+You should commit `Ject.lock` for applications. For libraries, it is typically not required to publish, but it helps for testing and verification.
+
+`ject install --locked` is useful in CI or release scripts because it refuses to continue if the dependency graph has drifted. It makes sure the environment matches the expected package set exactly.
+
+## Publishing a package
+
+When a package is ready, publish it to a registry:
+
+```text
+ject publish --registry https://packages.ject.dev
+```
+
+The registry stores immutable package versions and checksums. That means published versions cannot be silently replaced.
+
+This helps avoid "works on my machine" problems and gives consumers a stable package source.
+
+## Good package design
+
+A package is easier to maintain when you follow a few rules:
+
+- keep the public API small and clear
+- hide implementation details behind a stable facade
+- avoid package-specific names in the interpreter itself
+- prefer one package per concern
+- make native boundaries narrow
+- keep imports explicit and predictable
+
+For example, rather than building one huge package with everything in it, split things into:
+
+- a math package
+- a file I/O package
+- a GUI package
+- a native image-processing package
+
+This keeps code easier to test and reuse.
+
+## Practical workflow
+
+A common development cycle looks like this:
+
+```text
+# create app
+ject new my_app
+
+# add a dependency from a local folder
+ject add image_filters --path ../image_filters
+
+# install and resolve deps
+ject install
+
+# run the app
 ject run
 ```
 
-`add` checks that the target has a valid `Ject.toml` and that its declared package
-name is exactly the requested import name. It updates `[dependencies]` and refreshes
-`Ject.lock`. `install` resolves transitive dependencies and builds Rust components;
-source-only libraries do not require Cargo. `install --locked` performs the same
-native build only after the lockfile matches all manifests and package contents.
-Commit `Ject.lock` for applications.
-
-## Import and resolution rules
-
-- `import "./x"` and `import "../x"` resolve relative to the importing file.
-- `import "foo"` first resolves package `foo`, then the standard library.
-- `import "foo/bar"` resolves an exported module inside package `foo`.
-- Package source is immutable in a global content-addressed cache. A project-local
-  lockfile selects the exact cached package.
-- A package may only expose paths declared in its manifest. Native implementation
-  modules are private unless explicitly exported.
-
-The package resolver must be separate from the interpreter. It produces a module
-graph (canonical package ID plus canonical source/native location); the interpreter
-only loads that graph. This removes filesystem and built-in-name policy from
-`Interpreter::load_module`.
-
-## Regular libraries
-
-A source-only library exports values from `src/lib.ject`. Its dependencies are
-resolved before execution. The module is evaluated once per interpreter and its
-exports are cached by canonical package ID, not by the spelling of an import.
-
-## Mixed Ject/native libraries
-
-The public entry point is still `src/lib.ject`. It imports a private native module,
-validates or reshapes friendly Ject values, and exports the stable public API. This
-keeps native code small and allows most compatibility changes in Ject source.
-
-Native code must not expose Rust trait objects or Rust-owned layouts across a dynamic
-library boundary: Rust has no stable ABI. The implemented boundary is the versioned
-`ject-native-1`/`ject-native-2` C descriptor ABI. It uses serialized values and opaque handles, never
-`Value`, `String`, `Vec`, or `dyn Trait` directly. A future WebAssembly component
-provider can offer isolation and portable artifacts without changing public facades.
-
-The value interface supports nil, bool, integer, float, UTF-8 string,
-arrays, dictionaries, errors, and opaque resource handles. Native resources carry
-the owning module ID, type name, and handle. Calls on a resource are always routed
-back to its owner, so the core `Value` enum stays independent of `jnum`, `jgui`, and
-future plugins.
-
-ABI v2 additionally transports Ject functions, module functions, lambdas, and builtins
-as scoped callback handles. Rust invokes one with `ject_native::invoke_callback`; the
-handle is valid synchronously on the calling thread and callback failures return as
-ordinary native errors. ABI v1 libraries continue to load unchanged.
-
-### Bundled libraries migrating to packages
-
-JGUI and JNUM should follow the same rule as third-party mixed libraries. Their
-user-facing constructors, validation, defaults, and convenience operations belong
-in `src/lib.ject`. Only rendering and operating-system integration for JGUI, and
-array storage and numerical kernels for JNUM, belong in Rust.
-
-An explicitly installed native package may replace a bundled compatibility backend
-with the same module name. This allows JGUI and JNUM to be upgraded as packages
-without rebuilding the Ject executable. The standalone JGUI proof at
-`/home/leo/dev/ject/packages/jgui` uses a deliberately small native boundary: Ject
-builds a declarative widget document and Rust exports only `run(document)`. Widget
-callbacks cross that single boundary as scoped ABI v2 handles; `on_change` and
-`on_click` receive event dictionaries while the window is running.
-
-The bundled backends remain temporarily for scripts that declare no dependencies.
-The standalone JNUM package at `/home/leo/dev/ject/packages/jnum` now follows the
-same mechanism. Arrays are plugin-owned opaque resources, so ordinary operations do
-not serialize their contents on every call; `to_array` performs an explicit copy
-when Ject code needs the values.
-
-## Runtime architecture
+For a library you might do:
 
 ```text
-CLI / project discovery
-        -> dependency resolver + Ject.lock
-        -> module graph
-        -> module loader
-             -> Ject source module
-             -> native component host
-        -> interpreter
+ject new my_lib --lib
+# write src/lib.ject
+ject build
 ```
 
-`NativeRegistry` provides built-in and dynamically discovered ABI modules and
-contains no package function names. `ModuleResolver` owns source, standard-library,
-and installed-package policy; `ModuleGraph` gives the CLI and LSP one canonical,
-cached view of those resolutions.
+For a mixed library:
 
-## Security and reproducibility
+```text
+ject new my_native_lib --native
+# implement public Ject API in src/lib.ject
+# implement private Rust logic in native/src/lib.rs
+ject build
+ject test
+```
 
-- Source packages run with the program's normal Ject permissions.
-- Native components are trusted in-process code and currently have the same operating-
-  system access as Ject. Archive verification is integrity protection, not a sandbox.
-- Registry archives are SHA-256 verified before extraction; `install --locked`
-  verifies package contents and the complete resolved graph.
-- Registry downloads are immutable and cached. Native artifacts remain target- and
-  profile-specific Cargo outputs inside the installed package.
-- Git checkouts are detached, stripped of repository metadata, content-verified, and
-  identified as `git+<url>#<commit>` in `Ject.lock`.
-- Installing a mixed package invokes Cargo and therefore its build scripts. Review
-  native dependencies before installation.
-- Newly scaffolded mixed packages vendor the small ABI SDK and reference it through
-  a relative Cargo path, so registry and Git installations never depend on the
-  publisher's filesystem layout.
+## Tips
 
-## Implemented delivery milestones
+- Start with a source-only package if you can.
+- Add native code only when you truly need it.
+- Keep Ject code as the public surface.
+- Version packages clearly.
+- Commit lockfiles for applications.
+- Validate dependency paths and package names when adding local packages.
 
-1. Mixed facades, private native imports, local manifests, path dependencies, Rust
-   SDK, dynamic ABI, generic resources, scaffolding, and native build graphs.
-2. Shared module resolution and cached module graphs across the CLI and LSP.
-3. Deterministic path/registry resolution and content-verified `Ject.lock` files.
-4. Registry download/publish, immutable checksums, provenance, and cache management.
-5. SemVer selection and updates, plus commit-pinned Git dependencies.
-6. Backward-compatible ABI v2 callback handles and manifest ABI verification.
-7. Self-contained native package scaffolding with a vendored ABI SDK, verified by
-   publishing JGUI and JNUM and rebuilding both from immutable registry archives.
+## In one sentence
 
-## Post-0.9 research
-
-- Capability declarations and sandbox enforcement.
-- A WebAssembly component provider for portable, untrusted plugins.
+A Ject package is simply a well-defined unit of code and metadata that can be installed, shared, and reused without exposing the rest of the system to its internals.

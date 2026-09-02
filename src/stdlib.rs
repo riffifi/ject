@@ -846,8 +846,6 @@ pub fn embedded_stdlib_module_source(name: &str) -> Option<&'static str> {
         "datetime" => Some(include_str!("../stdlib/datetime.ject")),
         "util" => Some(include_str!("../stdlib/util.ject")),
         "collections" => Some(include_str!("../stdlib/collections.ject")),
-        "jgui" => Some(include_str!("../stdlib/jgui.ject")),
-        "jnum" => Some(include_str!("../stdlib/jnum.ject")),
         "color" => Some(include_str!("../stdlib/color.ject")),
         "table" => Some(include_str!("../stdlib/table.ject")),
         _ => None,
@@ -859,7 +857,7 @@ pub fn introspect_native_kernel_json() -> String {
     let mut corlib_names: Vec<String> = create_corlib().keys().cloned().collect();
     corlib_names.sort();
 
-    let native_modules = vec!["base", "jgui", "jnum"];
+    let native_modules = vec!["base"];
     let inject_module_stems = vec![
         "array",
         "collections",
@@ -3341,29 +3339,6 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
                 serde_json::Value::String(msg.clone()),
             );
             Ok(serde_json::Value::Object(json_obj))
-        }
-        Value::Native(_) if crate::jnum::as_ndarray(ject_value).is_some() => {
-            let arr = crate::jnum::as_ndarray(ject_value).unwrap();
-            // Convert ndarray to JSON array
-            let data = match arr {
-                crate::jnum::NdArray::F64(a) => a
-                    .iter()
-                    .map(|&x| {
-                        serde_json::Number::from_f64(x).unwrap_or(serde_json::Number::from(0))
-                    })
-                    .collect::<Vec<_>>(),
-                crate::jnum::NdArray::I64(a) => a
-                    .iter()
-                    .map(|&x| serde_json::Number::from(x))
-                    .collect::<Vec<_>>(),
-                crate::jnum::NdArray::Bool(a) => a
-                    .iter()
-                    .map(|&x| serde_json::Number::from(if x { 1 } else { 0 }))
-                    .collect::<Vec<_>>(),
-            };
-            Ok(serde_json::Value::Array(
-                data.into_iter().map(serde_json::Value::Number).collect(),
-            ))
         }
         Value::Native(_) | Value::NativeFunction { .. } => Err(RuntimeError {
             message: "Cannot convert this native value to JSON".to_string(),

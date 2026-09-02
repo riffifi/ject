@@ -1,0 +1,94 @@
+# JNUM's public API is ordinary Ject. Rust owns only numerical resources and kernels.
+import "@native/jnum" as native
+
+export PI = 3.141592653589793
+export E = 2.718281828459045
+export INF = native.inf()
+export NAN = native.nan()
+
+export fn array(data) return native.array(data) end
+export fn zeros(shape) return native.zeros(shape) end
+export fn ones(shape) return native.ones(shape) end
+
+export fn arange(start, stop = nil, step = nil)
+    if stop == nil then return native.arange(0, start, 1) end
+    if step == nil then return native.arange(start, stop, 1) end
+    return native.arange(start, stop, step)
+end
+
+export fn linspace(start, stop, count = 50) return native.linspace(start, stop, count) end
+export fn eye(rows, columns = nil)
+    if columns == nil then return native.eye(rows, rows) end
+    return native.eye(rows, columns)
+end
+export fn identity(size) return native.eye(size, size) end
+
+export fn shape(value) return native.shape(value) end
+export fn ndim(value) return native.ndim(value) end
+export fn size(value) return native.size(value) end
+export fn dtype(value) return native.dtype(value) end
+export fn to_array(value) return native.to_array(value) end
+
+export fn reshape(value, shape) return native.reshape(value, shape) end
+export fn flatten(value) return native.flatten(value) end
+export fn transpose(value) return native.transpose(value) end
+export fn concatenate(values) return native.concatenate(values) end
+export fn stack(values) return native.stack(values) end
+
+export fn sqrt(value) return native.sqrt(value) end
+export fn exp(value) return native.exp(value) end
+export fn log(value) return native.log(value) end
+export fn log10(value) return native.log10(value) end
+export fn abs(value) return native.abs(value) end
+export fn ceil(value) return native.ceil(value) end
+export fn floor(value) return native.floor(value) end
+export fn round(value) return native.round(value) end
+export fn clip(value, minimum, maximum) return native.clip(value, minimum, maximum) end
+
+export fn sin(value) return native.sin(value) end
+export fn cos(value) return native.cos(value) end
+export fn tan(value) return native.tan(value) end
+export fn arcsin(value) return native.arcsin(value) end
+export fn arccos(value) return native.arccos(value) end
+export fn arctan(value) return native.arctan(value) end
+export fn arctan2(y, x) return native.arctan2(y, x) end
+export fn degrees(value) return native.degrees(value) end
+export fn radians(value) return native.radians(value) end
+export fn sinh(value) return native.sinh(value) end
+export fn cosh(value) return native.cosh(value) end
+export fn tanh(value) return native.tanh(value) end
+
+export fn sum(value) return native.sum(value) end
+export fn mean(value) return native.mean(value) end
+export fn std(value) return native.std(value) end
+export fn var(value) return native.var(value) end
+export fn min(value) return native.min(value) end
+export fn max(value) return native.max(value) end
+export fn argmin(value) return native.argmin(value) end
+export fn argmax(value) return native.argmax(value) end
+export fn cumsum(value) return native.cumsum(value) end
+export fn any(value) return native.any(value) end
+export fn all(value) return native.all(value) end
+
+export fn dot(left, right) return native.dot(left, right) end
+export fn inner(left, right) return native.dot(left, right) end
+export fn outer(left, right) return native.outer(left, right) end
+export fn matmul(left, right) return native.matmul(left, right) end
+export fn trace(value) return native.trace(value) end
+export fn diag(value) return native.diag(value) end
+
+export fn sort(value) return native.sort(value) end
+export fn argsort(value) return native.argsort(value) end
+export fn where_cond(condition, yes, no) return native.where(condition, yes, no) end
+export fn unique(value) return native.unique(value) end
+export fn logical_and(left, right) return native.logical_and(left, right) end
+export fn logical_or(left, right) return native.logical_or(left, right) end
+export fn logical_not(value) return native.logical_not(value) end
+export fn greater(left, right) return native.greater(left, right) end
+export fn less(left, right) return native.less(left, right) end
+export fn equal(left, right) return native.equal(left, right) end
+export fn not_equal(left, right) return native.not_equal(left, right) end
+
+export fn random() return native.random() end
+export fn rand() return native.random() end
+export fn randint(low, high, size = 1) return native.randint(low, high, size) end

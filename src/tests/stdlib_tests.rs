@@ -802,14 +802,10 @@ assert(type_of(s.exec) == "builtin", "module should export exec builtin")
     }
 
     #[test]
-    fn test_mixed_builtin_facades() {
-        let result = run(r#"
-import "jnum" as numbers
-assert(numbers.sum(numbers.array([1, 2, 3])) == 6.0, "jnum facade")
-import "jgui" as gui
-assert(type_of(gui.message) == "function", "jgui Ject facade")
-"#);
-        assert!(result.is_ok(), "{:?}", result);
+    fn extracted_native_libraries_require_dependencies() {
+        let result = run("import \"jnum\" as numbers");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
     }
 
     #[test]
@@ -841,7 +837,7 @@ assert(s.capitalize("hello") == "Hello", "capitalize from stdlib/string.ject")
     fn test_introspect_emits_json() {
         let j = crate::stdlib::introspect_native_kernel_json();
         assert!(j.contains("native_modules"));
-        assert!(j.contains("jnum"));
+        assert!(!j.contains("jnum"));
         assert!(j.contains("corlib"));
     }
 }

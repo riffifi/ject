@@ -1,4 +1,5 @@
-/target
+/target/
+/**/target/
 /tests
 temp.ject
 temp.jt
