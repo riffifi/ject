@@ -905,6 +905,7 @@ ject check
 ject test
 ject add useful_math --path ../useful_math
 ject add colors --version '^1.2' --registry https://registry.example
+ject add parser_tools --git https://example.com/parser_tools.git --branch main
 ject install
 ject install --locked
 ject update [package]
@@ -922,7 +923,8 @@ ject build --release
 - `install --locked` verifies the committed dependency graph and SHA-256 package
   checksums without updating the lockfile, which is the recommended CI mode.
 - `update` refreshes all direct registry dependencies, or one named dependency,
-  within their saved SemVer requirements.
+  within their saved SemVer requirements. It also advances Git dependencies that
+  track HEAD, a branch, or a tag; dependencies added with `--rev` stay pinned.
 - `remove` deletes a dependency and refreshes the lockfile.
 - `build` checks Ject source and builds native components when present.
 
@@ -939,6 +941,11 @@ ject publish --registry https://registry.example
 
 Set `JECT_REGISTRY` for the default URL and `JECT_REGISTRY_TOKEN` when publishing to
 an authenticated registry. `file://` URLs are supported for local registries.
+
+Git dependencies are cloned into Ject's shared cache and pinned to a full commit ID
+in both `Ject.toml` and `Ject.lock`. Use exactly one of `--branch`, `--tag`, or
+`--rev`; without a selector, the dependency tracks the remote HEAD. Cached source is
+content-verified before use, just like registry packages.
 
 ## 13. Standard library reference
 

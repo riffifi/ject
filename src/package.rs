@@ -25,7 +25,9 @@ pub struct Project {
     pub native: Option<NativeConfig>,
     pub dependencies: HashMap<String, PathBuf>,
     pub registry_dependencies: HashMap<String, RegistryDependency>,
+    pub git_dependencies: HashMap<String, GitDependency>,
     pub registry_source: Option<RegistrySource>,
+    pub git_source: Option<GitSource>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +35,13 @@ pub struct RegistryDependency {
     pub version: String,
     pub requirement: Option<String>,
     pub registry: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitDependency {
+    pub url: String,
+    pub revision: String,
+    pub reference: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +56,13 @@ pub struct RegistrySource {
     pub registry: String,
     pub archive_checksum: String,
     pub content_checksum: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitSource {
+    pub url: String,
+    pub revision: String,
+    pub content_checksum: String,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +96,7 @@ pub fn load(root: &Path) -> Result<Project, String> {
     let mut native_library = None;
     let mut dependencies = HashMap::new();
     let mut registry_dependencies = HashMap::new();
+    let mut git_dependencies = HashMap::new();
 
     for raw_line in source.lines() {
         let line = raw_line.split('#').next().unwrap_or("").trim();
@@ -101,6 +118,28 @@ pub fn load(root: &Path) -> Result<Project, String> {
             ("dependencies", dependency) => {
                 if let Some(path) = dependency_path(raw_value) {
                     dependencies.insert(dependency.to_string(), root.join(path));
+                } else if let Some(url) = inline_string(raw_value, "git") {
+                    let revision = inline_string(raw_value, "rev").ok_or_else(|| {
+                        format!("git dependency '{dependency}' is missing an exact rev")
+                    })?;
+                    let reference = inline_string(raw_value, "branch")
+                        .map(|branch| format!("branch:{branch}"))
+                        .or_else(|| inline_string(raw_value, "tag").map(|tag| format!("tag:{tag}")))
+                        .or_else(|| inline_string(raw_value, "head").map(|_| "HEAD".to_string()));
+                    dependencies.insert(
+                        dependency.to_string(),
+                        git_cache_root()?
+                            .join(repository_hash(&url))
+                            .join(&revision),
+                    );
+                    git_dependencies.insert(
+                        dependency.to_string(),
+                        GitDependency {
+                            url,
+                            revision,
+                            reference,
+                        },
+                    );
                 } else if let Some(version) = dependency_version(raw_value) {
                     let requirement = inline_string(raw_value, "requirement");
                     let registry = dependency_registry(raw_value)
@@ -131,6 +170,7 @@ pub fn load(root: &Path) -> Result<Project, String> {
         library: native_library.unwrap_or_else(|| name.replace('-', "_")),
     });
     let registry_source = read_registry_source(root)?;
+    let git_source = read_git_source(root)?;
     Ok(Project {
         root: root.to_path_buf(),
         name,
@@ -139,7 +179,9 @@ pub fn load(root: &Path) -> Result<Project, String> {
         native,
         dependencies,
         registry_dependencies,
+        git_dependencies,
         registry_source,
+        git_source,
     })
 }
 
@@ -228,6 +270,47 @@ pub fn add_registry_dependency(
     load(&project.root)
 }
 
+pub fn add_git_dependency(
+    project: &Project,
+    name: &str,
+    url: &str,
+    reference: Option<&str>,
+) -> Result<Project, String> {
+    validate_package_name(name)?;
+    let reference = reference.unwrap_or("HEAD");
+    let revision = resolve_git_revision(url, reference)?;
+    let tracked = (!reference.starts_with("rev:")).then(|| reference.to_string());
+    let dependency = GitDependency {
+        url: url.to_string(),
+        revision: revision.clone(),
+        reference: tracked.clone(),
+    };
+    let destination = git_cache_root()?.join(repository_hash(url)).join(&revision);
+    materialize_git_dependency(name, &dependency, &destination)?;
+    let installed = load(&destination)?;
+    validate_git_install(name, &dependency, &installed)?;
+    if installed.name != name {
+        return Err(format!(
+            "git package at {url} identifies itself as '{}' instead of '{name}'",
+            installed.name
+        ));
+    }
+    let url = escape_manifest_string(url);
+    let selector = match tracked.as_deref() {
+        Some("HEAD") => ", head = \"true\"".to_string(),
+        Some(reference) if reference.starts_with("branch:") => {
+            format!(", branch = \"{}\"", escape_manifest_string(&reference[7..]))
+        }
+        Some(reference) if reference.starts_with("tag:") => {
+            format!(", tag = \"{}\"", escape_manifest_string(&reference[4..]))
+        }
+        _ => String::new(),
+    };
+    let value = format!("{{ git = \"{url}\", rev = \"{revision}\"{selector} }}");
+    update_dependency_value(&project.root.join(MANIFEST_FILE), name, Some(value))?;
+    load(&project.root)
+}
+
 pub fn remove_dependency(project: &Project, name: &str) -> Result<Project, String> {
     if !project.dependencies.contains_key(name) {
         return Err(format!("package '{name}' is not a dependency"));
@@ -236,7 +319,7 @@ pub fn remove_dependency(project: &Project, name: &str) -> Result<Project, Strin
     load(&project.root)
 }
 
-pub fn update_registry_dependencies(
+pub fn update_dependencies(
     project: &Project,
     selected: Option<&str>,
 ) -> Result<(Project, Vec<DependencyUpdate>), String> {
@@ -244,7 +327,9 @@ pub fn update_registry_dependencies(
         if !project.dependencies.contains_key(name) {
             return Err(format!("package '{name}' is not a dependency"));
         }
-        if !project.registry_dependencies.contains_key(name) {
+        if !project.registry_dependencies.contains_key(name)
+            && !project.git_dependencies.contains_key(name)
+        {
             return Err(format!(
                 "package '{name}' is a path dependency and cannot be updated"
             ));
@@ -279,7 +364,43 @@ pub fn update_registry_dependencies(
             current: resolved,
         });
     }
+    let mut names: Vec<_> = project.git_dependencies.keys().cloned().collect();
+    names.sort();
+    for name in names {
+        if selected.is_some_and(|selected| selected != name) {
+            continue;
+        }
+        let dependency = &project.git_dependencies[&name];
+        let Some(reference) = dependency.reference.as_deref() else {
+            continue;
+        };
+        let resolved = resolve_git_revision(&dependency.url, reference)?;
+        if resolved == dependency.revision {
+            continue;
+        }
+        let selector = if reference == "HEAD" {
+            ", head = \"true\"".to_string()
+        } else if let Some(branch) = reference.strip_prefix("branch:") {
+            format!(", branch = \"{}\"", escape_manifest_string(branch))
+        } else if let Some(tag) = reference.strip_prefix("tag:") {
+            format!(", tag = \"{}\"", escape_manifest_string(tag))
+        } else {
+            return Err(format!("invalid git reference '{reference}'"));
+        };
+        let url = escape_manifest_string(&dependency.url);
+        let value = format!("{{ git = \"{url}\", rev = \"{resolved}\"{selector} }}");
+        update_dependency_value(&project.root.join(MANIFEST_FILE), &name, Some(value))?;
+        changes.push(DependencyUpdate {
+            name,
+            previous: dependency.revision.clone(),
+            current: resolved,
+        });
+    }
     Ok((load(&project.root)?, changes))
+}
+
+fn escape_manifest_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn validate_package_name(name: &str) -> Result<(), String> {
@@ -407,6 +528,12 @@ fn render_lockfile(project: &Project, dependencies: &[Project]) -> Result<String
                 "archive-checksum = \"{}\"\n",
                 source.archive_checksum
             ));
+        } else if let Some(source) = &package.git_source {
+            lock.push_str(&format!(
+                "source = \"git+{}#{}\"\n",
+                source.url.replace('"', "\\\""),
+                source.revision
+            ));
         } else {
             lock.push_str(&format!("source = \"path+{}\"\n", canonical.display()));
         }
@@ -449,7 +576,7 @@ fn package_checksum_root(root: &Path) -> Result<String, String> {
                 collect(root, &path, files)?;
             } else if !matches!(
                 relative.file_name().and_then(|name| name.to_str()),
-                Some(LOCK_FILE | "Ject.lock.tmp" | ".ject-source")
+                Some(LOCK_FILE | "Ject.lock.tmp" | ".ject-source" | ".ject-git-source")
             ) {
                 files.push(path);
             }
@@ -528,6 +655,20 @@ fn registry_cache_root() -> Result<PathBuf, String> {
         .ok_or_else(|| "cannot locate Ject cache; set JECT_HOME".to_string())
 }
 
+fn git_cache_root() -> Result<PathBuf, String> {
+    if let Some(root) = std::env::var_os("JECT_HOME") {
+        return Ok(PathBuf::from(root).join("git/checkouts"));
+    }
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|root| root.join(".ject/git/checkouts"))
+        .ok_or_else(|| "cannot locate Ject cache; set JECT_HOME".to_string())
+}
+
+fn repository_hash(url: &str) -> String {
+    format!("{:x}", Sha256::digest(url.as_bytes()))
+}
+
 fn read_registry_source(root: &Path) -> Result<Option<RegistrySource>, String> {
     let path = root.join(".ject-source");
     if !path.is_file() {
@@ -556,6 +697,77 @@ fn read_registry_source(root: &Path) -> Result<Option<RegistrySource>, String> {
         archive_checksum,
         content_checksum,
     }))
+}
+
+fn read_git_source(root: &Path) -> Result<Option<GitSource>, String> {
+    let path = root.join(".ject-git-source");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let source = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let mut lines = source.lines();
+    let url = lines.next().unwrap_or("").to_string();
+    let revision = lines.next().unwrap_or("").to_string();
+    let content_checksum = lines.next().unwrap_or("").to_string();
+    if url.is_empty() || !is_full_git_revision(&revision) || content_checksum.len() != 64 {
+        return Err(format!("invalid git metadata in {}", path.display()));
+    }
+    let actual = package_checksum_root(root)?;
+    if actual != content_checksum {
+        return Err(format!(
+            "cached git package at {} was modified: expected {content_checksum}, got {actual}; remove it and run `ject install`",
+            root.display()
+        ));
+    }
+    Ok(Some(GitSource {
+        url,
+        revision,
+        content_checksum,
+    }))
+}
+
+fn is_full_git_revision(revision: &str) -> bool {
+    revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn resolve_git_revision(url: &str, reference: &str) -> Result<String, String> {
+    if let Some(revision) = reference.strip_prefix("rev:") {
+        if is_full_git_revision(revision) {
+            return Ok(revision.to_ascii_lowercase());
+        }
+        return Err("--rev requires a full 40-character commit ID".to_string());
+    }
+    let remote_reference = if reference == "HEAD" {
+        "HEAD".to_string()
+    } else if let Some(branch) = reference.strip_prefix("branch:") {
+        format!("refs/heads/{branch}")
+    } else if let Some(tag) = reference.strip_prefix("tag:") {
+        format!("refs/tags/{tag}")
+    } else {
+        return Err(format!("invalid git reference '{reference}'"));
+    };
+    let output = Command::new("git")
+        .arg("ls-remote")
+        .arg(url)
+        .arg(&remote_reference)
+        .arg(format!("{remote_reference}^{{}}"))
+        .output()
+        .map_err(|error| format!("failed to start git: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git could not resolve {reference} from {url}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .rev()
+        .filter_map(|line| line.split_whitespace().next())
+        .find(|revision| is_full_git_revision(revision))
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| format!("git reference '{reference}' was not found at {url}"))
 }
 
 fn validate_version(version: &str) -> Result<(), String> {
@@ -741,9 +953,11 @@ pub fn publish(project: &Project, registry: &str, token: Option<&str>) -> Result
     if project.version == "0.0.0" {
         return Err("set [package].version before publishing".to_string());
     }
-    if project.dependencies.len() != project.registry_dependencies.len() {
+    if project.dependencies.len()
+        != project.registry_dependencies.len() + project.git_dependencies.len()
+    {
         return Err(
-            "published packages cannot contain path dependencies; use registry versions"
+            "published packages cannot contain path dependencies; use registry or git sources"
                 .to_string(),
         );
     }
@@ -798,7 +1012,14 @@ fn append_package_directory<W: Write>(
         let name = entry.file_name();
         if matches!(
             name.to_str(),
-            Some("target" | ".git" | LOCK_FILE | "Ject.lock.tmp" | ".ject-source")
+            Some(
+                "target"
+                    | ".git"
+                    | LOCK_FILE
+                    | "Ject.lock.tmp"
+                    | ".ject-source"
+                    | ".ject-git-source"
+            )
         ) {
             continue;
         }
@@ -834,7 +1055,110 @@ fn materialize_dependencies(project: &Project) -> Result<(), String> {
         }
         materialize_dependencies(&installed)?;
     }
+    for (name, dependency) in &project.git_dependencies {
+        validate_package_name(name)?;
+        if !is_full_git_revision(&dependency.revision) {
+            return Err(format!(
+                "git dependency '{name}' must use a full 40-character rev"
+            ));
+        }
+        let destination = project
+            .dependencies
+            .get(name)
+            .ok_or_else(|| format!("git dependency '{name}' has no cache destination"))?;
+        materialize_git_dependency(name, dependency, destination)?;
+        let installed = load(destination)?;
+        validate_git_install(name, dependency, &installed)?;
+        if installed.name != *name {
+            return Err(format!(
+                "git package at {} identifies itself as '{}' instead of '{name}'",
+                dependency.url, installed.name
+            ));
+        }
+        materialize_dependencies(&installed)?;
+    }
     Ok(())
+}
+
+fn validate_git_install(
+    name: &str,
+    dependency: &GitDependency,
+    installed: &Project,
+) -> Result<(), String> {
+    let source = installed.git_source.as_ref().ok_or_else(|| {
+        format!(
+            "cached git package '{name}' at {} has no source metadata; remove it and run `ject install`",
+            installed.root.display()
+        )
+    })?;
+    if source.url != dependency.url || source.revision != dependency.revision {
+        return Err(format!(
+            "cached git package '{name}' has source {}#{}, expected {}#{}; remove it and run `ject install`",
+            source.url, source.revision, dependency.url, dependency.revision
+        ));
+    }
+    Ok(())
+}
+
+fn materialize_git_dependency(
+    name: &str,
+    dependency: &GitDependency,
+    destination: &Path,
+) -> Result<(), String> {
+    if destination.join(MANIFEST_FILE).is_file() {
+        return Ok(());
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| format!("invalid git cache path {}", destination.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let temporary = parent.join(format!(".{name}-{}.tmp", std::process::id()));
+    if temporary.exists() {
+        fs::remove_dir_all(&temporary)
+            .map_err(|error| format!("failed to clear {}: {error}", temporary.display()))?;
+    }
+    let clone = Command::new("git")
+        .arg("clone")
+        .arg("--quiet")
+        .arg("--no-checkout")
+        .arg(&dependency.url)
+        .arg(&temporary)
+        .status()
+        .map_err(|error| format!("failed to start git: {error}"))?;
+    if !clone.success() {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(format!("failed to clone git dependency '{name}'"));
+    }
+    let checkout = Command::new("git")
+        .arg("-C")
+        .arg(&temporary)
+        .arg("checkout")
+        .arg("--quiet")
+        .arg("--detach")
+        .arg(&dependency.revision)
+        .status()
+        .map_err(|error| format!("failed to start git: {error}"))?;
+    if !checkout.success() {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(format!(
+            "git dependency '{name}' does not contain revision {}",
+            dependency.revision
+        ));
+    }
+    fs::remove_dir_all(temporary.join(".git"))
+        .map_err(|error| format!("failed to finalize git dependency '{name}': {error}"))?;
+    let content_checksum = package_checksum_root(&temporary)?;
+    fs::write(
+        temporary.join(".ject-git-source"),
+        format!(
+            "{}\n{}\n{}\n",
+            dependency.url, dependency.revision, content_checksum
+        ),
+    )
+    .map_err(|error| format!("failed to write git metadata: {error}"))?;
+    fs::rename(&temporary, destination)
+        .map_err(|error| format!("failed to install {}: {error}", destination.display()))
 }
 
 fn download_registry_package(
@@ -999,7 +1323,7 @@ pub fn build_native(project: &Project, release: bool) -> Result<Option<PathBuf>,
     }
     let mut command = Command::new("cargo");
     command.arg("build").arg("--manifest-path").arg(&manifest);
-    if project.registry_source.is_some() {
+    if project.registry_source.is_some() || project.git_source.is_some() {
         command.arg("--locked");
     }
     if release {
@@ -1385,7 +1709,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let (updated, changes) = update_registry_dependencies(&load(&app).unwrap(), None).unwrap();
+        let (updated, changes) = update_dependencies(&load(&app).unwrap(), None).unwrap();
         assert_eq!(
             changes,
             vec![DependencyUpdate {
@@ -1399,6 +1723,90 @@ mod tests {
             updated.registry_dependencies["demo"].requirement.as_deref(),
             Some("^1.0")
         );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn installs_locks_and_updates_git_dependencies() {
+        let base = std::env::temp_dir().join(format!(
+            "ject-git-dependency-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let repository = base.join("repository");
+        let app = base.join("app");
+        let cache = base.join("home");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&repository).unwrap();
+        init(&repository, "demo", true, false).unwrap();
+        let git = |arguments: &[&str]| {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(arguments)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {arguments:?} failed");
+        };
+        git(&["init", "--quiet"]);
+        git(&["config", "user.name", "Ject Tests"]);
+        git(&["config", "user.email", "tests@ject.invalid"]);
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "first"]);
+
+        fs::create_dir_all(&app).unwrap();
+        let project = init(&app, "app", false, false).unwrap();
+        let previous_home = std::env::var_os("JECT_HOME");
+        std::env::set_var("JECT_HOME", &cache);
+        let result = (|| {
+            let dependency =
+                add_git_dependency(&project, "demo", repository.to_str().unwrap(), None)?;
+            assert_eq!(
+                dependency.git_dependencies["demo"].reference.as_deref(),
+                Some("HEAD")
+            );
+            install(&dependency)?;
+            let lock = fs::read_to_string(app.join(LOCK_FILE)).unwrap();
+            assert!(lock.contains("source = \"git+") && lock.contains('#'));
+
+            fs::write(repository.join("src/lib.ject"), "export value = 2\n").unwrap();
+            git(&["add", "."]);
+            git(&["commit", "--quiet", "-m", "second"]);
+            let (updated, changes) = update_dependencies(&dependency, Some("demo"))?;
+            assert_eq!(changes.len(), 1);
+            assert_ne!(changes[0].previous, changes[0].current);
+            install(&updated)?;
+            let installed = load(&updated.dependencies["demo"])?;
+            let source = installed.git_source.as_ref().unwrap();
+            fs::write(
+                installed.root.join(".ject-git-source"),
+                format!(
+                    "different-url\n{}\n{}\n",
+                    source.revision, source.content_checksum
+                ),
+            )
+            .unwrap();
+            let error = install(&updated).unwrap_err();
+            assert!(error.contains("has source") && error.contains("expected"));
+            fs::write(
+                installed.root.join(".ject-git-source"),
+                format!(
+                    "{}\n{}\n{}\n",
+                    source.url, source.revision, source.content_checksum
+                ),
+            )
+            .unwrap();
+            fs::write(installed.root.join("src/lib.ject"), "tampered\n").unwrap();
+            let error = load(&installed.root).unwrap_err();
+            assert!(error.contains("cached git package") && error.contains("was modified"));
+            Ok::<(), String>(())
+        })();
+        if let Some(home) = previous_home {
+            std::env::set_var("JECT_HOME", home);
+        } else {
+            std::env::remove_var("JECT_HOME");
+        }
+        result.unwrap();
         fs::remove_dir_all(base).unwrap();
     }
 

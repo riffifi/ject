@@ -8,6 +8,7 @@ The local mixed-package workflow is operational:
 - `ject build` invokes Cargo for the package and native path dependencies.
 - `ject run`, `check`, and `test` load the built platform artifacts.
 - Path dependencies use `name = { path = "../name" }`.
+- Git dependencies are cached and pinned to exact commits in the manifest and lockfile.
 - `ject add <name> --path <path>` validates and records a local dependency.
 - `ject remove <name>` removes it, and `ject install` resolves the complete local
   graph, writes a deterministic `Ject.lock`, and builds all native components.
@@ -63,7 +64,7 @@ version = "1.2.0"
 edition = "2026"
 
 [dependencies]
-colors = "^2.1"
+colors = { version = "2.4.0", requirement = "^2.1", registry = "https://packages.ject.dev" }
 
 [native]
 language = "rust"
@@ -89,6 +90,7 @@ ject check
 ject test
 ject add <package> --path <directory>
 ject add <package> --version <version-requirement> [--registry <url>]
+ject add <package> --git <url> [--rev <commit> | --branch <name> | --tag <tag>]
 ject remove <package>
 ject install
 ject install --locked
@@ -101,6 +103,9 @@ The existing `ject file.ject`, `--check`, and `--test` forms remain valid. Regis
 requirements use SemVer syntax such as `1.2.3`, `^1.2`, `~1.4`, or `>=1, <2`.
 Manifests retain both the requirement and selected exact version. Normal installation
 uses that selection; `ject update [package]` queries the index and refreshes it.
+Git dependencies always record a full commit ID. HEAD and branch dependencies advance
+with `ject update`; an explicit `--rev` remains pinned. Tags are re-resolved on update,
+although moving a published tag is discouraged.
 
 ### Registry protocol
 
@@ -220,6 +225,8 @@ cached view of those resolutions.
   verifies package contents and the complete resolved graph.
 - Registry downloads are immutable and cached. Native artifacts remain target- and
   profile-specific Cargo outputs inside the installed package.
+- Git checkouts are detached, stripped of repository metadata, content-verified, and
+  identified as `git+<url>#<commit>` in `Ject.lock`.
 - Installing a mixed package invokes Cargo and therefore its build scripts. Review
   native dependencies before installation.
 
@@ -230,10 +237,10 @@ cached view of those resolutions.
 2. Shared module resolution and cached module graphs across the CLI and LSP.
 3. Deterministic path/registry resolution and content-verified `Ject.lock` files.
 4. Registry download/publish, immutable checksums, provenance, and cache management.
+5. SemVer selection and updates, plus commit-pinned Git dependencies.
 
 ## Post-0.9 research
 
-- Git dependency sources.
 - Capability declarations and sandbox enforcement.
 - Callback/event handles across the native ABI.
 - A WebAssembly component provider for portable, untrusted plugins.

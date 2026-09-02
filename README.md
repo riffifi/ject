@@ -64,6 +64,9 @@ Install a local source or mixed library with `ject add name --path ../name`, the
 Registry dependencies accept SemVer requirements, for example
 `ject add colors --version '^1.2'`; `ject update [name]` refreshes their exact
 selections while preserving those requirements.
+Git libraries use `ject add name --git <url>` and are pinned to a full commit.
+Use `--branch`, `--tag`, or `--rev` when HEAD is not the intended source;
+`ject update` advances tracked HEAD, branch, and tag references.
 The package/native-extension architecture and delivery plan are described in
 [docs/PACKAGES.md](docs/PACKAGES.md).
 

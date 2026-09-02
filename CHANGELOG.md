@@ -17,6 +17,8 @@
   module's filename and source excerpt.
 - Registry dependencies now accept SemVer requirements and support deliberate
   upgrades through `ject update [package]` and published version indexes.
+- Added content-verified Git dependencies with exact commit pinning, shared caching,
+  branch/tag/HEAD updates, lockfile provenance, and `--locked` native builds.
 
 ## 0.9.0
 

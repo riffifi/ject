@@ -199,6 +199,7 @@ USAGE:
     ject install [--locked]   Resolve, lock, and build dependencies
     ject add <name> --path <path>  Add a local source or mixed library
     ject add <name> --version <version> [--registry <url>]
+    ject add <name> --git <url> [--rev <commit> | --branch <name> | --tag <tag>]
     ject remove <name>        Remove a dependency
     ject update [name]        Update dependencies within their version requirements
     ject publish --registry <url>  Publish the current package
@@ -284,18 +285,33 @@ fn add_dependency(args: &[String]) {
         .windows(2)
         .find(|pair| pair[0] == "--registry")
         .map(|pair| pair[1].as_str());
-    if path.is_none() && version.is_none() {
+    let git = args
+        .windows(2)
+        .find(|pair| pair[0] == "--git")
+        .map(|pair| pair[1].as_str());
+    let git_selectors: Vec<_> = ["--rev", "--branch", "--tag"]
+        .into_iter()
+        .filter_map(|flag| {
+            args.windows(2)
+                .find(|pair| pair[0] == flag)
+                .map(|pair| (flag, pair[1].as_str()))
+        })
+        .collect();
+    if path.is_none() && version.is_none() && git.is_none() {
         emit_cli_error(
             "E4002",
-            "dependency requires `--path <path>` or `--version <version>`",
-            Some("try `ject add my_lib --version 1.2.0`"),
+            "dependency requires `--path`, `--version`, or `--git`",
+            Some("try `ject add my_lib --version '^1.2'`"),
         );
         std::process::exit(2);
     }
-    if path.is_some() && version.is_some() {
+    if usize::from(path.is_some()) + usize::from(version.is_some()) + usize::from(git.is_some()) > 1
+        || git_selectors.len() > 1
+        || (git.is_none() && !git_selectors.is_empty())
+    {
         emit_cli_error(
             "E4002",
-            "choose either a path or registry version for a dependency",
+            "choose one dependency source and at most one git revision selector",
             None,
         );
         std::process::exit(2);
@@ -303,6 +319,14 @@ fn add_dependency(args: &[String]) {
     let project = current_project_or_exit();
     let updated = if let Some(path) = path {
         package::add_path_dependency(&project, name, path)
+    } else if let Some(url) = git {
+        let reference = git_selectors.first().map(|(flag, value)| match *flag {
+            "--rev" => format!("rev:{value}"),
+            "--branch" => format!("branch:{value}"),
+            "--tag" => format!("tag:{value}"),
+            _ => unreachable!(),
+        });
+        package::add_git_dependency(&project, name, url, reference.as_deref())
     } else {
         package::add_registry_dependency(&project, name, version.unwrap(), registry)
     };
@@ -310,6 +334,8 @@ fn add_dependency(args: &[String]) {
         Ok(_) => {
             if let Some(path) = path {
                 println!("Added {name} from {}", path.display());
+            } else if let Some(url) = git {
+                println!("Added {name} from {url}");
             } else {
                 println!("Added {name}@{}", version.unwrap());
             }
@@ -356,7 +382,7 @@ fn publish_project(args: &[String]) {
 fn update_dependencies(args: &[String]) {
     let selected = args.first().filter(|argument| !argument.starts_with('-'));
     let project = current_project_or_exit();
-    match package::update_registry_dependencies(&project, selected.map(String::as_str)).and_then(
+    match package::update_dependencies(&project, selected.map(String::as_str)).and_then(
         |(updated, changes)| {
             package::install(&updated)?;
             package::build_native_graph(&updated, false)?;
