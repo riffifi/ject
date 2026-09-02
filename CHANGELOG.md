@@ -13,6 +13,8 @@
 - Added strict workspace linting and removed duplicate compiler modules from the CLI.
 - Registry cache contents are now reverified on load, and published native packages
   require Cargo lockfiles and build with `--locked`.
+- Runtime errors raised by imported modules now retain and render the defining
+  module's filename and source excerpt.
 
 ## 0.9.0
 

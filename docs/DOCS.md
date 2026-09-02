@@ -773,6 +773,8 @@ Runtime diagnostics retain source spans from the positioned AST. The primary mar
 points to the expression that produced the error, including operator expressions
 such as division by zero. When an error crosses named Ject functions, the diagnostic
 also prints the call chain as `at function_name` notes, innermost frame first.
+Frames defined in imported files retain that module's canonical filename; the CLI
+loads the corresponding source when rendering the primary error marker.
 
 Code families identify the subsystem:
 

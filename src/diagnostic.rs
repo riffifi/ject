@@ -386,10 +386,13 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
     for detail in lines {
         let detail = detail.trim();
         if let Some(location) = detail.strip_prefix("-->") {
-            let mut parts = location.trim().split(':');
-            if let (Some(line), Some(column)) = (parts.next(), parts.next()) {
+            let mut parts = location.trim().rsplitn(3, ':');
+            if let (Some(column), Some(line)) = (parts.next(), parts.next()) {
                 if let (Ok(line), Ok(column)) = (line.parse(), column.parse()) {
                     d = d.with_span(line, column, 1);
+                    if let Some(filename) = parts.next() {
+                        d = d.with_filename(filename.to_string());
+                    }
                 }
             }
         } else if let Some(frame) = detail.strip_prefix("at ") {
@@ -481,5 +484,13 @@ mod tests {
         );
         assert!(rendered.contains("--> main.ject:2:7"));
         assert!(rendered.contains("= note: at main"));
+    }
+
+    #[test]
+    fn runtime_locations_accept_filenames() {
+        let diagnostic = runtime_diagnostic("Division by zero\n  --> src/math.ject:8:14");
+        assert_eq!(diagnostic.filename.as_deref(), Some("src/math.ject"));
+        assert_eq!(diagnostic.line, Some(8));
+        assert_eq!(diagnostic.column, Some(14));
     }
 }

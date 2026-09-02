@@ -16,12 +16,14 @@ pub enum Value {
     Collection(std::collections::HashSet<String>),
     Function {
         name: String,
+        source: Option<String>,
         params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,
     },
     ModuleFunction {
         name: String,
+        source: Option<String>,
         params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,

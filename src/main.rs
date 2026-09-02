@@ -166,6 +166,22 @@ fn emit_cli_error(code: &str, message: impl Into<String>, help: Option<&str>) {
     DiagnosticRenderer::new().render(&diagnostic, None, None);
 }
 
+fn render_runtime(
+    renderer: &DiagnosticRenderer,
+    message: &str,
+    fallback_filename: Option<&str>,
+    fallback_source: &str,
+) {
+    let diagnostic = runtime_diagnostic(message);
+    if let Some(filename) = diagnostic.filename.as_deref() {
+        if let Ok(source) = fs::read_to_string(filename) {
+            renderer.render(&diagnostic, Some(filename), Some(&source));
+            return;
+        }
+    }
+    renderer.render(&diagnostic, fallback_filename, Some(fallback_source));
+}
+
 fn print_help() {
     println!(
         "\
@@ -1025,8 +1041,7 @@ fn execute_source(
                     ExecutionMode::Run => match interpreter.interpret(&statements) {
                         Ok(_) => true,
                         Err(error) => {
-                            let runtime_diagnostic = runtime_diagnostic(&error.message);
-                            renderer.render(&runtime_diagnostic, filename.as_deref(), Some(source));
+                            render_runtime(&renderer, &error.message, filename.as_deref(), source);
                             false
                         }
                     },
@@ -1089,9 +1104,8 @@ fn execute_source_repl(source: &str, interpreter: &mut Interpreter, linter: &mut
                         println!("\n^C");
                     }
                     Err(error) => {
-                        let runtime_diagnostic = runtime_diagnostic(&error.message);
                         let renderer = DiagnosticRenderer::new();
-                        renderer.render(&runtime_diagnostic, None, Some(source));
+                        render_runtime(&renderer, &error.message, None, source);
                     }
                 }
             }

@@ -76,6 +76,26 @@ impl RuntimeError {
         }
         self
     }
+
+    fn with_source(mut self, source: Option<&str>) -> Self {
+        let Some(source) = source.filter(|source| !source.starts_with("<embedded:")) else {
+            return self;
+        };
+        let marker = "\n  --> ";
+        if let Some(start) = self.message.find(marker) {
+            let value_start = start + marker.len();
+            let value_end = self.message[value_start..]
+                .find('\n')
+                .map(|offset| value_start + offset)
+                .unwrap_or(self.message.len());
+            let location = &self.message[value_start..value_end];
+            if location.split(':').count() == 2 {
+                self.message
+                    .replace_range(value_start..value_end, &format!("{source}:{location}"));
+            }
+        }
+        self
+    }
 }
 
 impl fmt::Display for RuntimeError {
@@ -415,6 +435,7 @@ impl Interpreter {
             Stmt::Function { name, params, body } => {
                 let func = Value::Function {
                     name: name.clone(),
+                    source: self.import_stack.last().cloned(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -559,6 +580,7 @@ impl Interpreter {
             Stmt::ExportFunction { name, params, body } => {
                 let func = Value::Function {
                     name: name.clone(),
+                    source: self.import_stack.last().cloned(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -1914,9 +1936,11 @@ impl Interpreter {
 
         let mut lexer = crate::lexer::Lexer::new(&module_content);
         let located_tokens = lexer.tokenize_with_positions();
-        let tokens: Vec<crate::lexer::Token> =
-            located_tokens.into_iter().map(|lt| lt.token).collect();
-        let mut parser = crate::parser::Parser::new_simple(tokens);
+        let tokens = located_tokens
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let mut parser = crate::parser::Parser::new(tokens);
         let statements = parser.parse().map_err(|e| RuntimeError {
             message: format!("Parse error in module '{}': {}", module_path, e),
         })?;
@@ -1949,7 +1973,9 @@ impl Interpreter {
         // Run the module body, whatever it returns (Ok or Err) — the environment is
         // restored below either way, so a failing module (e.g. a bad `export` value)
         // can't leave the interpreter stuck in its module-local environment.
-        let outcome = self.run_module_body(&statements, &module_file_stem);
+        let outcome = self
+            .run_module_body(&statements, &module_file_stem, module_file_path)
+            .map_err(|error| error.with_source(Some(module_file_path)));
 
         self.environment = saved_env;
         outcome
@@ -1959,6 +1985,7 @@ impl Interpreter {
         &mut self,
         statements: &[Stmt],
         module_file_stem: &str,
+        module_file_path: &str,
     ) -> RuntimeResult<HashMap<String, Value>> {
         // First, execute all non-export statements to build up the module environment
         for statement in statements {
@@ -1978,6 +2005,7 @@ impl Interpreter {
             if let Stmt::ExportFunction { name, params, body } = statement {
                 let func = Value::Function {
                     name: name.clone(),
+                    source: Some(module_file_path.to_string()),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -1999,6 +2027,7 @@ impl Interpreter {
                     // This captures all the module's variables and functions
                     let func = Value::ModuleFunction {
                         name: name.clone(),
+                        source: Some(module_file_path.to_string()),
                         params: params.clone(),
                         body: body.clone(),
                         closure_env: self.environment.clone(),
@@ -2214,6 +2243,7 @@ impl Interpreter {
             }
             Value::Function {
                 name,
+                source,
                 params,
                 body,
                 closure_env,
@@ -2248,10 +2278,11 @@ impl Interpreter {
 
                 self.environment.pop_scope();
                 self.environment = saved_env;
-                result.map_err(|error| error.with_frame(name))
+                result.map_err(|error| error.with_source(source.as_deref()).with_frame(name))
             }
             Value::ModuleFunction {
                 name,
+                source,
                 params,
                 body,
                 closure_env,
@@ -2286,7 +2317,7 @@ impl Interpreter {
 
                 self.environment.pop_scope();
                 self.environment = saved_env;
-                result.map_err(|error| error.with_frame(name))
+                result.map_err(|error| error.with_source(source.as_deref()).with_frame(name))
             }
             Value::BuiltinFunction(name) => crate::stdlib::call_builtin_function(name, arg_values),
             Value::NativeFunction { module, name } => {

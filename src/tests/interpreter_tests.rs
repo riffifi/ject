@@ -1393,4 +1393,33 @@ print "Program completed successfully!"
         assert!(error.message.contains("Division by zero"));
         assert!(error.message.contains("\n  --> 1:13"));
     }
+
+    #[test]
+    fn module_function_errors_retain_the_defining_file() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-runtime-module-span-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let module = root.join("broken.ject");
+        std::fs::write(&module, "export fn fail()\n    return missing\nend\n").unwrap();
+        let source = "import \"./broken\" as broken\nbroken.fail()\n";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let statements = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.set_script_dir(root.clone());
+        let error = interpreter.interpret(&statements).unwrap_err();
+        assert!(error
+            .message
+            .contains(&format!("--> {}:2:12", module.display())));
+        assert!(error.message.contains("\n  at fail"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
