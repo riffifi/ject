@@ -357,10 +357,9 @@ impl Interpreter {
                                     message: "Array index must be integer".to_string(),
                                 })
                             }
-                        } else if let Value::Dictionary(mut dict) = obj {
+                        } else if let Value::Dictionary(dict) = obj {
                             if let Value::String(key) = idx {
-                                dict.insert(key, val);
-                                self.environment.set(&object, Value::Dictionary(dict));
+                                dict.borrow_mut().insert(key, val);
                                 Ok(ControlFlow::None)
                             } else {
                                 Err(RuntimeError {
@@ -382,9 +381,8 @@ impl Interpreter {
                             message: format!("Undefined variable '{}'", object),
                         })?;
 
-                        if let Value::Dictionary(mut dict) = obj {
-                            dict.insert(field.clone(), val);
-                            self.environment.set(&object, Value::Dictionary(dict));
+                        if let Value::Dictionary(dict) = obj {
+                            dict.borrow_mut().insert(field.clone(), val);
                             Ok(ControlFlow::None)
                         } else if let Value::StructInstance {
                             struct_name,
@@ -780,7 +778,7 @@ impl Interpreter {
                     let obj_val = self.evaluate_expression(object)?;
                     let member = match &obj_val {
                         Value::StructInstance { fields, .. } => fields.get(field).cloned(),
-                        Value::Dictionary(dict) => dict.get(field).cloned(),
+                        Value::Dictionary(dict) => dict.borrow().get(field).cloned(),
                         Value::ModuleObject(exports) => exports.get(field).cloned(),
                         _ => None,
                     };
@@ -971,7 +969,7 @@ impl Interpreter {
                     let value = self.evaluate_expression(value_expr)?;
                     map.insert(key.clone(), value);
                 }
-                Ok(Value::Dictionary(map))
+                Ok(Value::dictionary(map))
             }
             Expr::Index { object, index } => {
                 // Flatten the canonical left-associated AST, then apply indices
@@ -1012,7 +1010,7 @@ impl Interpreter {
                             }
                         }
                         (Value::Dictionary(dict), Value::String(key)) => {
-                            dict.get(&key).cloned().unwrap_or(Value::Nil)
+                            dict.borrow().get(&key).cloned().unwrap_or(Value::Nil)
                         }
                         (Value::String(s), Value::Integer(i)) => {
                             // Handle negative indices for strings
@@ -1298,7 +1296,7 @@ impl Interpreter {
                     }
                     Value::Dictionary(dict) => {
                         // Convenience: allow `dict.key` as sugar for `dict["key"]`
-                        Ok(dict.get(field).cloned().unwrap_or(Value::Nil))
+                        Ok(dict.borrow().get(field).cloned().unwrap_or(Value::Nil))
                     }
                     Value::ModuleObject(exports) => {
                         // Also support module member access via dot notation
@@ -1714,7 +1712,7 @@ impl Interpreter {
                 Ok(Value::Bool(s.contains(&left_str)))
             }
             (Value::String(key), BinaryOp::In, Value::Dictionary(dict)) => {
-                Ok(Value::Bool(dict.contains_key(key)))
+                Ok(Value::Bool(dict.borrow().contains_key(key)))
             }
             (Value::String(key), BinaryOp::In, Value::Collection(set)) => {
                 Ok(Value::Bool(set.contains(key)))

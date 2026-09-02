@@ -596,6 +596,10 @@ print person["name"]
 person["language"] = "Ject"
 ```
 
+Like arrays, assignment and function calls share the same dictionary object. Cloning
+a dictionary value is constant-time; mutations through an alias remain visible.
+Helpers such as `delete` that document a returned dictionary still create a new one.
+
 Identifier-like keys may use member syntax:
 
 ```ject

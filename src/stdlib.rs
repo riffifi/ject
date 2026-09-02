@@ -2732,7 +2732,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             match (&args[0], &args[1]) {
                 (Value::Dictionary(dict), Value::String(key)) => {
-                    Ok(Value::Bool(dict.contains_key(key)))
+                    Ok(Value::Bool(dict.borrow().contains_key(key)))
                 }
                 _ => Err(RuntimeError {
                     message: "has_key() requires (dictionary, string)".to_string(),
@@ -2747,9 +2747,9 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             match (&args[0], &args[1]) {
                 (Value::Dictionary(dict), Value::String(key)) => {
-                    let mut new_dict = dict.clone();
+                    let mut new_dict = dict.borrow().clone();
                     new_dict.remove(key);
-                    Ok(Value::Dictionary(new_dict))
+                    Ok(Value::dictionary(new_dict))
                 }
                 _ => Err(RuntimeError {
                     message: "delete() requires (dictionary, string)".to_string(),
@@ -2764,7 +2764,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             match &args[0] {
                 Value::Dictionary(dict) => {
-                    let mut keys: Vec<String> = dict.keys().cloned().collect();
+                    let mut keys: Vec<String> = dict.borrow().keys().cloned().collect();
                     keys.sort();
                     Ok(Value::array(keys.into_iter().map(Value::String).collect()))
                 }
@@ -2782,6 +2782,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             match &args[0] {
                 Value::Dictionary(dict) => {
                     // Deterministic order by sorting keys first.
+                    let dict = dict.borrow();
                     let mut keys: Vec<String> = dict.keys().cloned().collect();
                     keys.sort();
                     let vals = keys
@@ -3011,7 +3012,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 Value::Collection(set) => Ok(Value::Integer(set.len() as i64)),
                 Value::Array(arr) => Ok(Value::Integer(arr.borrow().len() as i64)),
                 Value::String(s) => Ok(Value::Integer(s.chars().count() as i64)),
-                Value::Dictionary(dict) => Ok(Value::Integer(dict.len() as i64)),
+                Value::Dictionary(dict) => Ok(Value::Integer(dict.borrow().len() as i64)),
                 _ => Err(RuntimeError {
                     message: "size() requires a collection, array, string, or dictionary"
                         .to_string(),
@@ -3309,7 +3310,7 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
         }
         Value::Dictionary(dict) => {
             let mut json_obj = serde_json::Map::new();
-            for (key, value) in dict {
+            for (key, value) in dict.borrow().iter() {
                 let json_value = ject_value_to_json(value)?;
                 json_obj.insert(key.clone(), json_value);
             }

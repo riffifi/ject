@@ -8,6 +8,8 @@
   archives, an offline package cache, and registry provenance in `Ject.lock`.
 - Added positioned AST expressions and named runtime stack frames, so runtime
   diagnostics point at the failing expression and retain the user call chain.
+- Moved dictionaries to shared storage, making assignment, argument passing, and
+  closure capture constant-time while preserving functional copy-returning helpers.
 
 - Replaced generic output with one Rust-style renderer for parser, linter, runtime,
   command, package, and native failures. Diagnostics use stable subsystem codes,

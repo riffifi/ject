@@ -858,6 +858,33 @@ print person["age"]
     }
 
     #[test]
+    fn dictionary_assignment_shares_mutations_without_deep_copying() {
+        let result = run(r#"
+let original = {name: "Ada", active: true}
+let alias = original
+alias.name = "Grace"
+alias["active"] = false
+assert(original.name == "Grace")
+assert(original.active == false)
+"#);
+        assert!(result.is_ok(), "dictionary aliasing failed: {result:?}");
+    }
+
+    #[test]
+    fn dictionary_delete_returns_an_independent_value() {
+        let result = run(r#"
+let original = {name: "Ada", active: true}
+let without_name = delete(original, "name")
+assert(has_key(original, "name"))
+assert(!has_key(without_name, "name"))
+"#);
+        assert!(
+            result.is_ok(),
+            "dictionary delete mutated its input: {result:?}"
+        );
+    }
+
+    #[test]
     fn test_dictionary_missing_key() {
         let result = run(r#"
 let person = {name: "Alice"}

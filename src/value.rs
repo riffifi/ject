@@ -12,7 +12,7 @@ pub enum Value {
     Nil,
     Array(std::rc::Rc<std::cell::RefCell<Vec<Value>>>),
     UniqueArray(Vec<Value>), // Unique array (set-like)
-    Dictionary(std::collections::HashMap<String, Value>),
+    Dictionary(std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>),
     Collection(std::collections::HashSet<String>),
     Function {
         name: String,
@@ -95,6 +95,7 @@ impl fmt::Display for Value {
                 write!(f, "|}}")
             }
             Value::Dictionary(map) => {
+                let map = map.borrow();
                 write!(f, "{{")?;
                 for (i, (key, value)) in map.iter().enumerate() {
                     if i > 0 {
@@ -241,6 +242,11 @@ impl Value {
         Value::Array(std::rc::Rc::new(std::cell::RefCell::new(v)))
     }
 
+    /// Wraps a dictionary in shared storage so cloning a `Value` remains O(1).
+    pub fn dictionary(values: HashMap<String, Value>) -> Value {
+        Value::Dictionary(std::rc::Rc::new(std::cell::RefCell::new(values)))
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
@@ -250,7 +256,7 @@ impl Value {
             Value::String(s) => !s.is_empty(),
             Value::Array(arr) => !arr.borrow().is_empty(),
             Value::UniqueArray(arr) => !arr.is_empty(),
-            Value::Dictionary(dict) => !dict.is_empty(),
+            Value::Dictionary(dict) => !dict.borrow().is_empty(),
             Value::Collection(set) => !set.is_empty(),
             _ => true,
         }

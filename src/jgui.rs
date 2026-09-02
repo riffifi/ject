@@ -329,9 +329,9 @@ pub fn call_jgui_function(name: &str, args: Vec<Value>) -> Result<Value, Runtime
             }
 
             let mut result = HashMap::new();
-            result.insert("buttons".to_string(), Value::Dictionary(buttons));
-            result.insert("inputs".to_string(), Value::Dictionary(inputs));
-            Ok(Value::Dictionary(result))
+            result.insert("buttons".to_string(), Value::dictionary(buttons));
+            result.insert("inputs".to_string(), Value::dictionary(inputs));
+            Ok(Value::dictionary(result))
         }
         _ => Err(RuntimeError {
             message: format!("unknown GUI builtin: {}", name),

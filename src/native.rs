@@ -358,6 +358,7 @@ fn value_to_json(value: &Value, module: &str) -> Result<serde_json::Value, Strin
             .collect::<Result<Vec<_>, _>>()
             .map(serde_json::Value::Array),
         Value::Dictionary(values) => values
+            .borrow()
             .iter()
             .map(|(key, value)| Ok((key.clone(), value_to_json(value, module)?)))
             .collect::<Result<serde_json::Map<_, _>, String>>()
@@ -423,7 +424,7 @@ fn json_to_value(
                 .into_iter()
                 .map(|(key, value)| Ok((key, json_to_value(value, module, descriptor)?)))
                 .collect::<Result<HashMap<_, _>, String>>()
-                .map(Value::Dictionary)
+                .map(Value::dictionary)
         }
     }
 }

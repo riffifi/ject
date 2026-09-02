@@ -363,7 +363,7 @@ The `math`, `string`, `array`, `io`, `json`, `color`, `table`, and `jgui` module
 - [x] VS Code extension
 - [x] Local package manager (`add --path`, `remove`, `install`, lockfiles, native builds)
 - [x] Remote package registries and publishing (immutable HTTP(S) archives)
-- [ ] Performance optimizations (array/dict value semantics still copy-heavy)
+- [x] Shared array/dictionary storage with constant-time value cloning
 - [x] AST source spans and runtime stack traces
 
 ---
