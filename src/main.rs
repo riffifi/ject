@@ -90,6 +90,7 @@ fn main() {
         "install" => install_project(args.iter().any(|arg| arg == "--locked")),
         "add" => add_dependency(&args[1..]),
         "remove" => remove_dependency(&args[1..]),
+        "update" => update_dependencies(&args[1..]),
         "publish" => publish_project(&args[1..]),
         "init" => {
             let library = args.iter().any(|arg| arg == "--lib");
@@ -199,6 +200,7 @@ USAGE:
     ject add <name> --path <path>  Add a local source or mixed library
     ject add <name> --version <version> [--registry <url>]
     ject remove <name>        Remove a dependency
+    ject update [name]        Update dependencies within their version requirements
     ject publish --registry <url>  Publish the current package
     ject build                Validate the current source package
     ject tree                 Show the resolved source-module dependency tree
@@ -345,6 +347,37 @@ fn publish_project(args: &[String]) {
                 "E4105",
                 error,
                 Some("set JECT_REGISTRY_TOKEN if the registry requires authentication"),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn update_dependencies(args: &[String]) {
+    let selected = args.first().filter(|argument| !argument.starts_with('-'));
+    let project = current_project_or_exit();
+    match package::update_registry_dependencies(&project, selected.map(String::as_str)).and_then(
+        |(updated, changes)| {
+            package::install(&updated)?;
+            package::build_native_graph(&updated, false)?;
+            package::install(&updated)?;
+            Ok(changes)
+        },
+    ) {
+        Ok(changes) if changes.is_empty() => println!("All dependencies are up to date"),
+        Ok(changes) => {
+            for change in changes {
+                println!(
+                    "Updated {} {} -> {}",
+                    change.name, change.previous, change.current
+                );
+            }
+        }
+        Err(error) => {
+            emit_cli_error(
+                "E4106",
+                error,
+                Some("check the package name, version requirement, and registry index"),
             );
             std::process::exit(1);
         }

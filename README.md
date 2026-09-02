@@ -61,6 +61,9 @@ Packages use `Ject.toml` and `src/main.ject` (or `src/lib.ject` for `ject new --
 Install a local source or mixed library with `ject add name --path ../name`, then use
 `ject install` to lock the transitive graph and build native components. CI can use
 `ject install --locked` to reject missing or stale lockfiles without rewriting them.
+Registry dependencies accept SemVer requirements, for example
+`ject add colors --version '^1.2'`; `ject update [name]` refreshes their exact
+selections while preserving those requirements.
 The package/native-extension architecture and delivery plan are described in
 [docs/PACKAGES.md](docs/PACKAGES.md).
 

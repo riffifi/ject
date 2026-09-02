@@ -9,6 +9,7 @@ use std::process::Command;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use semver::{Version, VersionReq};
 use sha2::{Digest, Sha256};
 use tar::{Archive, Builder};
 
@@ -30,7 +31,15 @@ pub struct Project {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistryDependency {
     pub version: String,
+    pub requirement: Option<String>,
     pub registry: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DependencyUpdate {
+    pub name: String,
+    pub previous: String,
+    pub current: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +102,7 @@ pub fn load(root: &Path) -> Result<Project, String> {
                 if let Some(path) = dependency_path(raw_value) {
                     dependencies.insert(dependency.to_string(), root.join(path));
                 } else if let Some(version) = dependency_version(raw_value) {
+                    let requirement = inline_string(raw_value, "requirement");
                     let registry = dependency_registry(raw_value)
                         .or_else(|| std::env::var("JECT_REGISTRY").ok())
                         .unwrap_or_else(|| "https://packages.ject.dev".to_string());
@@ -102,7 +112,11 @@ pub fn load(root: &Path) -> Result<Project, String> {
                     );
                     registry_dependencies.insert(
                         dependency.to_string(),
-                        RegistryDependency { version, registry },
+                        RegistryDependency {
+                            version,
+                            requirement,
+                            registry,
+                        },
                     );
                 }
             }
@@ -183,30 +197,33 @@ pub fn add_registry_dependency(
     registry: Option<&str>,
 ) -> Result<Project, String> {
     validate_package_name(name)?;
-    validate_version(version)?;
     let registry = registry
         .map(str::to_string)
         .or_else(|| std::env::var("JECT_REGISTRY").ok())
         .unwrap_or_else(|| "https://packages.ject.dev".to_string());
+    let resolved_version = resolve_registry_version(name, version, &registry)?;
     let dependency = RegistryDependency {
-        version: version.to_string(),
+        version: resolved_version.clone(),
+        requirement: (resolved_version != version).then(|| version.to_string()),
         registry: registry.clone(),
     };
-    let destination = registry_cache_root()?.join(name).join(version);
+    let destination = registry_cache_root()?.join(name).join(&resolved_version);
     if !destination.join(MANIFEST_FILE).is_file() {
         download_registry_package(name, &dependency, &destination)?;
     }
     let installed = load(&destination)?;
-    if installed.name != name || installed.version != version {
+    if installed.name != name || installed.version != resolved_version {
         return Err(format!(
-            "registry package {name}@{version} identifies itself as {}@{}",
+            "registry package {name}@{resolved_version} identifies itself as {}@{}",
             installed.name, installed.version
         ));
     }
-    let value = format!(
-        "{{ version = \"{version}\", registry = \"{}\" }}",
-        registry.replace('\\', "\\\\").replace('"', "\\\"")
-    );
+    let registry = registry.replace('\\', "\\\\").replace('"', "\\\"");
+    let value = if resolved_version == version {
+        format!("{{ version = \"{resolved_version}\", registry = \"{registry}\" }}")
+    } else {
+        format!("{{ version = \"{resolved_version}\", requirement = \"{version}\", registry = \"{registry}\" }}")
+    };
     update_dependency_value(&project.root.join(MANIFEST_FILE), name, Some(value))?;
     load(&project.root)
 }
@@ -217,6 +234,52 @@ pub fn remove_dependency(project: &Project, name: &str) -> Result<Project, Strin
     }
     update_dependency_value(&project.root.join(MANIFEST_FILE), name, None)?;
     load(&project.root)
+}
+
+pub fn update_registry_dependencies(
+    project: &Project,
+    selected: Option<&str>,
+) -> Result<(Project, Vec<DependencyUpdate>), String> {
+    if let Some(name) = selected {
+        if !project.dependencies.contains_key(name) {
+            return Err(format!("package '{name}' is not a dependency"));
+        }
+        if !project.registry_dependencies.contains_key(name) {
+            return Err(format!(
+                "package '{name}' is a path dependency and cannot be updated"
+            ));
+        }
+    }
+    let mut names: Vec<_> = project.registry_dependencies.keys().cloned().collect();
+    names.sort();
+    let mut changes = Vec::new();
+    for name in names {
+        if selected.is_some_and(|selected| selected != name) {
+            continue;
+        }
+        let dependency = &project.registry_dependencies[&name];
+        let Some(requirement) = dependency.requirement.as_deref() else {
+            continue;
+        };
+        let resolved = resolve_registry_version(&name, requirement, &dependency.registry)?;
+        if resolved == dependency.version {
+            continue;
+        }
+        let registry = dependency
+            .registry
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let value = format!(
+            "{{ version = \"{resolved}\", requirement = \"{requirement}\", registry = \"{registry}\" }}"
+        );
+        update_dependency_value(&project.root.join(MANIFEST_FILE), &name, Some(value))?;
+        changes.push(DependencyUpdate {
+            name,
+            previous: dependency.version.clone(),
+            current: resolved,
+        });
+    }
+    Ok((load(&project.root)?, changes))
 }
 
 fn validate_package_name(name: &str) -> Result<(), String> {
@@ -419,14 +482,29 @@ fn dependency_path(value: &str) -> Option<PathBuf> {
 }
 
 fn inline_string(value: &str, key: &str) -> Option<String> {
-    value
-        .trim()
-        .trim_start_matches('{')
-        .trim_end_matches('}')
-        .split(',')
-        .filter_map(|field| field.split_once('='))
-        .find(|(field, _)| field.trim() == key)
-        .map(|(_, value)| value.trim().trim_matches('"').to_string())
+    let value = value.trim().trim_start_matches('{').trim_end_matches('}');
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut start = 0;
+    for (index, character) in value.char_indices().chain([(value.len(), ',')]) {
+        if character == '"' && !escaped {
+            quoted = !quoted;
+        }
+        if character == ',' && !quoted {
+            let field = &value[start..index];
+            if let Some((field_key, field_value)) = field.split_once('=') {
+                if field_key.trim() == key {
+                    return Some(field_value.trim().trim_matches('"').to_string());
+                }
+            }
+            start = index + character.len_utf8();
+        }
+        escaped = character == '\\' && !escaped;
+        if character != '\\' {
+            escaped = false;
+        }
+    }
+    None
 }
 
 fn dependency_version(value: &str) -> Option<String> {
@@ -481,14 +559,9 @@ fn read_registry_source(root: &Path) -> Result<Option<RegistrySource>, String> {
 }
 
 fn validate_version(version: &str) -> Result<(), String> {
-    if version.is_empty()
-        || !version
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || ".+-_".contains(character))
-    {
-        return Err(format!("invalid package version '{version}'"));
-    }
-    Ok(())
+    Version::parse(version)
+        .map(|_| ())
+        .map_err(|error| format!("invalid semantic version '{version}': {error}"))
 }
 
 fn registry_url(registry: &str, name: &str, version: &str, suffix: &str) -> String {
@@ -498,25 +571,82 @@ fn registry_url(registry: &str, name: &str, version: &str, suffix: &str) -> Stri
     )
 }
 
-fn read_registry_object(url: &str) -> Result<Vec<u8>, String> {
-    if let Some(path) = url.strip_prefix("file://") {
-        return fs::read(path).map_err(|error| format!("failed to read {url}: {error}"));
+fn registry_index_url(registry: &str, name: &str) -> String {
+    format!("{}/{name}/index.json", registry.trim_end_matches('/'))
+}
+
+fn registry_versions(registry: &str, name: &str) -> Result<Vec<Version>, String> {
+    let url = registry_index_url(registry, name);
+    let bytes = read_registry_object(&url)?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("invalid registry index {url}: {error}"))?;
+    let versions = value
+        .get("versions")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("registry index {url} has no versions array"))?;
+    let mut parsed = versions
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .map(|version| {
+            Version::parse(version)
+                .map_err(|error| format!("invalid version '{version}' in {url}: {error}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    parsed.sort();
+    parsed.dedup();
+    Ok(parsed)
+}
+
+fn resolve_registry_version(
+    name: &str,
+    requirement: &str,
+    registry: &str,
+) -> Result<String, String> {
+    if let Ok(version) = Version::parse(requirement) {
+        return Ok(version.to_string());
     }
-    let response = ureq::get(url)
-        .call()
-        .map_err(|error| format!("failed to download {url}: {error}"))?;
+    let requirement = VersionReq::parse(requirement)
+        .map_err(|error| format!("invalid version requirement '{requirement}': {error}"))?;
+    registry_versions(registry, name)?
+        .into_iter()
+        .rev()
+        .find(|version| requirement.matches(version))
+        .map(|version| version.to_string())
+        .ok_or_else(|| format!("no version of '{name}' matches '{requirement}' in {registry}"))
+}
+
+fn read_registry_object(url: &str) -> Result<Vec<u8>, String> {
+    read_optional_registry_object(url)?.ok_or_else(|| format!("registry object not found: {url}"))
+}
+
+fn read_optional_registry_object(url: &str) -> Result<Option<Vec<u8>>, String> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return match fs::read(path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(format!("failed to read {url}: {error}")),
+        };
+    }
+    let response = match ureq::get(url).call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(404, _)) => return Ok(None),
+        Err(error) => return Err(format!("failed to download {url}: {error}")),
+    };
     let mut bytes = Vec::new();
     response
         .into_reader()
         .read_to_end(&mut bytes)
         .map_err(|error| format!("failed to read response from {url}: {error}"))?;
-    Ok(bytes)
+    Ok(Some(bytes))
 }
 
 fn write_registry_object(url: &str, bytes: &[u8], token: Option<&str>) -> Result<(), String> {
     if let Some(path) = url.strip_prefix("file://") {
         let path = Path::new(path);
         if path.exists() {
+            if fs::read(path).map_err(|error| format!("failed to read {url}: {error}"))? == bytes {
+                return Ok(());
+            }
             return Err(format!(
                 "registry object {url} already exists; published versions are immutable"
             ));
@@ -537,10 +667,71 @@ fn write_registry_object(url: &str, bytes: &[u8], token: Option<&str>) -> Result
     if let Some(token) = token {
         request = request.set("Authorization", &format!("Bearer {token}"));
     }
+    match request.send_bytes(bytes) {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(409 | 412, _)) => {
+            if read_optional_registry_object(url)?.as_deref() == Some(bytes) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "registry object {url} already exists; published versions are immutable"
+                ))
+            }
+        }
+        Err(error) => Err(format!("failed to publish {url}: {error}")),
+    }
+}
+
+fn replace_registry_object(url: &str, bytes: &[u8], token: Option<&str>) -> Result<(), String> {
+    if let Some(path) = url.strip_prefix("file://") {
+        let path = Path::new(path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+        }
+        let temporary = path.with_extension("tmp");
+        fs::write(&temporary, bytes)
+            .map_err(|error| format!("failed to write {}: {error}", temporary.display()))?;
+        return fs::rename(&temporary, path)
+            .map_err(|error| format!("failed to replace {}: {error}", path.display()));
+    }
+    let mut request = ureq::put(url).set("Content-Type", "application/json");
+    if let Some(token) = token {
+        request = request.set("Authorization", &format!("Bearer {token}"));
+    }
     request
         .send_bytes(bytes)
-        .map_err(|error| format!("failed to publish {url}: {error}"))?;
+        .map_err(|error| format!("failed to update {url}: {error}"))?;
     Ok(())
+}
+
+fn publish_registry_index(
+    registry: &str,
+    name: &str,
+    version: &str,
+    token: Option<&str>,
+) -> Result<(), String> {
+    let url = registry_index_url(registry, name);
+    let mut versions = match read_optional_registry_object(&url)? {
+        Some(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
+            .map_err(|error| format!("invalid registry index {url}: {error}"))?
+            .get("versions")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .ok_or_else(|| format!("registry index {url} has no versions array"))?,
+        None => Vec::new(),
+    };
+    if !versions.iter().any(|value| value.as_str() == Some(version)) {
+        versions.push(serde_json::Value::String(version.to_string()));
+    }
+    versions.sort_by(|left, right| {
+        let left = left.as_str().and_then(|value| Version::parse(value).ok());
+        let right = right.as_str().and_then(|value| Version::parse(value).ok());
+        left.cmp(&right)
+    });
+    let bytes = serde_json::to_vec_pretty(&serde_json::json!({ "versions": versions }))
+        .map_err(|error| format!("failed to encode registry index: {error}"))?;
+    replace_registry_object(&url, &bytes, token)
 }
 
 /// Publish an immutable package archive and checksum to an HTTP(S) or file registry.
@@ -588,6 +779,7 @@ pub fn publish(project: &Project, registry: &str, token: Option<&str>) -> Result
     let checksum_url = registry_url(registry, &project.name, &project.version, ".sha256");
     write_registry_object(&archive_url, &bytes, token)?;
     write_registry_object(&checksum_url, format!("{checksum}\n").as_bytes(), token)?;
+    publish_registry_index(registry, &project.name, &project.version, token)?;
     Ok(checksum)
 }
 
@@ -1119,8 +1311,11 @@ mod tests {
 
         let checksum = publish(&project, &registry_url, None).unwrap();
         assert!(registry.join("demo/0.1.0.tar.gz").is_file());
+        let index = fs::read_to_string(registry.join("demo/index.json")).unwrap();
+        assert!(index.contains("0.1.0"));
         let dependency = RegistryDependency {
             version: "0.1.0".to_string(),
+            requirement: None,
             registry: registry_url.clone(),
         };
         download_registry_package("demo", &dependency, &destination).unwrap();
@@ -1134,6 +1329,8 @@ mod tests {
         let lock = render_lockfile(&installed, &[]).unwrap();
         assert!(lock.contains(&format!("source = \"registry+{registry_url}\"")));
         assert!(lock.contains(&format!("archive-checksum = \"{checksum}\"")));
+        assert_eq!(publish(&project, &registry_url, None).unwrap(), checksum);
+        fs::write(source.join("src/lib.ject"), "export changed = true\n").unwrap();
         let error = publish(&project, &registry_url, None).unwrap_err();
         assert!(error.contains("published versions are immutable"));
 
@@ -1144,6 +1341,64 @@ mod tests {
         fs::write(registry.join("demo/0.1.0.tar.gz.sha256"), "00\n").unwrap();
         let error = download_registry_package("demo", &dependency, &base.join("bad")).unwrap_err();
         assert!(error.contains("checksum mismatch"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn resolves_ranges_and_updates_exact_manifest_selections() {
+        let base = std::env::temp_dir().join(format!(
+            "ject-version-range-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let registry = base.join("registry");
+        let registry_url = format!("file://{}", registry.display());
+        let _ = fs::remove_dir_all(&base);
+        for version in ["1.0.0", "1.4.0", "2.0.0"] {
+            let root = base.join(format!("source-{version}"));
+            fs::create_dir_all(&root).unwrap();
+            init(&root, "demo", true, false).unwrap();
+            let manifest = root.join(MANIFEST_FILE);
+            let source = fs::read_to_string(&manifest)
+                .unwrap()
+                .replace("version = \"0.1.0\"", &format!("version = \"{version}\""));
+            fs::write(&manifest, source).unwrap();
+            publish(&load(&root).unwrap(), &registry_url, None).unwrap();
+        }
+        assert_eq!(
+            resolve_registry_version("demo", "^1.0", &registry_url).unwrap(),
+            "1.4.0"
+        );
+        assert_eq!(
+            resolve_registry_version("demo", ">=1.0, <2.0", &registry_url).unwrap(),
+            "1.4.0"
+        );
+
+        let app = base.join("app");
+        fs::create_dir_all(&app).unwrap();
+        init(&app, "app", false, false).unwrap();
+        let manifest = app.join(MANIFEST_FILE);
+        fs::write(
+            &manifest,
+            format!(
+                "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\ndemo = {{ version = \"1.0.0\", requirement = \"^1.0\", registry = \"{registry_url}\" }}\n"
+            ),
+        )
+        .unwrap();
+        let (updated, changes) = update_registry_dependencies(&load(&app).unwrap(), None).unwrap();
+        assert_eq!(
+            changes,
+            vec![DependencyUpdate {
+                name: "demo".to_string(),
+                previous: "1.0.0".to_string(),
+                current: "1.4.0".to_string(),
+            }]
+        );
+        assert_eq!(updated.registry_dependencies["demo"].version, "1.4.0");
+        assert_eq!(
+            updated.registry_dependencies["demo"].requirement.as_deref(),
+            Some("^1.0")
+        );
         fs::remove_dir_all(base).unwrap();
     }
 

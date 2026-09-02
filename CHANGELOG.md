@@ -15,6 +15,8 @@
   require Cargo lockfiles and build with `--locked`.
 - Runtime errors raised by imported modules now retain and render the defining
   module's filename and source excerpt.
+- Registry dependencies now accept SemVer requirements and support deliberate
+  upgrades through `ject update [package]` and published version indexes.
 
 ## 0.9.0
 

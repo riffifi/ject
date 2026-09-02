@@ -904,8 +904,10 @@ ject run
 ject check
 ject test
 ject add useful_math --path ../useful_math
+ject add colors --version '^1.2' --registry https://registry.example
 ject install
 ject install --locked
+ject update [package]
 ject remove useful_math
 ject build
 ject build --release
@@ -914,18 +916,24 @@ ject build --release
 - `run` executes the package entry.
 - `check` parses and lints the package entry.
 - `test` runs every `tests/*.ject` file in sorted order.
-- `add` validates a local library, records it, and refreshes the lockfile.
+- `add` validates and records a local library or selects the newest registry release
+  matching a SemVer requirement, then refreshes the lockfile.
 - `install` resolves the graph, writes `Ject.lock`, and builds native parts.
 - `install --locked` verifies the committed dependency graph and SHA-256 package
   checksums without updating the lockfile, which is the recommended CI mode.
+- `update` refreshes all direct registry dependencies, or one named dependency,
+  within their saved SemVer requirements.
 - `remove` deletes a dependency and refreshes the lockfile.
 - `build` checks Ject source and builds native components when present.
 
-Commit `Ject.lock` for applications. Registry packages use exact versions and
-immutable checksum-verified archives:
+Commit `Ject.lock` for applications. The manifest preserves a registry dependency's
+SemVer requirement and current exact selection. Installation remains deterministic;
+only `ject update` changes the selection. Releases use immutable,
+checksum-verified archives:
 
 ```bash
-ject add colors --version 1.2.0 --registry https://registry.example
+ject add colors --version '^1.2' --registry https://registry.example
+ject update colors
 ject publish --registry https://registry.example
 ```
 

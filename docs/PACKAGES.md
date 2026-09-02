@@ -88,23 +88,26 @@ ject run [-- <args>]
 ject check
 ject test
 ject add <package> --path <directory>
-ject add <package> --version <exact-version> [--registry <url>]
+ject add <package> --version <version-requirement> [--registry <url>]
 ject remove <package>
 ject install
 ject install --locked
+ject update [package]
 ject build [--release]
 ject publish [--registry <url>]
 ```
 
 The existing `ject file.ject`, `--check`, and `--test` forms remain valid. Registry
-versions are exact in 0.9; version-range solving can be added later without changing
-the archive protocol or manifest shape.
+requirements use SemVer syntax such as `1.2.3`, `^1.2`, `~1.4`, or `>=1, <2`.
+Manifests retain both the requirement and selected exact version. Normal installation
+uses that selection; `ject update [package]` queries the index and refreshes it.
 
 ### Registry protocol
 
-A registry is an HTTP(S) base URL. Packages are immutable gzip-compressed tar
-archives at `<base>/<name>/<version>.tar.gz`; the adjacent `.tar.gz.sha256` object
-contains the archive digest. Publishing uses conditional HTTP PUT and optionally
+A registry is an HTTP(S) base URL. Each package has a sorted `index.json` version
+list. Releases are immutable gzip-compressed tar archives at
+`<base>/<name>/<version>.tar.gz`; the adjacent `.tar.gz.sha256` object contains the
+archive digest. Publishing uses conditional HTTP PUT and optionally
 sends `JECT_REGISTRY_TOKEN` as a bearer token. `JECT_REGISTRY` selects the default
 base URL. A `file://` base implements the same layout for private or local registries.
 
@@ -230,7 +233,7 @@ cached view of those resolutions.
 
 ## Post-0.9 research
 
-- Git dependency sources and version-range solving.
+- Git dependency sources.
 - Capability declarations and sandbox enforcement.
 - Callback/event handles across the native ABI.
 - A WebAssembly component provider for portable, untrusted plugins.
