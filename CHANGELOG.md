@@ -11,6 +11,8 @@
 - Moved dictionaries to shared storage, making assignment, argument passing, and
   closure capture constant-time while preserving functional copy-returning helpers.
 - Added strict workspace linting and removed duplicate compiler modules from the CLI.
+- Registry cache contents are now reverified on load, and published native packages
+  require Cargo lockfiles and build with `--locked`.
 
 ## 0.9.0
 

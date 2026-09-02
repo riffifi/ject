@@ -37,6 +37,7 @@ pub struct RegistryDependency {
 pub struct RegistrySource {
     pub registry: String,
     pub archive_checksum: String,
+    pub content_checksum: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -363,6 +364,10 @@ fn write_lockfile(project: &Project, lock: &str) -> Result<(), String> {
 
 /// Hash all package inputs that affect its Ject or native implementation.
 pub fn package_checksum(project: &Project) -> Result<String, String> {
+    package_checksum_root(&project.root)
+}
+
+fn package_checksum_root(root: &Path) -> Result<String, String> {
     fn collect(root: &Path, directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
         let entries = fs::read_dir(directory)
             .map_err(|error| format!("failed to read {}: {error}", directory.display()))?;
@@ -389,12 +394,9 @@ pub fn package_checksum(project: &Project) -> Result<String, String> {
         Ok(())
     }
 
-    let root = project.root.canonicalize().map_err(|error| {
-        format!(
-            "failed to checksum package {}: {error}",
-            project.root.display()
-        )
-    })?;
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("failed to checksum package {}: {error}", root.display()))?;
     let mut files = Vec::new();
     collect(&root, &root, &mut files)?;
     files.sort();
@@ -458,12 +460,23 @@ fn read_registry_source(root: &Path) -> Result<Option<RegistrySource>, String> {
     let mut lines = source.lines();
     let registry = lines.next().unwrap_or("").to_string();
     let archive_checksum = lines.next().unwrap_or("").to_string();
+    let content_checksum = lines.next().map(str::to_string);
     if registry.is_empty() || archive_checksum.len() != 64 {
         return Err(format!("invalid registry metadata in {}", path.display()));
+    }
+    if let Some(expected) = &content_checksum {
+        let actual = package_checksum_root(root)?;
+        if expected != &actual {
+            return Err(format!(
+                "cached registry package at {} was modified: expected {expected}, got {actual}; remove it and run `ject install`",
+                root.display()
+            ));
+        }
     }
     Ok(Some(RegistrySource {
         registry,
         archive_checksum,
+        content_checksum,
     }))
 }
 
@@ -548,6 +561,16 @@ pub fn publish(project: &Project, registry: &str, token: Option<&str>) -> Result
             "package entry does not exist: {}",
             project.entry.display()
         ));
+    }
+    if let Some(native) = &project.native {
+        let cargo_lock = native.path.join("Cargo.lock");
+        if !cargo_lock.is_file() {
+            return Err(format!(
+                "native packages require a committed {} before publishing; run `cargo generate-lockfile --manifest-path {}`",
+                cargo_lock.display(),
+                native.path.join("Cargo.toml").display()
+            ));
+        }
     }
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     {
@@ -652,15 +675,22 @@ fn download_registry_package(
     }
     fs::create_dir(&temporary)
         .map_err(|error| format!("failed to create {}: {error}", temporary.display()))?;
-    let mut archive = Archive::new(GzDecoder::new(bytes.as_slice()));
-    archive
-        .unpack(&temporary)
-        .map_err(|error| format!("failed to unpack {archive_url}: {error}"))?;
-    fs::write(
-        temporary.join(".ject-source"),
-        format!("{}\n{actual}\n", dependency.registry),
-    )
-    .map_err(|error| format!("failed to write registry metadata: {error}"))?;
+    let extraction = (|| {
+        let mut archive = Archive::new(GzDecoder::new(bytes.as_slice()));
+        archive
+            .unpack(&temporary)
+            .map_err(|error| format!("failed to unpack {archive_url}: {error}"))?;
+        let content_checksum = package_checksum_root(&temporary)?;
+        fs::write(
+            temporary.join(".ject-source"),
+            format!("{}\n{actual}\n{content_checksum}\n", dependency.registry),
+        )
+        .map_err(|error| format!("failed to write registry metadata: {error}"))
+    })();
+    if let Err(error) = extraction {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(error);
+    }
     fs::rename(&temporary, destination)
         .map_err(|error| format!("failed to install {}: {error}", destination.display()))
 }
@@ -777,6 +807,9 @@ pub fn build_native(project: &Project, release: bool) -> Result<Option<PathBuf>,
     }
     let mut command = Command::new("cargo");
     command.arg("build").arg("--manifest-path").arg(&manifest);
+    if project.registry_source.is_some() {
+        command.arg("--locked");
+    }
     if release {
         command.arg("--release");
     }
@@ -994,12 +1027,15 @@ mod tests {
 
         let project = init(&root, "hello_native", false, true).unwrap();
         assert_eq!(project.entry, root.join("src/lib.ject"));
-        assert_eq!(project.native.unwrap().library, "hello_native");
+        assert_eq!(project.native.as_ref().unwrap().library, "hello_native");
         assert!(root.join("native/Cargo.toml").is_file());
         let facade = fs::read_to_string(root.join("src/lib.ject")).unwrap();
         assert!(facade.contains("@native/hello_native"));
         let rust = fs::read_to_string(root.join("native/src/lib.rs")).unwrap();
         assert!(rust.contains("ject_native::ject_plugin!"));
+        let registry = format!("file://{}", root.join("registry").display());
+        let error = publish(&project, &registry, None).unwrap_err();
+        assert!(error.contains("native packages require a committed"));
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -1100,6 +1136,10 @@ mod tests {
         assert!(lock.contains(&format!("archive-checksum = \"{checksum}\"")));
         let error = publish(&project, &registry_url, None).unwrap_err();
         assert!(error.contains("published versions are immutable"));
+
+        fs::write(destination.join("src/lib.ject"), "export tampered = true\n").unwrap();
+        let error = load(&destination).unwrap_err();
+        assert!(error.contains("cached registry package") && error.contains("was modified"));
 
         fs::write(registry.join("demo/0.1.0.tar.gz.sha256"), "00\n").unwrap();
         let error = download_registry_package("demo", &dependency, &base.join("bad")).unwrap_err();

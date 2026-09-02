@@ -110,8 +110,13 @@ base URL. A `file://` base implements the same layout for private or local regis
 
 Published archives exclude `.git`, `target`, `Ject.lock`, and Ject's internal source
 metadata. Installation verifies the archive before extraction, records provenance in
-the cache, and normal execution uses that cache without downloading during imports.
-Published versions cannot be overwritten.
+the cache, and revalidates extracted contents whenever the package is loaded. Normal
+execution uses that cache without downloading during imports. Published versions
+cannot be overwritten.
+
+Mixed packages must publish `native/Cargo.lock`; registry-native builds always pass
+`--locked` to Cargo. Path-native packages may generate or update their Cargo lockfile,
+so `ject install` records the final package checksum after native builds finish.
 
 ### Installing a local library
 

@@ -213,6 +213,16 @@ fn install_project(locked: bool) {
                     for artifact in artifacts {
                         println!("Built native artifact {}", artifact.display());
                     }
+                    if !locked {
+                        if let Err(error) = package::install(&project) {
+                            emit_cli_error(
+                                "E4102",
+                                error,
+                                Some("run `ject install` again after fixing the package sources"),
+                            );
+                            std::process::exit(1);
+                        }
+                    }
                 }
                 Err(error) => {
                     emit_cli_error(
