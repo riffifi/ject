@@ -25,6 +25,10 @@ later layers and do not change imports or the native ABI.
 This document defines the target architecture for the package system. The package
 manager is part of the `ject` executable; it is not a second tool.
 
+`Ject.toml` is parsed as standard TOML. Invalid field types, misspelled dependency
+fields, conflicting dependency sources, and selected versions outside their saved
+requirements are errors. Package commands preserve unrelated formatting and comments.
+
 ## Goals
 
 - A normal library is Ject source and needs no Rust toolchain.

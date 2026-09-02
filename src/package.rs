@@ -88,94 +88,65 @@ pub fn load(root: &Path) -> Result<Project, String> {
     let manifest_path = root.join(MANIFEST_FILE);
     let source = fs::read_to_string(&manifest_path)
         .map_err(|e| format!("failed to read {}: {e}", manifest_path.display()))?;
-    let mut section = "";
-    let mut name = None;
-    let mut entry = None;
-    let mut version = None;
-    let mut native_path = None;
-    let mut native_library = None;
+    let manifest: toml::Value = toml::from_str(&source)
+        .map_err(|error| format!("invalid {}: {error}", manifest_path.display()))?;
+    let package = manifest
+        .get("package")
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| "Ject.toml is missing [package]".to_string())?;
+    let name = required_toml_string(package, "name", "[package]")?;
+    validate_package_name(&name)?;
+    let version = optional_toml_string(package, "version", "[package]")?
+        .unwrap_or_else(|| "0.0.0".to_string());
+    validate_version(&version)?;
+    let entry = optional_toml_string(package, "entry", "[package]")?
+        .or(match manifest.get("lib") {
+            Some(toml::Value::Table(table)) => optional_toml_string(table, "entry", "[lib]")?,
+            Some(_) => return Err("[lib] must be a table".to_string()),
+            None => None,
+        })
+        .unwrap_or_else(|| "src/main.ject".to_string());
+    let native = match manifest.get("native") {
+        Some(toml::Value::Table(table)) => Some({
+            let path = required_toml_string(table, "path", "[native]")?;
+            let library = optional_toml_string(table, "library", "[native]")?
+                .unwrap_or_else(|| name.replace('-', "_"));
+            NativeConfig {
+                path: root.join(path),
+                library,
+            }
+        }),
+        Some(_) => return Err("[native] must be a table".to_string()),
+        None => None,
+    };
     let mut dependencies = HashMap::new();
     let mut registry_dependencies = HashMap::new();
     let mut git_dependencies = HashMap::new();
-
-    for raw_line in source.lines() {
-        let line = raw_line.split('#').next().unwrap_or("").trim();
-        if line.starts_with('[') && line.ends_with(']') {
-            section = &line[1..line.len() - 1];
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let raw_value = value.trim();
-        let value = raw_value.trim_matches('"');
-        match (section, key.trim()) {
-            ("package", "name") => name = Some(value.to_string()),
-            ("package", "version") => version = Some(value.to_string()),
-            ("package", "entry") | ("lib", "entry") => entry = Some(PathBuf::from(value)),
-            ("native", "path") => native_path = Some(PathBuf::from(value)),
-            ("native", "library") => native_library = Some(value.to_string()),
-            ("dependencies", dependency) => {
-                if let Some(path) = dependency_path(raw_value) {
-                    dependencies.insert(dependency.to_string(), root.join(path));
-                } else if let Some(url) = inline_string(raw_value, "git") {
-                    let revision = inline_string(raw_value, "rev").ok_or_else(|| {
-                        format!("git dependency '{dependency}' is missing an exact rev")
-                    })?;
-                    let reference = inline_string(raw_value, "branch")
-                        .map(|branch| format!("branch:{branch}"))
-                        .or_else(|| inline_string(raw_value, "tag").map(|tag| format!("tag:{tag}")))
-                        .or_else(|| inline_string(raw_value, "head").map(|_| "HEAD".to_string()));
-                    dependencies.insert(
-                        dependency.to_string(),
-                        git_cache_root()?
-                            .join(repository_hash(&url))
-                            .join(&revision),
-                    );
-                    git_dependencies.insert(
-                        dependency.to_string(),
-                        GitDependency {
-                            url,
-                            revision,
-                            reference,
-                        },
-                    );
-                } else if let Some(version) = dependency_version(raw_value) {
-                    let requirement = inline_string(raw_value, "requirement");
-                    let registry = dependency_registry(raw_value)
-                        .or_else(|| std::env::var("JECT_REGISTRY").ok())
-                        .unwrap_or_else(|| "https://packages.ject.dev".to_string());
-                    dependencies.insert(
-                        dependency.to_string(),
-                        registry_cache_root()?.join(dependency).join(&version),
-                    );
-                    registry_dependencies.insert(
-                        dependency.to_string(),
-                        RegistryDependency {
-                            version,
-                            requirement,
-                            registry,
-                        },
-                    );
-                }
-            }
-            _ => {}
+    let dependency_table = match manifest.get("dependencies") {
+        Some(toml::Value::Table(table)) => Some(table),
+        Some(_) => return Err("[dependencies] must be a table".to_string()),
+        None => None,
+    };
+    if let Some(table) = dependency_table {
+        for (dependency, value) in table {
+            validate_package_name(dependency)?;
+            parse_dependency(
+                root,
+                dependency,
+                value,
+                &mut dependencies,
+                &mut registry_dependencies,
+                &mut git_dependencies,
+            )?;
         }
     }
-
-    let name = name.ok_or_else(|| "Ject.toml is missing [package].name".to_string())?;
-    let entry = root.join(entry.unwrap_or_else(|| PathBuf::from("src/main.ject")));
-    let native = native_path.map(|path| NativeConfig {
-        path: root.join(path),
-        library: native_library.unwrap_or_else(|| name.replace('-', "_")),
-    });
     let registry_source = read_registry_source(root)?;
     let git_source = read_git_source(root)?;
     Ok(Project {
         root: root.to_path_buf(),
         name,
-        version: version.unwrap_or_else(|| "0.0.0".to_string()),
-        entry,
+        version,
+        entry: root.join(entry),
         native,
         dependencies,
         registry_dependencies,
@@ -183,6 +154,167 @@ pub fn load(root: &Path) -> Result<Project, String> {
         registry_source,
         git_source,
     })
+}
+
+fn required_toml_string(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+    section: &str,
+) -> Result<String, String> {
+    optional_toml_string(table, key, section)?
+        .ok_or_else(|| format!("{section} is missing `{key}`"))
+}
+
+fn optional_toml_string(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+    section: &str,
+) -> Result<Option<String>, String> {
+    match table.get(key) {
+        Some(toml::Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(format!("{section}.{key} must be a string")),
+        None => Ok(None),
+    }
+}
+
+fn reject_dependency_fields(
+    name: &str,
+    table: &toml::map::Map<String, toml::Value>,
+    allowed: &[&str],
+) -> Result<(), String> {
+    if let Some(field) = table
+        .keys()
+        .find(|field| !allowed.contains(&field.as_str()))
+    {
+        return Err(format!(
+            "dependency '{name}' has unsupported field `{field}`"
+        ));
+    }
+    Ok(())
+}
+
+fn parse_dependency(
+    root: &Path,
+    name: &str,
+    value: &toml::Value,
+    dependencies: &mut HashMap<String, PathBuf>,
+    registry_dependencies: &mut HashMap<String, RegistryDependency>,
+    git_dependencies: &mut HashMap<String, GitDependency>,
+) -> Result<(), String> {
+    if let Some(version) = value.as_str() {
+        validate_version(version)?;
+        let registry = std::env::var("JECT_REGISTRY")
+            .unwrap_or_else(|_| "https://packages.ject.dev".to_string());
+        dependencies.insert(
+            name.to_string(),
+            registry_cache_root()?.join(name).join(version),
+        );
+        registry_dependencies.insert(
+            name.to_string(),
+            RegistryDependency {
+                version: version.to_string(),
+                requirement: None,
+                registry,
+            },
+        );
+        return Ok(());
+    }
+    let table = value
+        .as_table()
+        .ok_or_else(|| format!("dependency '{name}' must be a version string or inline table"))?;
+    let source_fields = ["path", "git", "version"]
+        .into_iter()
+        .filter(|field| table.contains_key(*field))
+        .collect::<Vec<_>>();
+    if source_fields.len() != 1 {
+        return Err(format!(
+            "dependency '{name}' must specify exactly one of `path`, `git`, or `version`"
+        ));
+    }
+    match source_fields[0] {
+        "path" => {
+            reject_dependency_fields(name, table, &["path"])?;
+            let path = required_toml_string(table, "path", &format!("dependency '{name}'"))?;
+            dependencies.insert(name.to_string(), root.join(path));
+        }
+        "git" => {
+            reject_dependency_fields(name, table, &["git", "rev", "branch", "tag", "head"])?;
+            let url = required_toml_string(table, "git", &format!("dependency '{name}'"))?;
+            let revision = required_toml_string(table, "rev", &format!("dependency '{name}'"))?;
+            if !is_full_git_revision(&revision) {
+                return Err(format!(
+                    "git dependency '{name}' must use a full 40-character rev"
+                ));
+            }
+            let branch = optional_toml_string(table, "branch", &format!("dependency '{name}'"))?;
+            let tag = optional_toml_string(table, "tag", &format!("dependency '{name}'"))?;
+            let head = match table.get("head") {
+                Some(toml::Value::Boolean(value)) => *value,
+                Some(toml::Value::String(value)) if value == "true" => true,
+                Some(_) => return Err(format!("dependency '{name}'.head must be true or false")),
+                None => false,
+            };
+            if usize::from(branch.is_some()) + usize::from(tag.is_some()) + usize::from(head) > 1 {
+                return Err(format!(
+                    "git dependency '{name}' may track only one of branch, tag, or HEAD"
+                ));
+            }
+            let reference = branch
+                .map(|value| format!("branch:{value}"))
+                .or_else(|| tag.map(|value| format!("tag:{value}")))
+                .or_else(|| head.then(|| "HEAD".to_string()));
+            dependencies.insert(
+                name.to_string(),
+                git_cache_root()?
+                    .join(repository_hash(&url))
+                    .join(&revision),
+            );
+            git_dependencies.insert(
+                name.to_string(),
+                GitDependency {
+                    url,
+                    revision,
+                    reference,
+                },
+            );
+        }
+        "version" => {
+            reject_dependency_fields(name, table, &["version", "requirement", "registry"])?;
+            let version = required_toml_string(table, "version", &format!("dependency '{name}'"))?;
+            validate_version(&version)?;
+            let requirement =
+                optional_toml_string(table, "requirement", &format!("dependency '{name}'"))?;
+            if let Some(requirement) = &requirement {
+                let parsed = VersionReq::parse(requirement).map_err(|error| {
+                    format!("dependency '{name}' has invalid requirement '{requirement}': {error}")
+                })?;
+                let selected = Version::parse(&version).expect("validated semantic version");
+                if !parsed.matches(&selected) {
+                    return Err(format!(
+                        "dependency '{name}' selects {version}, which does not match requirement '{requirement}'"
+                    ));
+                }
+            }
+            let registry =
+                optional_toml_string(table, "registry", &format!("dependency '{name}'"))?
+                    .or_else(|| std::env::var("JECT_REGISTRY").ok())
+                    .unwrap_or_else(|| "https://packages.ject.dev".to_string());
+            dependencies.insert(
+                name.to_string(),
+                registry_cache_root()?.join(name).join(&version),
+            );
+            registry_dependencies.insert(
+                name.to_string(),
+                RegistryDependency {
+                    version,
+                    requirement,
+                    registry,
+                },
+            );
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
 }
 
 /// Add or replace a local path dependency in Ject.toml.
@@ -297,7 +429,7 @@ pub fn add_git_dependency(
     }
     let url = escape_manifest_string(url);
     let selector = match tracked.as_deref() {
-        Some("HEAD") => ", head = \"true\"".to_string(),
+        Some("HEAD") => ", head = true".to_string(),
         Some(reference) if reference.starts_with("branch:") => {
             format!(", branch = \"{}\"", escape_manifest_string(&reference[7..]))
         }
@@ -379,7 +511,7 @@ pub fn update_dependencies(
             continue;
         }
         let selector = if reference == "HEAD" {
-            ", head = \"true\"".to_string()
+            ", head = true".to_string()
         } else if let Some(branch) = reference.strip_prefix("branch:") {
             format!(", branch = \"{}\"", escape_manifest_string(branch))
         } else if let Some(tag) = reference.strip_prefix("tag:") {
@@ -423,41 +555,24 @@ fn update_dependency_value(
 ) -> Result<(), String> {
     let source = fs::read_to_string(manifest)
         .map_err(|e| format!("failed to read {}: {e}", manifest.display()))?;
-    let mut output = Vec::new();
-    let mut in_dependencies = false;
-    let mut found_section = false;
-    let mut written = false;
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            if in_dependencies && !written {
-                if let Some(value) = &value {
-                    output.push(format!("{name} = {value}"));
-                }
-                written = true;
-            }
-            in_dependencies = trimmed == "[dependencies]";
-            found_section |= in_dependencies;
-        }
-        if in_dependencies && trimmed.split_once('=').map(|(key, _)| key.trim()) == Some(name) {
-            if let Some(value) = &value {
-                output.push(format!("{name} = {value}"));
-            }
-            written = true;
-            continue;
-        }
-        output.push(line.to_string());
+    let mut document = source
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|error| format!("invalid {}: {error}", manifest.display()))?;
+    if !document.contains_key("dependencies") {
+        document["dependencies"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    if !found_section {
-        output.push(String::new());
-        output.push("[dependencies]".into());
+    let dependencies = document["dependencies"]
+        .as_table_mut()
+        .ok_or_else(|| format!("[dependencies] in {} must be a table", manifest.display()))?;
+    if let Some(value) = value {
+        let parsed = value
+            .parse::<toml_edit::Value>()
+            .map_err(|error| format!("failed to encode dependency '{name}': {error}"))?;
+        dependencies[name] = toml_edit::Item::Value(parsed);
+    } else {
+        dependencies.remove(name);
     }
-    if !written {
-        if let Some(value) = &value {
-            output.push(format!("{name} = {value}"));
-        }
-    }
-    let updated = format!("{}\n", output.join("\n"));
+    let updated = document.to_string();
     let temporary = manifest.with_extension("toml.tmp");
     fs::write(&temporary, updated)
         .map_err(|e| format!("failed to write {}: {e}", temporary.display()))?;
@@ -602,47 +717,6 @@ fn package_checksum_root(root: &Path) -> Result<String, String> {
         digest.update(bytes);
     }
     Ok(format!("{:x}", digest.finalize()))
-}
-
-fn dependency_path(value: &str) -> Option<PathBuf> {
-    inline_string(value, "path").map(PathBuf::from)
-}
-
-fn inline_string(value: &str, key: &str) -> Option<String> {
-    let value = value.trim().trim_start_matches('{').trim_end_matches('}');
-    let mut quoted = false;
-    let mut escaped = false;
-    let mut start = 0;
-    for (index, character) in value.char_indices().chain([(value.len(), ',')]) {
-        if character == '"' && !escaped {
-            quoted = !quoted;
-        }
-        if character == ',' && !quoted {
-            let field = &value[start..index];
-            if let Some((field_key, field_value)) = field.split_once('=') {
-                if field_key.trim() == key {
-                    return Some(field_value.trim().trim_matches('"').to_string());
-                }
-            }
-            start = index + character.len_utf8();
-        }
-        escaped = character == '\\' && !escaped;
-        if character != '\\' {
-            escaped = false;
-        }
-    }
-    None
-}
-
-fn dependency_version(value: &str) -> Option<String> {
-    if value.starts_with('"') {
-        return Some(value.trim_matches('"').to_string());
-    }
-    inline_string(value, "version")
-}
-
-fn dependency_registry(value: &str) -> Option<String> {
-    inline_string(value, "registry")
 }
 
 fn registry_cache_root() -> Result<PathBuf, String> {
@@ -1493,16 +1567,81 @@ mod tests {
     }
 
     #[test]
-    fn parses_registry_dependencies_by_exact_inline_keys() {
-        assert_eq!(dependency_version("\"1.2.0\""), Some("1.2.0".into()));
-        assert_eq!(dependency_path("\"1.2.0\""), None);
-        let value = "{ version = \"1.2.0\", registry = \"https://example.test/path/packages\" }";
-        assert_eq!(dependency_version(value), Some("1.2.0".into()));
-        assert_eq!(
-            dependency_registry(value),
-            Some("https://example.test/path/packages".into())
-        );
-        assert_eq!(dependency_path(value), None);
+    fn parses_toml_dependencies_without_confusing_comments_or_commas() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-toml-manifest-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join(MANIFEST_FILE),
+            "[package]\nname = \"manifest_test\" # a real TOML comment\n[dependencies]\ndemo = { version = \"1.4.0\", requirement = \">=1.0, <2.0\", registry = \"https://example.test/a#b\" }\n",
+        )
+        .unwrap();
+        let project = load(&root).unwrap();
+        let dependency = &project.registry_dependencies["demo"];
+        assert_eq!(dependency.version, "1.4.0");
+        assert_eq!(dependency.requirement.as_deref(), Some(">=1.0, <2.0"));
+        assert_eq!(dependency.registry, "https://example.test/a#b");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_ambiguous_and_mistyped_dependency_sources() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-invalid-manifest-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join(MANIFEST_FILE),
+            "[package]\nname = \"invalid\"\n[dependencies]\ndemo = { path = \"../demo\", version = \"1.0.0\" }\n",
+        )
+        .unwrap();
+        assert!(load(&root).unwrap_err().contains("exactly one"));
+        fs::write(
+            root.join(MANIFEST_FILE),
+            "[package]\nname = \"invalid\"\n[dependencies]\ndemo = { version = \"1.0.0\", requirment = \"^1\" }\n",
+        )
+        .unwrap();
+        assert!(load(&root)
+            .unwrap_err()
+            .contains("unsupported field `requirment`"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dependency_edits_preserve_manifest_comments_and_multiline_values() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-manifest-edit-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let manifest = root.join(MANIFEST_FILE);
+        fs::write(
+            &manifest,
+            "# keep this comment\n[package]\nname = \"edit_test\"\n\n[metadata]\nvalues = [\n    \"one\",\n    \"two\",\n]\n",
+        )
+        .unwrap();
+        update_dependency_value(
+            &manifest,
+            "demo",
+            Some("{ path = \"../demo\" }".to_string()),
+        )
+        .unwrap();
+        let edited = fs::read_to_string(&manifest).unwrap();
+        assert!(edited.contains("# keep this comment"));
+        assert!(edited.contains("values = [\n    \"one\",\n    \"two\",\n]"));
+        assert!(edited.contains("demo = { path = \"../demo\" }"));
+        update_dependency_value(&manifest, "demo", None).unwrap();
+        assert!(!fs::read_to_string(&manifest).unwrap().contains("demo ="));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
