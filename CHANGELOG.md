@@ -31,6 +31,9 @@
   mixed package with plugin-owned arrays and an explicit `to_array` conversion.
 - Namespaced module exports may now intentionally share names with global builtins
   without producing false redeclaration warnings.
+- Native package scaffolding now vendors `ject-native` and uses a package-relative
+  Cargo dependency, making published mixed libraries independent of the author's
+  Ject checkout.
 
 ## 0.9.0
 

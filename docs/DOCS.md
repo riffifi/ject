@@ -1308,13 +1308,18 @@ ject_native::ject_plugin!("native_greeter", ["hello"], call);
 The macro exports one stable symbol, `ject_plugin_entry_v1`. Ject reads its module
 name and export list at runtime. No interpreter match arm is added for the package.
 
+`ject new <name> --native` vendors the small `ject-native` SDK under
+`native/ject-native` and uses a relative Cargo path dependency. Keep that directory
+in version control. It makes the mixed package self-contained: publishing and a
+subsequent `ject install --locked` do not depend on the original Ject source checkout.
+
 ### ABI values
 
-The first ABI supports:
+The native ABI supports:
 
 - `nil`
 - booleans
-- finite integers and floats
+- integers and floats, including tagged NaN and infinities
 - strings
 - arrays
 - dictionaries

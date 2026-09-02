@@ -1519,14 +1519,22 @@ fn scaffold_native(root: &Path, name: &str) -> Result<(), String> {
     let native_src = root.join("native/src");
     fs::create_dir_all(&native_src)
         .map_err(|e| format!("failed to create {}: {e}", native_src.display()))?;
-    let development_sdk = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/ject-native");
-    let sdk_dependency = std::env::var_os("JECT_NATIVE_SDK_PATH")
-        .map(PathBuf::from)
-        .or_else(|| development_sdk.is_dir().then_some(development_sdk))
-        .map(|path| format!("ject-native = {{ path = \"{}\" }}", path.display()))
-        .unwrap_or_else(|| "ject-native = \"0.1\"".to_string());
+    let sdk_root = root.join("native/ject-native");
+    let sdk_src = sdk_root.join("src");
+    fs::create_dir_all(&sdk_src)
+        .map_err(|e| format!("failed to create {}: {e}", sdk_src.display()))?;
+    fs::write(
+        sdk_root.join("Cargo.toml"),
+        include_str!("../crates/ject-native/Cargo.toml"),
+    )
+    .map_err(|e| format!("failed to write native/ject-native/Cargo.toml: {e}"))?;
+    fs::write(
+        sdk_src.join("lib.rs"),
+        include_str!("../crates/ject-native/src/lib.rs"),
+    )
+    .map_err(|e| format!("failed to write native/ject-native/src/lib.rs: {e}"))?;
     let cargo = format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n{sdk_dependency}\nserde_json = \"1.0\"\n\n[workspace]\n"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nject-native = {{ path = \"ject-native\" }}\nserde_json = \"1.0\"\n\n[workspace]\n"
     );
     fs::write(root.join("native/Cargo.toml"), cargo)
         .map_err(|e| format!("failed to write native/Cargo.toml: {e}"))?;
@@ -1693,6 +1701,11 @@ mod tests {
         assert_eq!(project.entry, root.join("src/lib.ject"));
         assert_eq!(project.native.as_ref().unwrap().library, "hello_native");
         assert!(root.join("native/Cargo.toml").is_file());
+        assert!(root.join("native/ject-native/Cargo.toml").is_file());
+        assert!(root.join("native/ject-native/src/lib.rs").is_file());
+        let native_manifest = fs::read_to_string(root.join("native/Cargo.toml")).unwrap();
+        assert!(native_manifest.contains("path = \"ject-native\""));
+        assert!(!native_manifest.contains(env!("CARGO_MANIFEST_DIR")));
         let facade = fs::read_to_string(root.join("src/lib.ject")).unwrap();
         assert!(facade.contains("@native/hello_native"));
         let rust = fs::read_to_string(root.join("native/src/lib.rs")).unwrap();

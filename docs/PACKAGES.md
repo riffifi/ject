@@ -57,6 +57,7 @@ image_filters/
   src/lib.ject          # public Ject facade
   native/Cargo.toml
   native/src/lib.rs     # private native implementation
+  native/ject-native/   # vendored stable ABI SDK
 ```
 
 Example manifest:
@@ -242,6 +243,9 @@ cached view of those resolutions.
   identified as `git+<url>#<commit>` in `Ject.lock`.
 - Installing a mixed package invokes Cargo and therefore its build scripts. Review
   native dependencies before installation.
+- Newly scaffolded mixed packages vendor the small ABI SDK and reference it through
+  a relative Cargo path, so registry and Git installations never depend on the
+  publisher's filesystem layout.
 
 ## Implemented delivery milestones
 
@@ -252,6 +256,8 @@ cached view of those resolutions.
 4. Registry download/publish, immutable checksums, provenance, and cache management.
 5. SemVer selection and updates, plus commit-pinned Git dependencies.
 6. Backward-compatible ABI v2 callback handles and manifest ABI verification.
+7. Self-contained native package scaffolding with a vendored ABI SDK, verified by
+   publishing JGUI and JNUM and rebuilding both from immutable registry archives.
 
 ## Post-0.9 research
 
