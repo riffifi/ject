@@ -69,6 +69,7 @@ pub struct GitSource {
 pub struct NativeConfig {
     pub path: PathBuf,
     pub library: String,
+    pub abi: String,
 }
 
 pub fn discover(start: &Path) -> Result<Project, String> {
@@ -111,9 +112,15 @@ pub fn load(root: &Path) -> Result<Project, String> {
             let path = required_toml_string(table, "path", "[native]")?;
             let library = optional_toml_string(table, "library", "[native]")?
                 .unwrap_or_else(|| name.replace('-', "_"));
+            let abi = optional_toml_string(table, "abi", "[native]")?
+                .unwrap_or_else(|| "ject-native-1".to_string());
+            if !matches!(abi.as_str(), "ject-native-1" | "ject-native-2") {
+                return Err(format!("unsupported native ABI '{abi}'"));
+            }
             NativeConfig {
                 path: root.join(path),
                 library,
+                abi,
             }
         }),
         Some(_) => return Err("[native] must be a table".to_string()),
@@ -1561,7 +1568,9 @@ mod tests {
         )
         .unwrap();
         let project = load(&root).unwrap();
-        assert_eq!(project.native.unwrap().library, "mixed_impl");
+        let native = project.native.unwrap();
+        assert_eq!(native.library, "mixed_impl");
+        assert_eq!(native.abi, "ject-native-1");
         assert_eq!(project.dependencies["helper"], root.join("../helper"));
         fs::remove_dir_all(root).unwrap();
     }

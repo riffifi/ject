@@ -21,6 +21,8 @@
   branch/tag/HEAD updates, lockfile provenance, and `--locked` native builds.
 - Replaced ad-hoc manifest parsing and dependency edits with standards-compliant,
   comment-preserving TOML handling and strict dependency-source validation.
+- Added backward-compatible `ject-native-2` callback handles, explicit manifest ABI
+  verification, and synchronous Rust-to-Ject function invocation with error propagation.
 
 ## 0.9.0
 

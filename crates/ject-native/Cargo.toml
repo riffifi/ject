@@ -1,6 +1,6 @@
 [package]
 name = "ject-native"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Stable ABI and Rust SDK for Ject native extensions"
 license = "MIT"

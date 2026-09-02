@@ -19,10 +19,51 @@
 use crate::interpreter::RuntimeError;
 use crate::value::Value;
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 use std::rc::Rc;
+
+struct CallbackContext {
+    interpreter: *mut crate::interpreter::Interpreter,
+    callbacks: Vec<Value>,
+    module: Option<String>,
+    descriptor: Option<ExternalDescriptor>,
+}
+
+thread_local! {
+    static CALLBACK_CONTEXTS: RefCell<Vec<CallbackContext>> = const { RefCell::new(Vec::new()) };
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExternalDescriptor {
+    V1(&'static ject_native::PluginV1),
+    V2(&'static ject_native::PluginV2),
+}
+
+unsafe extern "C" fn host_call_callback(
+    id: u64,
+    arguments_ptr: *const u8,
+    arguments_len: usize,
+) -> ject_native::Buffer {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        invoke_host_callback(id, arguments_ptr, arguments_len)
+    }))
+    .unwrap_or_else(|_| Err("Ject callback panicked".to_string()));
+    let envelope = match result {
+        Ok(value) => serde_json::json!({ "ok": value }),
+        Err(error) => serde_json::json!({ "error": error }),
+    };
+    ject_native::Buffer::from_vec(
+        serde_json::to_vec(&envelope).expect("callback envelope is serializable"),
+    )
+}
+
+static HOST_API: ject_native::HostV1 = ject_native::HostV1 {
+    call_callback: host_call_callback,
+    free_buffer: ject_native::free_buffer,
+};
 
 /// A value backed by native (Rust) code. Implement this for any type a native
 /// extension wants to hand back into Ject as a value (jnum's `NdArray`, for
@@ -156,15 +197,91 @@ pub fn call_module(module: &str, function: &str, args: Vec<Value>) -> Result<Val
     module_impl.call(function, args)
 }
 
+pub fn call_module_with_interpreter(
+    module: &str,
+    function: &str,
+    args: Vec<Value>,
+    interpreter: &mut crate::interpreter::Interpreter,
+) -> Result<Value, RuntimeError> {
+    CALLBACK_CONTEXTS.with(|contexts| {
+        contexts.borrow_mut().push(CallbackContext {
+            interpreter,
+            callbacks: Vec::new(),
+            module: None,
+            descriptor: None,
+        });
+    });
+    let result = call_module(module, function, args);
+    CALLBACK_CONTEXTS.with(|contexts| {
+        contexts.borrow_mut().pop();
+    });
+    result
+}
+
+fn invoke_host_callback(
+    id: u64,
+    arguments_ptr: *const u8,
+    arguments_len: usize,
+) -> Result<serde_json::Value, String> {
+    if arguments_ptr.is_null() && arguments_len != 0 {
+        return Err("plugin passed an invalid callback buffer".to_string());
+    }
+    let bytes = if arguments_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(arguments_ptr, arguments_len) }
+    };
+    let arguments: Vec<serde_json::Value> = serde_json::from_slice(bytes)
+        .map_err(|error| format!("plugin passed invalid callback arguments: {error}"))?;
+    let (interpreter, callback, module, descriptor) = CALLBACK_CONTEXTS.with(|contexts| {
+        let contexts = contexts.borrow();
+        let context = contexts
+            .last()
+            .ok_or_else(|| "no Ject callback context is active".to_string())?;
+        let callback = id
+            .checked_sub(1)
+            .and_then(|index| context.callbacks.get(index as usize))
+            .cloned()
+            .ok_or_else(|| format!("unknown Ject callback handle {id}"))?;
+        Ok::<_, String>((
+            context.interpreter,
+            callback,
+            context.module.clone().unwrap_or_default(),
+            context.descriptor,
+        ))
+    })?;
+    let descriptor = descriptor.ok_or_else(|| "native callback ABI is not active".to_string())?;
+    let arguments = arguments
+        .into_iter()
+        .map(|value| json_to_value(value, &module, descriptor))
+        .collect::<Result<Vec<_>, _>>()?;
+    let value = unsafe { &mut *interpreter }
+        .invoke_callable(&callback, arguments)
+        .map_err(|error| error.message)?;
+    value_to_json(&value, &module, Some(descriptor))
+}
+
 /// Loads a versioned `ject-native-1` dynamic library. The library owns its
 /// descriptor and remains loaded for the rest of the process.
-pub fn register_dynamic(path: &Path, expected_name: Option<&str>) -> Result<String, String> {
+pub fn register_dynamic(
+    path: &Path,
+    expected_name: Option<&str>,
+    expected_abi: Option<&str>,
+) -> Result<String, String> {
     let module = unsafe { DynamicNativeModule::load(path)? };
     let name = module.name.clone();
     if let Some(expected) = expected_name {
         if expected != name {
             return Err(format!(
                 "native artifact declares module '{name}', expected '{expected}'"
+            ));
+        }
+    }
+    if let Some(expected) = expected_abi {
+        let actual = format!("ject-native-{}", module.abi_version);
+        if expected != actual {
+            return Err(format!(
+                "native artifact uses {actual}, but Ject.toml declares {expected}"
             ));
         }
     }
@@ -180,8 +297,9 @@ pub fn register_dynamic(path: &Path, expected_name: Option<&str>) -> Result<Stri
 
 struct DynamicNativeModule {
     name: String,
+    abi_version: u32,
     exports: Vec<String>,
-    descriptor: &'static ject_native::PluginV1,
+    descriptor: ExternalDescriptor,
     _library: libloading::Library,
 }
 
@@ -190,12 +308,17 @@ struct ExternalResource {
     module: String,
     type_name: String,
     id: u64,
-    descriptor: &'static ject_native::PluginV1,
+    descriptor: ExternalDescriptor,
 }
 
 impl Drop for ExternalResource {
     fn drop(&mut self) {
-        unsafe { (self.descriptor.drop_resource)(self.id) };
+        unsafe {
+            match self.descriptor {
+                ExternalDescriptor::V1(descriptor) => (descriptor.drop_resource)(self.id),
+                ExternalDescriptor::V2(descriptor) => (descriptor.drop_resource)(self.id),
+            }
+        };
     }
 }
 
@@ -224,37 +347,57 @@ impl DynamicNativeModule {
     unsafe fn load(path: &Path) -> Result<Self, String> {
         let library = unsafe { libloading::Library::new(path) }
             .map_err(|e| format!("failed to load {}: {e}", path.display()))?;
-        let entry: libloading::Symbol<ject_native::EntryFn> = unsafe {
-            library
-                .get(ject_native::ENTRY_SYMBOL)
-                .map_err(|e| format!("missing ject_plugin_entry_v1: {e}"))?
+        let descriptor = if let Ok(entry) =
+            unsafe { library.get::<ject_native::EntryFnV2>(ject_native::ENTRY_SYMBOL_V2) }
+        {
+            let descriptor = unsafe { entry() }
+                .as_ref()
+                .ok_or_else(|| "plugin returned a null v2 descriptor".to_string())?;
+            if descriptor.abi_version != ject_native::ABI_VERSION_V2 {
+                return Err(format!("unsupported native ABI {}", descriptor.abi_version));
+            }
+            ExternalDescriptor::V2(unsafe { &*(descriptor as *const ject_native::PluginV2) })
+        } else {
+            let entry: libloading::Symbol<ject_native::EntryFn> = unsafe {
+                library
+                    .get(ject_native::ENTRY_SYMBOL)
+                    .map_err(|e| format!("missing native ABI entry symbol: {e}"))?
+            };
+            let descriptor = unsafe { entry() }
+                .as_ref()
+                .ok_or_else(|| "plugin returned a null v1 descriptor".to_string())?;
+            if descriptor.abi_version != ject_native::ABI_VERSION {
+                return Err(format!("unsupported native ABI {}", descriptor.abi_version));
+            }
+            ExternalDescriptor::V1(unsafe { &*(descriptor as *const ject_native::PluginV1) })
         };
-        let descriptor_ptr = unsafe { entry() };
-        let descriptor = unsafe { descriptor_ptr.as_ref() }
-            .ok_or_else(|| "plugin returned a null descriptor".to_string())?;
-        if descriptor.abi_version != ject_native::ABI_VERSION {
-            return Err(format!(
-                "unsupported native ABI {}, host supports {}",
-                descriptor.abi_version,
-                ject_native::ABI_VERSION
-            ));
-        }
-        let name = abi_text(descriptor.name_ptr, descriptor.name_len, "plugin name")?;
-        let export_text = abi_text(
-            descriptor.exports_ptr,
-            descriptor.exports_len,
-            "plugin exports",
-        )?;
+        let (abi_version, name_ptr, name_len, exports_ptr, exports_len) = match descriptor {
+            ExternalDescriptor::V1(value) => (
+                value.abi_version,
+                value.name_ptr,
+                value.name_len,
+                value.exports_ptr,
+                value.exports_len,
+            ),
+            ExternalDescriptor::V2(value) => (
+                value.abi_version,
+                value.name_ptr,
+                value.name_len,
+                value.exports_ptr,
+                value.exports_len,
+            ),
+        };
+        let name = abi_text(name_ptr, name_len, "plugin name")?;
+        let export_text = abi_text(exports_ptr, exports_len, "plugin exports")?;
         let exports = export_text
             .lines()
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .map(str::to_string)
             .collect();
-        // The library is stored in the module and therefore outlives this reference.
-        let descriptor = unsafe { &*(descriptor as *const ject_native::PluginV1) };
         Ok(Self {
             name,
+            abi_version,
             exports,
             descriptor,
             _library: library,
@@ -266,7 +409,11 @@ unsafe fn abi_text(ptr: *const u8, len: usize, what: &str) -> Result<String, Str
     if ptr.is_null() && len != 0 {
         return Err(format!("{what} has an invalid buffer"));
     }
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let bytes = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    };
     std::str::from_utf8(bytes)
         .map(str::to_string)
         .map_err(|_| format!("{what} is not UTF-8"))
@@ -298,29 +445,55 @@ impl NativeModule for DynamicNativeModule {
                 message: format!("'{}' has no native export '{function}'", self.name),
             });
         }
+        if matches!(self.descriptor, ExternalDescriptor::V2(_)) {
+            CALLBACK_CONTEXTS.with(|contexts| {
+                if let Some(context) = contexts.borrow_mut().last_mut() {
+                    context.module = Some(self.name.clone());
+                    context.descriptor = Some(self.descriptor);
+                }
+            });
+        }
         let json_args: Result<Vec<_>, _> = args
             .iter()
-            .map(|value| value_to_json(value, &self.name))
+            .map(|value| value_to_json(value, &self.name, Some(self.descriptor)))
             .collect();
         let encoded = serde_json::to_vec(&json_args.map_err(|message| RuntimeError { message })?)
             .map_err(|e| RuntimeError {
             message: format!("failed to encode native arguments: {e}"),
         })?;
         let result = unsafe {
-            (self.descriptor.call)(
-                function.as_ptr(),
-                function.len(),
-                encoded.as_ptr(),
-                encoded.len(),
-            )
+            match self.descriptor {
+                ExternalDescriptor::V1(descriptor) => (descriptor.call)(
+                    function.as_ptr(),
+                    function.len(),
+                    encoded.as_ptr(),
+                    encoded.len(),
+                ),
+                ExternalDescriptor::V2(descriptor) => (descriptor.call)(
+                    function.as_ptr(),
+                    function.len(),
+                    encoded.as_ptr(),
+                    encoded.len(),
+                    &HOST_API,
+                ),
+            }
         };
         if result.ptr.is_null() && result.len != 0 {
             return Err(RuntimeError {
                 message: "native plugin returned an invalid result buffer".to_string(),
             });
         }
-        let bytes = unsafe { std::slice::from_raw_parts(result.ptr, result.len) }.to_vec();
-        unsafe { (self.descriptor.free_buffer)(result) };
+        let bytes = if result.len == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(result.ptr, result.len) }.to_vec()
+        };
+        unsafe {
+            match self.descriptor {
+                ExternalDescriptor::V1(descriptor) => (descriptor.free_buffer)(result),
+                ExternalDescriptor::V2(descriptor) => (descriptor.free_buffer)(result),
+            }
+        };
         let envelope: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|e| RuntimeError {
                 message: format!("native plugin returned invalid JSON: {e}"),
@@ -342,7 +515,11 @@ impl NativeModule for DynamicNativeModule {
     }
 }
 
-fn value_to_json(value: &Value, module: &str) -> Result<serde_json::Value, String> {
+fn value_to_json(
+    value: &Value,
+    module: &str,
+    descriptor: Option<ExternalDescriptor>,
+) -> Result<serde_json::Value, String> {
     match value {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Bool(value) => Ok((*value).into()),
@@ -354,13 +531,13 @@ fn value_to_json(value: &Value, module: &str) -> Result<serde_json::Value, Strin
         Value::Array(values) => values
             .borrow()
             .iter()
-            .map(|value| value_to_json(value, module))
+            .map(|value| value_to_json(value, module, descriptor))
             .collect::<Result<Vec<_>, _>>()
             .map(serde_json::Value::Array),
         Value::Dictionary(values) => values
             .borrow()
             .iter()
-            .map(|(key, value)| Ok((key.clone(), value_to_json(value, module)?)))
+            .map(|(key, value)| Ok((key.clone(), value_to_json(value, module, descriptor)?)))
             .collect::<Result<serde_json::Map<_, _>, String>>()
             .map(serde_json::Value::Object),
         Value::Native(value) => {
@@ -375,6 +552,22 @@ fn value_to_json(value: &Value, module: &str) -> Result<serde_json::Value, Strin
             }
             Ok(ject_native::resource(resource.id, &resource.type_name))
         }
+        Value::Function { .. }
+        | Value::ModuleFunction { .. }
+        | Value::Lambda { .. }
+        | Value::BuiltinFunction(_) => {
+            if !matches!(descriptor, Some(ExternalDescriptor::V2(_))) {
+                return Err("native ABI v1 cannot encode Ject callbacks".to_string());
+            }
+            CALLBACK_CONTEXTS.with(|contexts| {
+                let mut contexts = contexts.borrow_mut();
+                let context = contexts
+                    .last_mut()
+                    .ok_or_else(|| "no Ject callback context is active".to_string())?;
+                context.callbacks.push(value.clone());
+                Ok(ject_native::callback(context.callbacks.len() as u64))
+            })
+        }
         other => Err(format!(
             "native ABI v1 cannot encode Ject value of type '{}'",
             other.type_name()
@@ -385,7 +578,7 @@ fn value_to_json(value: &Value, module: &str) -> Result<serde_json::Value, Strin
 fn json_to_value(
     value: serde_json::Value,
     module: &str,
-    descriptor: &'static ject_native::PluginV1,
+    descriptor: ExternalDescriptor,
 ) -> Result<Value, String> {
     match value {
         serde_json::Value::Null => Ok(Value::Nil),
@@ -426,5 +619,61 @@ fn json_to_value(
                 .collect::<Result<HashMap<_, _>, String>>()
                 .map(Value::dictionary)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe extern "C" fn unused_call(
+        _function_ptr: *const u8,
+        _function_len: usize,
+        _arguments_ptr: *const u8,
+        _arguments_len: usize,
+        _host: *const ject_native::HostV1,
+    ) -> ject_native::Buffer {
+        ject_native::Buffer::from_vec(b"{\"ok\":null}".to_vec())
+    }
+
+    unsafe extern "C" fn unused_drop(_id: u64) {}
+
+    static TEST_PLUGIN: ject_native::PluginV2 = ject_native::PluginV2 {
+        abi_version: ject_native::ABI_VERSION_V2,
+        name_ptr: b"test".as_ptr(),
+        name_len: 4,
+        exports_ptr: std::ptr::null(),
+        exports_len: 0,
+        call: unused_call,
+        free_buffer: ject_native::free_buffer,
+        drop_resource: unused_drop,
+    };
+
+    #[test]
+    fn callback_handles_invoke_ject_callables_and_return_values() {
+        let mut interpreter = crate::interpreter::Interpreter::new();
+        CALLBACK_CONTEXTS.with(|contexts| {
+            contexts.borrow_mut().push(CallbackContext {
+                interpreter: &mut interpreter,
+                callbacks: Vec::new(),
+                module: Some("test".to_string()),
+                descriptor: Some(ExternalDescriptor::V2(&TEST_PLUGIN)),
+            });
+        });
+        let encoded = value_to_json(
+            &Value::BuiltinFunction("abs".to_string()),
+            "test",
+            Some(ExternalDescriptor::V2(&TEST_PLUGIN)),
+        )
+        .unwrap();
+        assert_eq!(encoded, serde_json::json!({ "$ject_callback": 1 }));
+        let arguments = serde_json::to_vec(&vec![serde_json::json!(-42)]).unwrap();
+        assert_eq!(
+            invoke_host_callback(1, arguments.as_ptr(), arguments.len()).unwrap(),
+            serde_json::json!(42)
+        );
+        CALLBACK_CONTEXTS.with(|contexts| {
+            contexts.borrow_mut().pop();
+        });
     }
 }

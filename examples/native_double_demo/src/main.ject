@@ -6,3 +6,4 @@ print "native_double: 21 * 2 = ${numbers.double(21)}"
 let counter = numbers.counter(40)
 assert(type_of(counter) == "native_counter", "resource type should cross the ABI")
 assert(numbers.increment(counter) == 41, "native resource call failed")
+assert(numbers.apply(fn(value) -> value + 1, 41) == 42, "native callback failed")

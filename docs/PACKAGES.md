@@ -18,9 +18,9 @@ The local mixed-package workflow is operational:
 - The `ject-native-1` ABI discovers functions and transports ordinary values plus
   opaque typed resources with plugin-owned destruction.
 
-Path and registry dependencies, authenticated publishing, and checksum-verified
-archives are implemented. Capability grants, callbacks, and sandboxed providers are
-later layers and do not change imports or the native ABI.
+Path, registry, and Git dependencies, authenticated publishing, checksum-verified
+archives, and synchronous native callbacks are implemented. Capability enforcement
+and sandboxed providers are later layers and do not change imports.
 
 This document defines the target architecture for the package system. The package
 manager is part of the `ject` executable; it is not a second tool.
@@ -176,15 +176,20 @@ keeps native code small and allows most compatibility changes in Ject source.
 
 Native code must not expose Rust trait objects or Rust-owned layouts across a dynamic
 library boundary: Rust has no stable ABI. The implemented boundary is the versioned
-`ject-native-1` C descriptor ABI. It uses serialized values and opaque handles, never
+`ject-native-1`/`ject-native-2` C descriptor ABI. It uses serialized values and opaque handles, never
 `Value`, `String`, `Vec`, or `dyn Trait` directly. A future WebAssembly component
 provider can offer isolation and portable artifacts without changing public facades.
 
-The v1 value interface should support nil, bool, integer, float, UTF-8 string, bytes,
+The value interface supports nil, bool, integer, float, UTF-8 string,
 arrays, dictionaries, errors, and opaque resource handles. Native resources carry
 the owning module ID, type name, and handle. Calls on a resource are always routed
 back to its owner, so the core `Value` enum stays independent of `jnum`, `jgui`, and
 future plugins.
+
+ABI v2 additionally transports Ject functions, module functions, lambdas, and builtins
+as scoped callback handles. Rust invokes one with `ject_native::invoke_callback`; the
+handle is valid synchronously on the calling thread and callback failures return as
+ordinary native errors. ABI v1 libraries continue to load unchanged.
 
 ### Bundled libraries migrating to packages
 
@@ -242,9 +247,9 @@ cached view of those resolutions.
 3. Deterministic path/registry resolution and content-verified `Ject.lock` files.
 4. Registry download/publish, immutable checksums, provenance, and cache management.
 5. SemVer selection and updates, plus commit-pinned Git dependencies.
+6. Backward-compatible ABI v2 callback handles and manifest ABI verification.
 
 ## Post-0.9 research
 
 - Capability declarations and sandbox enforcement.
-- Callback/event handles across the native ABI.
 - A WebAssembly component provider for portable, untrusted plugins.

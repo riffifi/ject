@@ -2203,7 +2203,7 @@ impl Interpreter {
         }
     }
 
-    fn invoke_callable(
+    pub(crate) fn invoke_callable(
         &mut self,
         callable: &Value,
         arg_values: Vec<Value>,
@@ -2321,7 +2321,7 @@ impl Interpreter {
             }
             Value::BuiltinFunction(name) => crate::stdlib::call_builtin_function(name, arg_values),
             Value::NativeFunction { module, name } => {
-                crate::native::call_module(module, name, arg_values)
+                crate::native::call_module_with_interpreter(module, name, arg_values, self)
             }
             _ => Err(RuntimeError {
                 message: format!("Cannot call {}", callable.type_name()),

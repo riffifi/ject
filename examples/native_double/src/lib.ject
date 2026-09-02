@@ -2,7 +2,7 @@ import "@native/native_double" as native
 
 # Public Ject facade: validation and API design stay out of the Rust backend.
 export fn double(value)
-    assert(type_of(value) == "number", "double requires a number")
+    assert(type_of(value) == "integer", "double requires an integer")
     return native.double(value)
 end
 
@@ -12,4 +12,8 @@ end
 
 export fn increment(counter)
     return native.increment(counter)
+end
+
+export fn apply(callback, value)
+    return native.apply(callback, value)
 end

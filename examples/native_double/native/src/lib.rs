@@ -18,7 +18,11 @@ fn resource_id(value: &Value) -> Result<u64, String> {
         .ok_or_else(|| "expected a native_double counter".to_string())
 }
 
-fn call(function: &str, args: Vec<Value>) -> Result<Value, String> {
+fn call(
+    function: &str,
+    args: Vec<Value>,
+    host: *const ject_native::HostV1,
+) -> Result<Value, String> {
     match function {
         "double" => {
             let value = args
@@ -43,6 +47,14 @@ fn call(function: &str, args: Vec<Value>) -> Result<Value, String> {
             *value += 1;
             Ok(json!(*value))
         }
+        "apply" => {
+            let callback = args
+                .first()
+                .and_then(ject_native::callback_id)
+                .ok_or("apply expects a Ject callback")?;
+            let value = args.get(1).cloned().unwrap_or(Value::Null);
+            unsafe { ject_native::invoke_callback(host, callback, vec![value]) }
+        }
         "__drop_resource" => {
             if let Some(id) = args.first().and_then(Value::as_u64) {
                 if let Ok(mut counters) = counters().lock() {
@@ -55,8 +67,8 @@ fn call(function: &str, args: Vec<Value>) -> Result<Value, String> {
     }
 }
 
-ject_native::ject_plugin!(
+ject_native::ject_plugin_v2!(
     "native_double",
-    ["double", "new_counter", "increment"],
+    ["double", "new_counter", "increment", "apply"],
     call
 );

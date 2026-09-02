@@ -809,7 +809,11 @@ fn prepare_native_for(path: &Path) {
     for project in projects {
         match package::find_native_artifact(&project) {
             Ok(Some(artifact)) => {
-                if let Err(error) = native::register_dynamic(&artifact, Some(&project.name)) {
+                if let Err(error) = native::register_dynamic(
+                    &artifact,
+                    Some(&project.name),
+                    project.native.as_ref().map(|native| native.abi.as_str()),
+                ) {
                     emit_cli_error("E4201", format!("failed to load native package '{}': {error}", project.name), Some("run `ject build` and ensure the native package uses the current ject-native ABI"));
                     std::process::exit(1);
                 }

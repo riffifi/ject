@@ -1162,8 +1162,9 @@ A window has runtime type `jgui_window`. It is a generic native resource, not an
 integer ID. Application code cannot import `@native/jgui`; only the public JGUI
 facade may access that implementation module.
 
-JGUI currently uses a blocking, declarative window lifecycle. Callback and event
-handles are a planned ABI layer rather than an undocumented special case.
+JGUI currently uses a blocking, declarative window lifecycle. ABI v2 now provides
+generic synchronous callback handles; migrating JGUI widgets onto that mechanism is
+the next library-level step.
 
 ## 15. JNUM
 
@@ -1323,15 +1324,34 @@ Only that module can receive it again. When the final Ject reference disappears,
 the SDK calls the handler with `__drop_resource` so Rust can release the object.
 
 See `examples/native_double` and `examples/native_double_demo` for a complete,
-tested library/consumer pair containing both a normal function and an opaque counter
-resource.
+tested library/consumer pair containing a normal function, an opaque counter resource,
+and a Rust-to-Ject callback.
+
+ABI v2 plugins use `ject_native::ject_plugin_v2!` and declare
+`abi = "ject-native-2"` in `Ject.toml`. Callable Ject arguments arrive as
+`$ject_callback` handles and can be invoked synchronously with
+`ject_native::invoke_callback`. Handles must not be retained after the native export
+returns or called from another thread. ABI v1 remains supported for plugins that do
+not need callbacks.
+
+```rust
+fn call(name: &str, args: Vec<Value>, host: *const ject_native::HostV1)
+    -> Result<Value, String>
+{
+    let callback = ject_native::callback_id(&args[0]).ok_or("expected a callback")?;
+    // SAFETY: `host` is used synchronously during this ABI v2 call.
+    unsafe { ject_native::invoke_callback(host, callback, vec![args[1].clone()]) }
+}
+
+ject_native::ject_plugin_v2!("events", ["apply"], call);
+```
 
 ### Trust model
 
 Native libraries are in-process dynamic libraries. They are appropriate
 for trusted local code and have the same operating-system access as Ject itself.
 Registry archives and lockfiles protect integrity and reproducibility, but do not
-sandbox code. Capability enforcement, callbacks, signatures, and a sandboxed
+sandbox code. Capability enforcement, signatures, and a sandboxed
 WebAssembly provider remain post-0.9 research. Do not load untrusted native packages.
 
 ## 17. Command-line reference
