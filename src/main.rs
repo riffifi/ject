@@ -1,23 +1,11 @@
-mod ast;
-mod diagnostic;
-mod interpreter;
-mod jgui;
-mod jnum;
-mod lexer;
-mod linter;
 mod lsp;
-mod module_interface;
-mod module_resolver;
-mod native;
-mod package;
-mod parser;
-mod semantic;
-mod stdlib;
-mod value;
 
 use diagnostic::{parse_diagnostic, runtime_diagnostic, DiagnosticRenderer};
 use interpreter::Interpreter;
-use ject::module_graph;
+use ject::{
+    diagnostic, interpreter, lexer, linter, module_graph, module_interface, module_resolver,
+    native, package, parser, semantic, stdlib, value,
+};
 use lexer::Lexer;
 use parser::Parser;
 use rustyline::error::ReadlineError;
