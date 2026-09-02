@@ -11,6 +11,8 @@ The local mixed-package workflow is operational:
 - `ject add <name> --path <path>` validates and records a local dependency.
 - `ject remove <name>` removes it, and `ject install` resolves the complete local
   graph, writes a deterministic `Ject.lock`, and builds all native components.
+- `ject install --locked` verifies the exact graph and package checksums without
+  changing the lockfile, making drift a hard error in CI.
 - Public package source imports its backend as `@native/<package-name>`.
 - The `ject-native-1` ABI discovers functions and transports ordinary values plus
   opaque typed resources with plugin-owned destruction.
@@ -70,9 +72,10 @@ abi = "ject-native-1"
 library = "image_filters"
 ```
 
-The manifest records requested versions. `Ject.lock` records exact versions,
-checksums, source URLs, target artifacts, and native ABI versions. Applications
-commit the lockfile; published libraries normally do not.
+The manifest records requested versions. The version 2 `Ject.lock` records exact
+versions, canonical sources, SHA-256 checksums, and whether a package has a native
+component. Applications commit the lockfile; published libraries normally do not.
+Build output and VCS metadata are excluded from the checksum.
 
 ## Commands
 
@@ -87,6 +90,7 @@ ject test
 ject add <package> --path <directory>
 ject remove <package>
 ject install
+ject install --locked
 ject update [package]
 ject build [--release]
 ject publish
@@ -109,7 +113,9 @@ ject run
 `add` checks that the target has a valid `Ject.toml` and that its declared package
 name is exactly the requested import name. It updates `[dependencies]` and refreshes
 `Ject.lock`. `install` resolves transitive dependencies and builds Rust components;
-source-only libraries do not require Cargo. Commit `Ject.lock` for applications.
+source-only libraries do not require Cargo. `install --locked` performs the same
+native build only after the lockfile matches all manifests and package contents.
+Commit `Ject.lock` for applications.
 
 ## Import and resolution rules
 

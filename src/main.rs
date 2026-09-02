@@ -87,7 +87,7 @@ fn main() {
             }
         }
         "test" => run_project_tests(),
-        "install" => install_project(),
+        "install" => install_project(args.iter().any(|arg| arg == "--locked")),
         "add" => add_dependency(&args[1..]),
         "remove" => remove_dependency(&args[1..]),
         "init" => {
@@ -178,7 +178,7 @@ USAGE:
     ject run                  Run the current package
     ject check                Check the current package
     ject test                 Run tests/*.ject in the current package
-    ject install              Resolve, lock, and build dependencies
+    ject install [--locked]   Resolve, lock, and build dependencies
     ject add <name> --path <path>  Add a local source or mixed library
     ject remove <name>        Remove a dependency
     ject build                Validate the current source package
@@ -191,11 +191,20 @@ USAGE:
     );
 }
 
-fn install_project() {
+fn install_project(locked: bool) {
     let project = current_project_or_exit();
-    match package::install(&project) {
+    let resolution = if locked {
+        package::verify_lockfile(&project)
+    } else {
+        package::install(&project)
+    };
+    match resolution {
         Ok(dependencies) => {
-            println!("Locked {} package(s) in Ject.lock", dependencies.len() + 1);
+            if locked {
+                println!("Verified {} locked package(s)", dependencies.len() + 1);
+            } else {
+                println!("Locked {} package(s) in Ject.lock", dependencies.len() + 1);
+            }
             match package::build_native_graph(&project, false) {
                 Ok(artifacts) => {
                     for artifact in artifacts {

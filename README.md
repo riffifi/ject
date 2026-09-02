@@ -59,7 +59,8 @@ only import `"my_native_lib"`; local dependencies use
 
 Packages use `Ject.toml` and `src/main.ject` (or `src/lib.ject` for `ject new --lib`).
 Install a local source or mixed library with `ject add name --path ../name`, then use
-`ject install` to lock the transitive graph and build native components.
+`ject install` to lock the transitive graph and build native components. CI can use
+`ject install --locked` to reject missing or stale lockfiles without rewriting them.
 The package/native-extension architecture and delivery plan are described in
 [docs/PACKAGES.md](docs/PACKAGES.md).
 

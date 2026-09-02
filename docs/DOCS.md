@@ -894,6 +894,7 @@ ject check
 ject test
 ject add useful_math --path ../useful_math
 ject install
+ject install --locked
 ject remove useful_math
 ject build
 ject build --release
@@ -904,6 +905,8 @@ ject build --release
 - `test` runs every `tests/*.ject` file in sorted order.
 - `add` validates a local library, records it, and refreshes the lockfile.
 - `install` resolves the graph, writes `Ject.lock`, and builds native parts.
+- `install --locked` verifies the committed dependency graph and SHA-256 package
+  checksums without updating the lockfile, which is the recommended CI mode.
 - `remove` deletes a dependency and refreshes the lockfile.
 - `build` checks Ject source and builds native components when present.
 
