@@ -27,6 +27,10 @@
   allowing package facades to evolve with optional parameters without breaking callers.
 - Migrated the standalone JGUI package to ABI v2 events with Ject-side `on_change`
   and `on_click` callbacks.
+- Added ABI wire values for NaN and infinities and extracted JNUM as an installable
+  mixed package with plugin-owned arrays and an explicit `to_array` conversion.
+- Namespaced module exports may now intentionally share names with global builtins
+  without producing false redeclaration warnings.
 
 ## 0.9.0
 

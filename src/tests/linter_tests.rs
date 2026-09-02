@@ -285,6 +285,21 @@ end
         assert!(warnings.iter().any(|w| w.contains("already defined")));
     }
 
+    #[test]
+    fn exported_function_may_share_a_builtin_name() {
+        let (errors, warnings) = lint(
+            r#"
+export fn sum(values)
+    return values
+end
+"#,
+        );
+        assert!(errors.is_empty());
+        assert!(!warnings
+            .iter()
+            .any(|warning| warning.contains("already defined")));
+    }
+
     // ========== Scope Tests ==========
 
     #[test]

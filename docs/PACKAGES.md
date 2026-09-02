@@ -207,8 +207,10 @@ callbacks cross that single boundary as scoped ABI v2 handles; `on_change` and
 `on_click` receive event dictionaries while the window is running.
 
 The bundled backends remain temporarily for scripts that declare no dependencies.
-JNUM should be extracted through the same mechanism, while retaining opaque native
-array resources so ordinary operations do not serialize entire arrays on every call.
+The standalone JNUM package at `/home/leo/dev/ject/packages/jnum` now follows the
+same mechanism. Arrays are plugin-owned opaque resources, so ordinary operations do
+not serialize their contents on every call; `to_array` performs an explicit copy
+when Ject code needs the values.
 
 ## Runtime architecture
 

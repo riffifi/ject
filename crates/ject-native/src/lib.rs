@@ -206,6 +206,20 @@ pub fn resource(id: u64, type_name: &str) -> serde_json::Value {
     serde_json::json!({ "$ject_resource": { "id": id, "type": type_name } })
 }
 
+/// Constructs the wire representation of a non-finite floating-point value.
+pub fn special_float(value: f64) -> Result<serde_json::Value, &'static str> {
+    let name = if value.is_nan() {
+        "nan"
+    } else if value == f64::INFINITY {
+        "infinity"
+    } else if value == f64::NEG_INFINITY {
+        "negative_infinity"
+    } else {
+        return Err("special_float requires NaN or infinity");
+    };
+    Ok(serde_json::json!({ "$ject_float": name }))
+}
+
 pub fn callback(id: u64) -> serde_json::Value {
     serde_json::json!({ "$ject_callback": id })
 }
@@ -420,6 +434,19 @@ mod tests {
         );
         drop_resource(handler, 7);
         assert_eq!(DROPPED.load(Ordering::SeqCst), 7);
+    }
+
+    #[test]
+    fn creates_special_float_wire_values() {
+        assert_eq!(
+            special_float(f64::NAN).unwrap(),
+            json!({ "$ject_float": "nan" })
+        );
+        assert_eq!(
+            special_float(f64::INFINITY).unwrap(),
+            json!({ "$ject_float": "infinity" })
+        );
+        assert!(special_float(1.0).is_err());
     }
 
     #[test]

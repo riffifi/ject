@@ -1239,6 +1239,13 @@ Not every NumPy behavior is implied by the JNUM name. Consult tests and runtime
 errors for supported dimensions and argument forms; JNUM is an evolving native
 library, not a compatibility promise with Python NumPy.
 
+The installable JNUM package keeps this API in `src/lib.ject` and implements only
+array storage and numerical kernels in its Rust plugin. Its arrays are opaque
+plugin-owned resources. Use `to_array(value)` for an explicit conversion back to a
+Ject array. This avoids repeatedly serializing numerical data across the native ABI.
+Non-finite floats use dedicated ABI wire tags, so `NAN` and `INF` retain normal
+floating-point behavior instead of becoming strings or errors.
+
 ## 16. Mixed Ject and Rust libraries
 
 Create a mixed package:

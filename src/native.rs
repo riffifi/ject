@@ -526,7 +526,8 @@ fn value_to_json(
         Value::Integer(value) => Ok((*value).into()),
         Value::Float(value) => serde_json::Number::from_f64(*value)
             .map(serde_json::Value::Number)
-            .ok_or_else(|| "native ABI v1 cannot encode NaN or infinity".to_string()),
+            .or_else(|| ject_native::special_float(*value).ok())
+            .ok_or_else(|| "native ABI cannot encode this floating-point value".to_string()),
         Value::String(value) => Ok(value.clone().into()),
         Value::Array(values) => values
             .borrow()
@@ -597,6 +598,19 @@ fn json_to_value(
             .collect::<Result<Vec<_>, _>>()
             .map(Value::array),
         serde_json::Value::Object(mut values) => {
+            if let Some(special) = values.remove("$ject_float") {
+                let special = special
+                    .as_str()
+                    .ok_or_else(|| "native special float tag must be a string".to_string())?;
+                return match special {
+                    "nan" => Ok(Value::Float(f64::NAN)),
+                    "infinity" => Ok(Value::Float(f64::INFINITY)),
+                    "negative_infinity" => Ok(Value::Float(f64::NEG_INFINITY)),
+                    _ => Err(format!(
+                        "native plugin returned unknown special float '{special}'"
+                    )),
+                };
+            }
             if let Some(serde_json::Value::Object(mut resource)) = values.remove("$ject_resource") {
                 let id = resource
                     .remove("id")
@@ -675,5 +689,22 @@ mod tests {
         CALLBACK_CONTEXTS.with(|contexts| {
             contexts.borrow_mut().pop();
         });
+    }
+
+    #[test]
+    fn native_wire_preserves_non_finite_floats() {
+        let descriptor = ExternalDescriptor::V2(&TEST_PLUGIN);
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let encoded = value_to_json(&Value::Float(value), "test", Some(descriptor)).unwrap();
+            let decoded = json_to_value(encoded, "test", descriptor).unwrap();
+            let Value::Float(decoded) = decoded else {
+                panic!("expected a float")
+            };
+            assert!(if value.is_nan() {
+                decoded.is_nan()
+            } else {
+                decoded == value
+            });
+        }
     }
 }

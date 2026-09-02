@@ -60,9 +60,10 @@ impl Linter {
                 }
                 _ => continue,
             };
-            if (self.functions.contains(name) && !declared_here.contains(name))
-                || !declared_here.insert(name.clone())
-            {
+            // Builtins live in the caller's global namespace, but a module's
+            // declarations form its own API namespace. Only duplicate source
+            // declarations are redeclarations here.
+            if !declared_here.insert(name.clone()) {
                 self.warnings.push(LintWarning {
                     message: format!("warning: function `{name}` is already defined"),
                     position: self.find_identifier_position(name),
