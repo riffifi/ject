@@ -202,7 +202,9 @@ An explicitly installed native package may replace a bundled compatibility backe
 with the same module name. This allows JGUI and JNUM to be upgraded as packages
 without rebuilding the Ject executable. The standalone JGUI proof at
 `/home/leo/dev/ject/packages/jgui` uses a deliberately small native boundary: Ject
-builds a declarative widget document and Rust exports only `run(document)`.
+builds a declarative widget document and Rust exports only `run(document)`. Widget
+callbacks cross that single boundary as scoped ABI v2 handles; `on_change` and
+`on_click` receive event dictionaries while the window is running.
 
 The bundled backends remain temporarily for scripts that declare no dependencies.
 JNUM should be extracted through the same mechanism, while retaining opaque native

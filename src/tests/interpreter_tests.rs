@@ -1422,4 +1422,36 @@ print "Program completed successfully!"
         assert!(error.message.contains("\n  at fail"));
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn imported_functions_preserve_defaults_and_keyword_arguments() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-runtime-module-defaults-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("greetings.ject"),
+            "export fn greet(name, punctuation = \"!\")\n    return name + punctuation\nend\n",
+        )
+        .unwrap();
+        let source = concat!(
+            "import \"./greetings\" as greetings\n",
+            "assert(greetings.greet(\"Ject\") == \"Ject!\", \"default argument\")\n",
+            "assert(greetings.greet(punctuation=\"?\", name=\"Ject\") == \"Ject?\", \"keyword arguments\")\n",
+        );
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let statements = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.set_script_dir(root.clone());
+        interpreter.interpret(&statements).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

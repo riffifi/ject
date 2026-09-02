@@ -23,6 +23,10 @@
   comment-preserving TOML handling and strict dependency-source validation.
 - Added backward-compatible `ject-native-2` callback handles, explicit manifest ABI
   verification, and synchronous Rust-to-Ject function invocation with error propagation.
+- Imported Ject functions now preserve default and keyword arguments at runtime,
+  allowing package facades to evolve with optional parameters without breaking callers.
+- Migrated the standalone JGUI package to ABI v2 events with Ject-side `on_change`
+  and `on_click` callbacks.
 
 ## 0.9.0
 

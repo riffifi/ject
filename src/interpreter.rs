@@ -2097,18 +2097,13 @@ impl Interpreter {
 
     fn call_function(&mut self, func: Value, args: &[Argument]) -> RuntimeResult<Value> {
         match &func {
-            Value::Function { params, .. } => {
+            Value::Function { params, .. } | Value::ModuleFunction { params, .. } => {
                 // Function supports keyword arguments and defaults, so argument
                 // resolution stays here; invoke_callable just does the actual call.
                 let resolved_args = self.resolve_arguments(params, args)?;
                 self.invoke_callable(&func, resolved_args)
             }
-            Value::ModuleFunction { .. } | Value::Lambda { .. } => {
-                let type_label = if matches!(&func, Value::Lambda { .. }) {
-                    "Lambdas"
-                } else {
-                    "Module functions"
-                };
+            Value::Lambda { .. } => {
                 let mut arg_values = Vec::new();
                 for arg in args {
                     match arg {
@@ -2117,7 +2112,7 @@ impl Interpreter {
                         }
                         Argument::Keyword { .. } => {
                             return Err(RuntimeError {
-                                message: format!("{} do not support keyword arguments", type_label),
+                                message: "Lambdas do not support keyword arguments".to_string(),
                             });
                         }
                     }

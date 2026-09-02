@@ -1162,9 +1162,15 @@ A window has runtime type `jgui_window`. It is a generic native resource, not an
 integer ID. Application code cannot import `@native/jgui`; only the public JGUI
 facade may access that implementation module.
 
-JGUI currently uses a blocking, declarative window lifecycle. ABI v2 now provides
-generic synchronous callback handles; migrating JGUI widgets onto that mechanism is
-the next library-level step.
+The bundled compatibility API above uses a blocking, declarative window lifecycle.
+The installable JGUI package uses the newer document API: `heading`, `label`,
+`text_input`, `multiline`, `checkbox`, `slider`, `progress`, `button`, and `run`.
+Its input widgets accept an optional `on_change` callback and buttons accept an
+optional `on_click` callback. Rust invokes these callbacks synchronously through ABI
+v2 with one event dictionary containing `kind`, `id`, `value`, and the current
+`values` dictionary. Callback failures close the window and return as ordinary Ject
+errors. This keeps widget construction and event policy in Ject while Rust owns only
+rendering and operating-system integration.
 
 ## 15. JNUM
 
