@@ -1161,20 +1161,27 @@ gui.run("Profile", widgets, 560, 380, {}, "midnight")
 | Function | Purpose |
 |---|---|
 | `heading(text)`, `label(text)`, `separator()` | Create display widgets |
-| `row(children)`, `column(children)` | Compose widgets horizontally or vertically |
-| `group(title, children)`, `scroll(children, height=300)` | Group or scroll nested widgets |
+| `code(text)`, `link(text, url)`, `badge(text)` | Create specialized text and links |
+| `row(children)`, `wrap(children)`, `column(children)` | Compose widgets horizontally, wrapping, or vertically |
+| `group(title, children)`, `card(children)` | Create framed layout surfaces |
+| `collapsible(title, children, open=true)` | Create an expandable layout section |
+| `scroll(children, height=300)` | Create a scrolling layout |
 | `grid(columns, children, spacing=8)` | Arrange children in a regular grid |
 | `text_input(id, label, initial="", on_change=nil)` | Create a single-line input |
 | `multiline(id, label, initial="", on_change=nil)` | Create a multiline input |
+| `password(id, label, initial="", on_change=nil)` | Create a masked text input |
 | `checkbox(id, text, checked=false, on_change=nil)` | Create a checkbox |
 | `slider(id, text, value=0, minimum=0, maximum=100, on_change=nil)` | Create a slider |
 | `number_input(id, text, value=0, speed=1, on_change=nil)` | Create a numeric drag control |
 | `select(id, text, options, selected="", on_change=nil)` | Create a choice menu |
+| `radio(id, text, options, selected="", on_change=nil)` | Create a radio-button group |
 | `toggle(id, text, active=false, on_change=nil)` | Create a stateful toggle button |
 | `button(id, text, closes_window=false, on_click=nil)` | Create a button |
 | `progress(value, text="")`, `meter(id, text="", value=0)` | Create static or state-bound meters |
 | `value_text(id, text="", fallback=nil)` | Display a live value from window state |
 | `spacer(points=8)` | Add layout spacing |
+| `with_tooltip(widget, text)` | Attach hover help to any widget or layout |
+| `enabled(widget, condition)`, `visible(widget, condition)` | Control common widget state |
 | `document(title, widgets, width=680, height=560, state={}, theme="linen")` | Build a reusable, serializable window document |
 | `run(title, widgets, width=680, height=560, state={}, theme="linen")` | Build and run a document with initial state |
 | `show(document)` | Run a document built in Ject or loaded from JSON |
@@ -1210,12 +1217,15 @@ import "jgui" as gui
 gui.designer("interface.json")
 ```
 
-The Designer edits the same document format accepted by `gui.show`. Its palette
-covers every JGUI widget, the hierarchy supports nested insertion, moving,
+The Designer edits the same document format accepted by `gui.show`. It opens with
+an editable form and includes Form and Dashboard starter templates. Its searchable,
+categorized palette covers every JGUI widget; the hierarchy supports nested insertion, moving,
 duplicating, nesting, unnesting, and deletion, and the property inspector edits
 text, booleans, numbers, and selector choices. The center pane uses the production
 renderer for its live preview. Window title, dimensions, and theme are editable;
-Save/Open use readable JSON and Undo/Redo keep the last 100 document states.
+Save/Open use readable JSON and Undo/Redo keep the last 100 document states. The
+title bar tracks unsaved changes. Standard shortcuts work for save, open, undo,
+redo, duplication, and deletion.
 
 Run the complete example in `examples/jgui_designer`, then load its output in an
 application with:

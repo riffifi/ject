@@ -10,6 +10,9 @@ struct Designer {
     redo: Vec<Value>,
     next_id: usize,
     catalog: Vec<Value>,
+    palette_search: String,
+    saved_document: Value,
+    templates: Vec<Value>,
 }
 
 fn nodes<'a>(document: &'a Value, parent: &[usize]) -> &'a [Value] {
@@ -85,7 +88,12 @@ fn property_editor(ui: &mut egui::Ui, node: &mut Value) {
         if key == "children" || value.is_null() {
             continue;
         }
-        ui.label(key);
+        let label = key.replace('_', " ");
+        ui.label(label);
+        if key == "kind" {
+            ui.monospace(value.as_str().unwrap_or("?"));
+            continue;
+        }
         match value {
             Value::String(text) => {
                 ui.text_edit_singleline(text);
@@ -120,9 +128,110 @@ fn property_editor(ui: &mut egui::Ui, node: &mut Value) {
             }
         }
     }
+    ui.separator();
+    ui.weak("Common properties");
+    let object = node.as_object_mut().unwrap();
+    ui.horizontal_wrapped(|ui| {
+        if !object.contains_key("tooltip") && ui.small_button("+ tooltip").clicked() {
+            object.insert("tooltip".into(), json!("Helpful description"));
+        }
+        if !object.contains_key("enabled") && ui.small_button("+ enabled").clicked() {
+            object.insert("enabled".into(), json!(true));
+        }
+        if !object.contains_key("visible") && ui.small_button("+ visible").clicked() {
+            object.insert("visible".into(), json!(true));
+        }
+    });
+}
+
+fn refresh_ids(node: &mut Value, next_id: &mut usize) {
+    let kind = node["kind"].as_str().unwrap_or("widget").to_string();
+    if node.get("id").is_some() {
+        node["id"] = json!(format!("{kind}_{}", *next_id));
+        *next_id += 1;
+    }
+    if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
+        for child in children {
+            refresh_ids(child, next_id);
+        }
+    }
 }
 
 impl Designer {
+    fn save(&mut self) {
+        self.status = match std::fs::write(
+            &self.path,
+            serde_json::to_string_pretty(&self.document).unwrap(),
+        ) {
+            Ok(()) => {
+                self.saved_document = self.document.clone();
+                "Saved".into()
+            }
+            Err(error) => error.to_string(),
+        };
+    }
+
+    fn open(&mut self) {
+        match load(&self.path, &self.catalog) {
+            Ok(document) => {
+                self.document = document.clone();
+                self.saved_document = document;
+                self.selected.clear();
+                self.preview = Output::default();
+                self.undo.clear();
+                self.redo.clear();
+                self.status = "Opened".into();
+            }
+            Err(error) => self.status = error,
+        }
+    }
+
+    fn new_document(&mut self) {
+        let document = empty_document();
+        self.undo.push(self.document.clone());
+        self.document = document;
+        self.selected.clear();
+        self.preview = Output::default();
+        self.redo.clear();
+        self.status = "New document".into();
+    }
+
+    fn apply_template(&mut self, template: &Value) {
+        let Some(document) = template.get("document") else {
+            self.status = "Template has no document.".into();
+            return;
+        };
+        if let Err(error) = validate_document(document, &self.catalog) {
+            self.status = error;
+            return;
+        }
+        self.undo.push(self.document.clone());
+        self.document = document.clone();
+        self.selected.clear();
+        self.preview = Output::default();
+        self.redo.clear();
+        self.status = format!(
+            "Applied {} template",
+            template["name"].as_str().unwrap_or("unnamed")
+        );
+    }
+
+    fn undo(&mut self) {
+        if let Some(document) = self.undo.pop() {
+            self.redo.push(self.document.clone());
+            self.document = document;
+            self.selected.clear();
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some(document) = self.redo.pop() {
+            self.undo.push(self.document.clone());
+            self.document = document;
+            self.selected.clear();
+        }
+    }
+
     fn add_widget(&mut self, definition: &Value, inside_selected: bool) {
         let parent = if inside_selected {
             selected_container(&self.document, &self.selected).unwrap_or_default()
@@ -158,7 +267,8 @@ impl Designer {
             return;
         };
         let siblings = nodes_mut(&mut self.document, parent);
-        if let Some(node) = siblings.get(index).cloned() {
+        if let Some(mut node) = siblings.get(index).cloned() {
+            refresh_ids(&mut node, &mut self.next_id);
             siblings.insert(index + 1, node);
             *self.selected.last_mut().unwrap() += 1;
         }
@@ -209,46 +319,88 @@ impl eframe::App for Designer {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let before = self.document.clone();
         let mut history_action = false;
-        ui.heading("JGUI Designer");
+        let command = egui::Modifiers::COMMAND;
+        let save_shortcut = ui.input_mut(|input| input.consume_key(command, egui::Key::S));
+        let open_shortcut = ui.input_mut(|input| input.consume_key(command, egui::Key::O));
+        let undo_shortcut = ui.input_mut(|input| input.consume_key(command, egui::Key::Z));
+        let redo_shortcut = ui.input_mut(|input| {
+            input.consume_key(command | egui::Modifiers::SHIFT, egui::Key::Z)
+                || input.consume_key(command, egui::Key::Y)
+        });
+        if save_shortcut {
+            self.save();
+        }
+        if open_shortcut {
+            self.open();
+            history_action = true;
+        }
+        if undo_shortcut {
+            self.undo();
+            history_action = true;
+        }
+        if redo_shortcut {
+            self.redo();
+            history_action = true;
+        }
+        if !ui.ctx().egui_wants_keyboard_input() {
+            let duplicate = ui.input_mut(|input| input.consume_key(command, egui::Key::D));
+            let delete =
+                ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete));
+            if duplicate {
+                self.duplicate_selected();
+            }
+            if delete && !self.selected.is_empty() {
+                self.delete_selected();
+            }
+        }
+
         ui.horizontal(|ui| {
-            ui.label("Document");
-            ui.text_edit_singleline(&mut self.path);
-            if ui.button("Save").clicked() {
-                self.status = match std::fs::write(
-                    &self.path,
-                    serde_json::to_string_pretty(&self.document).unwrap(),
-                ) {
-                    Ok(()) => "Saved".into(),
-                    Err(error) => error.to_string(),
-                };
+            ui.heading("JGUI Designer");
+            if self.document != self.saved_document {
+                ui.colored_label(ui.visuals().warn_fg_color, "● Unsaved");
             }
-            if ui.button("Open").clicked() {
-                match load(&self.path, &self.catalog) {
-                    Ok(document) => {
-                        self.document = document;
-                        self.selected.clear();
-                        self.preview = Output::default();
-                        self.status = "Opened".into();
+        });
+        ui.horizontal(|ui| {
+            if ui.button("New").clicked() {
+                self.new_document();
+                history_action = true;
+            }
+            ui.menu_button("Templates", |ui| {
+                for template in self.templates.clone() {
+                    let name = template["name"].as_str().unwrap_or("Unnamed");
+                    if ui.button(name).clicked() {
+                        self.apply_template(&template);
+                        ui.close();
                     }
-                    Err(error) => self.status = error,
                 }
-            }
-            if ui.button("Undo").clicked() {
+            });
+            if ui.button("Open").on_hover_text("Ctrl/Cmd+O").clicked() {
+                self.open();
                 history_action = true;
-                if let Some(document) = self.undo.pop() {
-                    self.redo.push(self.document.clone());
-                    self.document = document;
-                    self.selected.clear();
-                }
             }
-            if ui.button("Redo").clicked() {
+            if ui.button("Save").on_hover_text("Ctrl/Cmd+S").clicked() {
+                self.save();
+            }
+            ui.separator();
+            if ui
+                .add_enabled(!self.undo.is_empty(), egui::Button::new("Undo"))
+                .on_hover_text("Ctrl/Cmd+Z")
+                .clicked()
+            {
+                self.undo();
                 history_action = true;
-                if let Some(document) = self.redo.pop() {
-                    self.undo.push(self.document.clone());
-                    self.document = document;
-                    self.selected.clear();
-                }
             }
+            if ui
+                .add_enabled(!self.redo.is_empty(), egui::Button::new("Redo"))
+                .on_hover_text("Ctrl/Cmd+Shift+Z")
+                .clicked()
+            {
+                self.redo();
+                history_action = true;
+            }
+            ui.separator();
+            ui.label("File");
+            ui.text_edit_singleline(&mut self.path);
         });
 
         let mut title = self.document["title"]
@@ -295,6 +447,10 @@ impl eframe::App for Designer {
 
         ui.columns(3, |columns| {
             columns[0].strong("Widgets & hierarchy");
+            columns[0].add(
+                egui::TextEdit::singleline(&mut self.palette_search)
+                    .hint_text("Search components…"),
+            );
             let can_add_inside = selected_container(&self.document, &self.selected).is_some();
             columns[0].weak(if can_add_inside {
                 "Add to root, or inside the selected layout"
@@ -305,16 +461,34 @@ impl eframe::App for Designer {
                 .id_salt("palette")
                 .max_height(220.0)
                 .show(&mut columns[0], |ui| {
-                    for definition in self.catalog.clone() {
-                        let kind = definition["kind"].as_str().unwrap_or("invalid");
-                        ui.horizontal(|ui| {
-                            if ui.button(format!("+ {kind}")).clicked() {
-                                self.add_widget(&definition, false);
-                            }
-                            if can_add_inside && ui.small_button("inside").clicked() {
-                                self.add_widget(&definition, true);
-                            }
-                        });
+                    let query = self.palette_search.to_lowercase();
+                    for category in ["Layout", "Controls", "Text", "Data"] {
+                        egui::CollapsingHeader::new(category)
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                for definition in self.catalog.clone() {
+                                    let kind = definition["kind"].as_str().unwrap_or("invalid");
+                                    if definition["category"].as_str().unwrap_or("Other")
+                                        != category
+                                        || !kind.to_lowercase().contains(&query)
+                                    {
+                                        continue;
+                                    }
+                                    ui.horizontal(|ui| {
+                                        if ui.button(format!("＋ {kind}")).clicked() {
+                                            self.add_widget(&definition, false);
+                                        }
+                                        if can_add_inside
+                                            && ui
+                                                .small_button("↳")
+                                                .on_hover_text("Add inside selected layout")
+                                                .clicked()
+                                        {
+                                            self.add_widget(&definition, true);
+                                        }
+                                    });
+                                }
+                            });
                     }
                 });
             columns[0].separator();
@@ -342,35 +516,47 @@ impl eframe::App for Designer {
                 });
 
             columns[2].strong("Properties");
-            if let Some((&index, parent)) = self.selected.split_last() {
-                let siblings = nodes_mut(&mut self.document, parent);
-                if let Some(node) = siblings.get_mut(index) {
-                    property_editor(&mut columns[2], node);
-                }
-                columns[2].separator();
-                columns[2].horizontal_wrapped(|ui| {
-                    if ui.button("Up").clicked() {
-                        self.move_selected(-1);
-                    }
-                    if ui.button("Down").clicked() {
-                        self.move_selected(1);
-                    }
-                    if ui.button("Duplicate").clicked() {
-                        self.duplicate_selected();
-                    }
-                    if ui.button("Nest").clicked() {
-                        self.nest_selected();
-                    }
-                    if ui.button("Unnest").clicked() {
-                        self.unnest_selected();
-                    }
-                    if ui.button("Delete").clicked() {
-                        self.delete_selected();
+            egui::ScrollArea::vertical()
+                .id_salt("inspector")
+                .show(&mut columns[2], |ui| {
+                    if let Some((&index, parent)) = self.selected.split_last() {
+                        ui.label(format!(
+                            "Selection: {}",
+                            self.selected
+                                .iter()
+                                .map(|part| part.to_string())
+                                .collect::<Vec<_>>()
+                                .join(" / ")
+                        ));
+                        let siblings = nodes_mut(&mut self.document, parent);
+                        if let Some(node) = siblings.get_mut(index) {
+                            property_editor(ui, node);
+                        }
+                        ui.separator();
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button("Up").clicked() {
+                                self.move_selected(-1);
+                            }
+                            if ui.button("Down").clicked() {
+                                self.move_selected(1);
+                            }
+                            if ui.button("Duplicate").on_hover_text("Ctrl/Cmd+D").clicked() {
+                                self.duplicate_selected();
+                            }
+                            if ui.button("Nest").clicked() {
+                                self.nest_selected();
+                            }
+                            if ui.button("Unnest").clicked() {
+                                self.unnest_selected();
+                            }
+                            if ui.button("Delete").on_hover_text("Delete").clicked() {
+                                self.delete_selected();
+                            }
+                        });
+                    } else {
+                        ui.label("Select a widget in the hierarchy to edit it.");
                     }
                 });
-            } else {
-                columns[2].label("Select a widget in the hierarchy to edit it.");
-            }
         });
 
         if before != self.document && !history_action {
@@ -381,6 +567,10 @@ impl eframe::App for Designer {
             }
         }
     }
+}
+
+fn empty_document() -> Value {
+    json!({"title":"My application","theme":"linen","width":800,"height":600,"state":{},"widgets":[]})
 }
 
 fn validate_catalog(catalog: &[Value]) -> Result<(), String> {
@@ -422,14 +612,25 @@ fn load(path: &str, catalog: &[Value]) -> Result<Value, String> {
     Ok(document)
 }
 
-pub fn run(path: &str, catalog: &[Value]) -> Result<Value, String> {
+pub fn run(path: &str, catalog: &[Value], templates: &[Value]) -> Result<Value, String> {
     validate_catalog(catalog)?;
-    let document = if std::path::Path::new(path).exists() {
+    for template in templates {
+        validate_document(&template["document"], catalog)?;
+    }
+    let exists = std::path::Path::new(path).exists();
+    let document = if exists {
         load(path, catalog)?
+    } else if let Some(document) = templates.first().and_then(|item| item.get("document")) {
+        document.clone()
     } else {
-        json!({"title":"My application","theme":"linen","width":800,"height":600,"state":{},"widgets":[]})
+        empty_document()
     };
     let designer = Designer {
+        saved_document: if exists {
+            document.clone()
+        } else {
+            Value::Null
+        },
         document,
         selected: vec![],
         path: path.into(),
@@ -439,6 +640,8 @@ pub fn run(path: &str, catalog: &[Value]) -> Result<Value, String> {
         redo: vec![],
         next_id: 1,
         catalog: catalog.to_vec(),
+        palette_search: String::new(),
+        templates: templates.to_vec(),
     };
     eframe::run_native(
         "JGUI Designer",
@@ -484,6 +687,9 @@ mod tests {
             redo: vec![],
             next_id: 1,
             catalog: vec![],
+            palette_search: String::new(),
+            saved_document: json!({"widgets":[]}),
+            templates: vec![],
         };
         designer.add_widget(
             &json!({"kind":"button","defaults":{"id":"","text":"Button"}}),
@@ -497,5 +703,14 @@ mod tests {
             1
         );
         assert_eq!(designer.selected, vec![0, 0]);
+        let first_id = designer.document["widgets"][0]["children"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        designer.duplicate_selected();
+        let second_id = designer.document["widgets"][0]["children"][1]["id"]
+            .as_str()
+            .unwrap();
+        assert_ne!(first_id, second_id);
     }
 }

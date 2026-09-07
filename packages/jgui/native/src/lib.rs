@@ -2,7 +2,7 @@ use eframe::egui;
 mod designer;
 mod theme;
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -101,27 +101,39 @@ fn children(widget: &Value) -> &[Value] {
 }
 
 fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
-    fn validate_widgets(widgets: &[Value], path: &str) -> Result<(), String> {
-        const KINDS: [&str; 20] = [
+    fn validate_widgets(
+        widgets: &[Value],
+        path: &str,
+        ids: &mut HashSet<String>,
+    ) -> Result<(), String> {
+        const KINDS: [&str; 28] = [
             "row",
+            "wrap",
             "column",
             "group",
+            "card",
+            "collapsible",
             "scroll",
             "grid",
             "heading",
             "label",
+            "code",
+            "link",
+            "badge",
             "separator",
             "spacer",
             "progress",
             "meter",
             "value_text",
             "text_input",
+            "password",
             "multiline",
             "checkbox",
             "toggle",
             "slider",
             "number_input",
             "select",
+            "radio",
             "button",
         ];
         for (index, widget) in widgets.iter().enumerate() {
@@ -133,11 +145,20 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
             if !KINDS.contains(&kind) {
                 return Err(format!("{location} has unknown widget kind '{kind}'"));
             }
+            if let Some(id) = widget.get("id") {
+                let id = id
+                    .as_str()
+                    .filter(|id| !id.is_empty())
+                    .ok_or_else(|| format!("{location}.id must be a non-empty string"))?;
+                if !ids.insert(id.to_string()) {
+                    return Err(format!("{location}.id duplicates '{id}'"));
+                }
+            }
             if let Some(children) = widget.get("children") {
                 let children = children
                     .as_array()
                     .ok_or_else(|| format!("{location}.children must be an array"))?;
-                validate_widgets(children, &format!("{location}.children"))?;
+                validate_widgets(children, &format!("{location}.children"), ids)?;
             }
         }
         Ok(())
@@ -165,7 +186,7 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
             .and_then(Value::as_str)
             .unwrap_or("linen"),
     )?;
-    validate_widgets(widgets, "document.widgets")
+    validate_widgets(widgets, "document.widgets", &mut HashSet::new())
 }
 
 fn render_widgets(
@@ -175,241 +196,320 @@ fn render_widgets(
     host: *const ject_native::HostV1,
 ) {
     for widget in widgets {
-        match widget.get("kind").and_then(Value::as_str).unwrap_or("") {
-            "row" => {
-                ui.horizontal(|ui| render_widgets(ui, children(widget), output, host));
-            }
-            "column" => {
-                ui.vertical(|ui| render_widgets(ui, children(widget), output, host));
-            }
-            "group" => {
-                ui.group(|ui| {
+        if widget.get("visible").and_then(Value::as_bool) == Some(false) {
+            continue;
+        }
+        let enabled = widget
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let response = ui.add_enabled_ui(enabled, |ui| {
+            match widget.get("kind").and_then(Value::as_str).unwrap_or("") {
+                "row" => {
+                    ui.horizontal(|ui| render_widgets(ui, children(widget), output, host));
+                }
+                "wrap" => {
+                    ui.horizontal_wrapped(|ui| render_widgets(ui, children(widget), output, host));
+                }
+                "column" => {
+                    ui.vertical(|ui| render_widgets(ui, children(widget), output, host));
+                }
+                "group" => {
+                    ui.group(|ui| {
+                        let title = text(widget, "text");
+                        if !title.is_empty() {
+                            ui.strong(title);
+                        }
+                        render_widgets(ui, children(widget), output, host);
+                    });
+                }
+                "card" => {
+                    egui::Frame::group(ui.style())
+                        .inner_margin(14.0)
+                        .corner_radius(10.0)
+                        .show(ui, |ui| render_widgets(ui, children(widget), output, host));
+                }
+                "collapsible" => {
+                    egui::CollapsingHeader::new(text(widget, "text"))
+                        .default_open(widget.get("open").and_then(Value::as_bool).unwrap_or(true))
+                        .show(ui, |ui| render_widgets(ui, children(widget), output, host));
+                }
+                "scroll" => {
+                    let height = widget
+                        .get("height")
+                        .and_then(Value::as_f64)
+                        .unwrap_or(300.0) as f32;
+                    egui::ScrollArea::both()
+                        .max_height(height)
+                        .show(ui, |ui| render_widgets(ui, children(widget), output, host));
+                }
+                "grid" => {
+                    let columns = widget
+                        .get("columns")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(1)
+                        .max(1) as usize;
+                    let spacing =
+                        widget.get("spacing").and_then(Value::as_f64).unwrap_or(8.0) as f32;
+                    egui::Grid::new(widget as *const Value)
+                        .num_columns(columns)
+                        .spacing([spacing, spacing])
+                        .show(ui, |ui| {
+                            for (index, child) in children(widget).iter().enumerate() {
+                                render_widgets(ui, std::slice::from_ref(child), output, host);
+                                if (index + 1) % columns == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                }
+                "heading" => {
+                    ui.heading(text(widget, "text"));
+                }
+                "label" => {
+                    ui.label(text(widget, "text"));
+                }
+                "code" => {
+                    ui.label(egui::RichText::new(text(widget, "text")).monospace());
+                }
+                "link" => {
+                    ui.hyperlink_to(text(widget, "text"), text(widget, "url"));
+                }
+                "badge" => {
+                    let color = ui.visuals().selection.bg_fill;
+                    ui.label(
+                        egui::RichText::new(text(widget, "text"))
+                            .background_color(color)
+                            .color(egui::Color32::WHITE),
+                    );
+                }
+                "separator" => {
+                    ui.separator();
+                }
+                "spacer" => {
+                    ui.add_space(widget.get("value").and_then(Value::as_f64).unwrap_or(8.0) as f32);
+                }
+                "progress" | "meter" => {
+                    let id = text(widget, "id");
+                    let fallback = widget.get("value").and_then(Value::as_f64).unwrap_or(0.0);
+                    let value = output
+                        .values
+                        .get(&id)
+                        .and_then(Value::as_f64)
+                        .unwrap_or(fallback) as f32;
+                    ui.add(
+                        egui::ProgressBar::new(value.clamp(0.0, 1.0)).text(text(widget, "text")),
+                    );
+                }
+                "value_text" => {
+                    let id = text(widget, "id");
+                    let value = output.values.get(&id).or_else(|| widget.get("value"));
+                    let rendered = value
+                        .map(|value| {
+                            value
+                                .as_str()
+                                .map(str::to_string)
+                                .unwrap_or_else(|| value.to_string())
+                        })
+                        .unwrap_or_else(|| "null".into());
+                    ui.label(format!("{}{rendered}", text(widget, "text")));
+                }
+                "text_input" | "password" | "multiline" => {
+                    let id = text(widget, "id");
+                    let initial = text(widget, "value");
+                    let mut value = output
+                        .values
+                        .get(&id)
+                        .and_then(Value::as_str)
+                        .unwrap_or(&initial)
+                        .to_string();
+                    ui.label(text(widget, "label"));
+                    let response = if widget["kind"] == "multiline" {
+                        ui.add(egui::TextEdit::multiline(&mut value).desired_rows(5))
+                    } else if widget["kind"] == "password" {
+                        ui.add(egui::TextEdit::singleline(&mut value).password(true))
+                    } else {
+                        ui.text_edit_singleline(&mut value)
+                    };
+                    output
+                        .values
+                        .entry(id.clone())
+                        .or_insert_with(|| json!(initial));
+                    if response.changed() {
+                        output.values.insert(id.clone(), json!(value));
+                        handle_event(
+                            ui,
+                            output,
+                            host,
+                            callback(widget, "on_change"),
+                            "change",
+                            &id,
+                            json!(value),
+                        );
+                    }
+                }
+                "checkbox" | "toggle" => {
+                    let id = text(widget, "id");
+                    let initial = widget
+                        .get("value")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    let mut active = output
+                        .values
+                        .get(&id)
+                        .and_then(Value::as_bool)
+                        .unwrap_or(initial);
+                    let changed = if widget["kind"] == "toggle" {
+                        ui.toggle_value(&mut active, text(widget, "text")).changed()
+                    } else {
+                        ui.checkbox(&mut active, text(widget, "text")).changed()
+                    };
+                    output.values.entry(id.clone()).or_insert(json!(initial));
+                    if changed {
+                        output.values.insert(id.clone(), json!(active));
+                        handle_event(
+                            ui,
+                            output,
+                            host,
+                            callback(widget, "on_change"),
+                            "change",
+                            &id,
+                            json!(active),
+                        );
+                    }
+                }
+                "slider" | "number_input" => {
+                    let id = text(widget, "id");
+                    let initial = widget.get("value").and_then(Value::as_f64).unwrap_or(0.0);
+                    let mut value = output
+                        .values
+                        .get(&id)
+                        .and_then(Value::as_f64)
+                        .unwrap_or(initial);
+                    let response = if widget["kind"] == "number_input" {
+                        ui.horizontal(|ui| {
+                            ui.label(text(widget, "text"));
+                            ui.add(
+                                egui::DragValue::new(&mut value).speed(
+                                    widget.get("speed").and_then(Value::as_f64).unwrap_or(1.0),
+                                ),
+                            )
+                        })
+                        .inner
+                    } else {
+                        let min = widget.get("min").and_then(Value::as_f64).unwrap_or(0.0);
+                        let max = widget.get("max").and_then(Value::as_f64).unwrap_or(100.0);
+                        ui.add(egui::Slider::new(&mut value, min..=max).text(text(widget, "text")))
+                    };
+                    output.values.entry(id.clone()).or_insert(json!(initial));
+                    if response.changed() {
+                        output.values.insert(id.clone(), json!(value));
+                        handle_event(
+                            ui,
+                            output,
+                            host,
+                            callback(widget, "on_change"),
+                            "change",
+                            &id,
+                            json!(value),
+                        );
+                    }
+                }
+                "select" => {
+                    let id = text(widget, "id");
+                    let initial = text(widget, "value");
+                    let mut selected = output
+                        .values
+                        .get(&id)
+                        .and_then(Value::as_str)
+                        .unwrap_or(&initial)
+                        .to_string();
+                    let before = selected.clone();
+                    egui::ComboBox::from_label(text(widget, "text"))
+                        .selected_text(&selected)
+                        .show_ui(ui, |ui| {
+                            if let Some(options) = widget.get("options").and_then(Value::as_array) {
+                                for option in options.iter().filter_map(Value::as_str) {
+                                    ui.selectable_value(&mut selected, option.to_string(), option);
+                                }
+                            }
+                        });
+                    output.values.entry(id.clone()).or_insert(json!(initial));
+                    if selected != before {
+                        output.values.insert(id.clone(), json!(selected));
+                        handle_event(
+                            ui,
+                            output,
+                            host,
+                            callback(widget, "on_change"),
+                            "change",
+                            &id,
+                            json!(selected),
+                        );
+                    }
+                }
+                "radio" => {
+                    let id = text(widget, "id");
+                    let initial = text(widget, "value");
+                    let mut selected = output
+                        .values
+                        .get(&id)
+                        .and_then(Value::as_str)
+                        .unwrap_or(&initial)
+                        .to_string();
+                    let before = selected.clone();
                     let title = text(widget, "text");
                     if !title.is_empty() {
-                        ui.strong(title);
+                        ui.label(title);
                     }
-                    render_widgets(ui, children(widget), output, host);
-                });
-            }
-            "scroll" => {
-                let height = widget
-                    .get("height")
-                    .and_then(Value::as_f64)
-                    .unwrap_or(300.0) as f32;
-                egui::ScrollArea::both()
-                    .max_height(height)
-                    .show(ui, |ui| render_widgets(ui, children(widget), output, host));
-            }
-            "grid" => {
-                let columns = widget
-                    .get("columns")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(1)
-                    .max(1) as usize;
-                let spacing = widget.get("spacing").and_then(Value::as_f64).unwrap_or(8.0) as f32;
-                egui::Grid::new(widget as *const Value)
-                    .num_columns(columns)
-                    .spacing([spacing, spacing])
-                    .show(ui, |ui| {
-                        for (index, child) in children(widget).iter().enumerate() {
-                            render_widgets(ui, std::slice::from_ref(child), output, host);
-                            if (index + 1) % columns == 0 {
-                                ui.end_row();
-                            }
+                    if let Some(options) = widget.get("options").and_then(Value::as_array) {
+                        for option in options.iter().filter_map(Value::as_str) {
+                            ui.radio_value(&mut selected, option.to_string(), option);
                         }
-                    });
-            }
-            "heading" => {
-                ui.heading(text(widget, "text"));
-            }
-            "label" => {
-                ui.label(text(widget, "text"));
-            }
-            "separator" => {
-                ui.separator();
-            }
-            "spacer" => {
-                ui.add_space(widget.get("value").and_then(Value::as_f64).unwrap_or(8.0) as f32);
-            }
-            "progress" | "meter" => {
-                let id = text(widget, "id");
-                let fallback = widget.get("value").and_then(Value::as_f64).unwrap_or(0.0);
-                let value = output
-                    .values
-                    .get(&id)
-                    .and_then(Value::as_f64)
-                    .unwrap_or(fallback) as f32;
-                ui.add(egui::ProgressBar::new(value.clamp(0.0, 1.0)).text(text(widget, "text")));
-            }
-            "value_text" => {
-                let id = text(widget, "id");
-                let value = output.values.get(&id).or_else(|| widget.get("value"));
-                let rendered = value
-                    .map(|value| {
-                        value
-                            .as_str()
-                            .map(str::to_string)
-                            .unwrap_or_else(|| value.to_string())
-                    })
-                    .unwrap_or_else(|| "null".into());
-                ui.label(format!("{}{rendered}", text(widget, "text")));
-            }
-            "text_input" | "multiline" => {
-                let id = text(widget, "id");
-                let initial = text(widget, "value");
-                let mut value = output
-                    .values
-                    .get(&id)
-                    .and_then(Value::as_str)
-                    .unwrap_or(&initial)
-                    .to_string();
-                ui.label(text(widget, "label"));
-                let response = if widget["kind"] == "multiline" {
-                    ui.add(egui::TextEdit::multiline(&mut value).desired_rows(5))
-                } else {
-                    ui.text_edit_singleline(&mut value)
-                };
-                output
-                    .values
-                    .entry(id.clone())
-                    .or_insert_with(|| json!(initial));
-                if response.changed() {
-                    output.values.insert(id.clone(), json!(value));
-                    handle_event(
-                        ui,
-                        output,
-                        host,
-                        callback(widget, "on_change"),
-                        "change",
-                        &id,
-                        json!(value),
-                    );
-                }
-            }
-            "checkbox" | "toggle" => {
-                let id = text(widget, "id");
-                let initial = widget
-                    .get("value")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let mut active = output
-                    .values
-                    .get(&id)
-                    .and_then(Value::as_bool)
-                    .unwrap_or(initial);
-                let changed = if widget["kind"] == "toggle" {
-                    ui.toggle_value(&mut active, text(widget, "text")).changed()
-                } else {
-                    ui.checkbox(&mut active, text(widget, "text")).changed()
-                };
-                output.values.entry(id.clone()).or_insert(json!(initial));
-                if changed {
-                    output.values.insert(id.clone(), json!(active));
-                    handle_event(
-                        ui,
-                        output,
-                        host,
-                        callback(widget, "on_change"),
-                        "change",
-                        &id,
-                        json!(active),
-                    );
-                }
-            }
-            "slider" | "number_input" => {
-                let id = text(widget, "id");
-                let initial = widget.get("value").and_then(Value::as_f64).unwrap_or(0.0);
-                let mut value = output
-                    .values
-                    .get(&id)
-                    .and_then(Value::as_f64)
-                    .unwrap_or(initial);
-                let response = if widget["kind"] == "number_input" {
-                    ui.horizontal(|ui| {
-                        ui.label(text(widget, "text"));
-                        ui.add(
-                            egui::DragValue::new(&mut value)
-                                .speed(widget.get("speed").and_then(Value::as_f64).unwrap_or(1.0)),
-                        )
-                    })
-                    .inner
-                } else {
-                    let min = widget.get("min").and_then(Value::as_f64).unwrap_or(0.0);
-                    let max = widget.get("max").and_then(Value::as_f64).unwrap_or(100.0);
-                    ui.add(egui::Slider::new(&mut value, min..=max).text(text(widget, "text")))
-                };
-                output.values.entry(id.clone()).or_insert(json!(initial));
-                if response.changed() {
-                    output.values.insert(id.clone(), json!(value));
-                    handle_event(
-                        ui,
-                        output,
-                        host,
-                        callback(widget, "on_change"),
-                        "change",
-                        &id,
-                        json!(value),
-                    );
-                }
-            }
-            "select" => {
-                let id = text(widget, "id");
-                let initial = text(widget, "value");
-                let mut selected = output
-                    .values
-                    .get(&id)
-                    .and_then(Value::as_str)
-                    .unwrap_or(&initial)
-                    .to_string();
-                let before = selected.clone();
-                egui::ComboBox::from_label(text(widget, "text"))
-                    .selected_text(&selected)
-                    .show_ui(ui, |ui| {
-                        if let Some(options) = widget.get("options").and_then(Value::as_array) {
-                            for option in options.iter().filter_map(Value::as_str) {
-                                ui.selectable_value(&mut selected, option.to_string(), option);
-                            }
-                        }
-                    });
-                output.values.entry(id.clone()).or_insert(json!(initial));
-                if selected != before {
-                    output.values.insert(id.clone(), json!(selected));
-                    handle_event(
-                        ui,
-                        output,
-                        host,
-                        callback(widget, "on_change"),
-                        "change",
-                        &id,
-                        json!(selected),
-                    );
-                }
-            }
-            "button" => {
-                let id = text(widget, "id");
-                if ui.button(text(widget, "text")).clicked() {
-                    output.clicked.insert(id.clone(), true);
-                    handle_event(
-                        ui,
-                        output,
-                        host,
-                        callback(widget, "on_click"),
-                        "click",
-                        &id,
-                        Value::Bool(true),
-                    );
-                    if widget
-                        .get("close")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false)
-                    {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    output.values.entry(id.clone()).or_insert(json!(initial));
+                    if selected != before {
+                        output.values.insert(id.clone(), json!(selected));
+                        handle_event(
+                            ui,
+                            output,
+                            host,
+                            callback(widget, "on_change"),
+                            "change",
+                            &id,
+                            json!(selected),
+                        );
                     }
                 }
+                "button" => {
+                    let id = text(widget, "id");
+                    if ui.button(text(widget, "text")).clicked() {
+                        output.clicked.insert(id.clone(), true);
+                        handle_event(
+                            ui,
+                            output,
+                            host,
+                            callback(widget, "on_click"),
+                            "click",
+                            &id,
+                            Value::Bool(true),
+                        );
+                        if widget
+                            .get("close")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                        {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    }
+                }
+                _ => {
+                    ui.colored_label(egui::Color32::RED, "Unknown JGUI widget");
+                }
             }
-            _ => {
-                ui.colored_label(egui::Color32::RED, "Unknown JGUI widget");
-            }
+        });
+        if let Some(tooltip) = widget.get("tooltip").and_then(Value::as_str) {
+            response.response.on_hover_text(tooltip);
         }
     }
 }
@@ -433,11 +533,16 @@ fn call(
             .get(1)
             .and_then(Value::as_array)
             .ok_or("designer expects a component catalog")?;
+        let templates = args
+            .get(2)
+            .and_then(Value::as_array)
+            .ok_or("designer expects a template catalog")?;
         return designer::run(
             args.first()
                 .and_then(Value::as_str)
                 .unwrap_or("interface.json"),
             catalog,
+            templates,
         );
     }
     if function == "themes" {
@@ -545,6 +650,12 @@ mod tests {
         assert_eq!(
             validate_document(bad_size.as_object().unwrap()).unwrap_err(),
             "document.width must be a positive number"
+        );
+        let duplicate =
+            json!({"widgets":[{"kind":"button","id":"save"},{"kind":"button","id":"save"}]});
+        assert_eq!(
+            validate_document(duplicate.as_object().unwrap()).unwrap_err(),
+            "document.widgets[1].id duplicates 'save'"
         );
     }
 }

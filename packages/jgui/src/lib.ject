@@ -7,26 +7,34 @@ export THEMES = native.themes()
 # palette or default-value table in Rust.
 fn component_catalog()
     return [
-    {kind: "heading", defaults: {text: "Heading"}},
-    {kind: "label", defaults: {text: "Label"}},
-    {kind: "button", defaults: {id: "", text: "Button", close: false}},
-    {kind: "text_input", defaults: {id: "", label: "Label", value: ""}},
-    {kind: "multiline", defaults: {id: "", label: "Label", value: ""}},
-    {kind: "checkbox", defaults: {id: "", text: "Label", value: false}},
-    {kind: "slider", defaults: {id: "", text: "Value", value: 0, min: 0, max: 100}},
-    {kind: "number_input", defaults: {id: "", text: "Value", value: 0, speed: 1}},
-    {kind: "select", defaults: {id: "", text: "Choice", options: ["First", "Second"], value: "First"}},
-    {kind: "toggle", defaults: {id: "", text: "Label", value: false}},
-    {kind: "progress", defaults: {text: "Progress", value: 0.5}},
-    {kind: "meter", defaults: {id: "", text: "Level", value: 0.5}},
-    {kind: "value_text", defaults: {id: "", text: "Value: ", value: "Preview"}},
-    {kind: "spacer", defaults: {value: 8}},
-    {kind: "row", defaults: {children: []}},
-    {kind: "column", defaults: {children: []}},
-    {kind: "group", defaults: {text: "Group", children: []}},
-    {kind: "grid", defaults: {columns: 2, spacing: 8, children: []}},
-    {kind: "scroll", defaults: {height: 300, children: []}},
-    {kind: "separator", defaults: {}}
+    {kind: "heading", category: "Text", defaults: {text: "Heading"}},
+    {kind: "label", category: "Text", defaults: {text: "Label"}},
+    {kind: "code", category: "Text", defaults: {text: "let answer = 42"}},
+    {kind: "link", category: "Text", defaults: {text: "Open link", url: "https://example.com"}},
+    {kind: "badge", category: "Text", defaults: {text: "New"}},
+    {kind: "button", category: "Controls", defaults: {id: "", text: "Button", close: false}},
+    {kind: "text_input", category: "Controls", defaults: {id: "", label: "Label", value: ""}},
+    {kind: "password", category: "Controls", defaults: {id: "", label: "Password", value: ""}},
+    {kind: "multiline", category: "Controls", defaults: {id: "", label: "Label", value: ""}},
+    {kind: "checkbox", category: "Controls", defaults: {id: "", text: "Label", value: false}},
+    {kind: "slider", category: "Controls", defaults: {id: "", text: "Value", value: 0, min: 0, max: 100}},
+    {kind: "number_input", category: "Controls", defaults: {id: "", text: "Value", value: 0, speed: 1}},
+    {kind: "select", category: "Controls", defaults: {id: "", text: "Choice", options: ["First", "Second"], value: "First"}},
+    {kind: "radio", category: "Controls", defaults: {id: "", text: "Choice", options: ["First", "Second"], value: "First"}},
+    {kind: "toggle", category: "Controls", defaults: {id: "", text: "Label", value: false}},
+    {kind: "progress", category: "Data", defaults: {text: "Progress", value: 0.5}},
+    {kind: "meter", category: "Data", defaults: {id: "", text: "Level", value: 0.5}},
+    {kind: "value_text", category: "Data", defaults: {id: "", text: "Value: ", value: "Preview"}},
+    {kind: "spacer", category: "Layout", defaults: {value: 8}},
+    {kind: "row", category: "Layout", defaults: {children: []}},
+    {kind: "wrap", category: "Layout", defaults: {children: []}},
+    {kind: "column", category: "Layout", defaults: {children: []}},
+    {kind: "group", category: "Layout", defaults: {text: "Group", children: []}},
+    {kind: "card", category: "Layout", defaults: {children: []}},
+    {kind: "collapsible", category: "Layout", defaults: {text: "Section", open: true, children: []}},
+    {kind: "grid", category: "Layout", defaults: {columns: 2, spacing: 8, children: []}},
+    {kind: "scroll", category: "Layout", defaults: {height: 300, children: []}},
+    {kind: "separator", category: "Layout", defaults: {}}
     ]
 end
 
@@ -36,12 +44,70 @@ export fn components()
     return component_catalog()
 end
 
+fn designer_templates()
+    return [
+        {name: "Form", document: {
+            title: "New form", width: 640, height: 520, theme: "linen", state: {},
+            widgets: [
+                {kind: "heading", text: "Create account"},
+                {kind: "label", text: "Enter the details below."},
+                {kind: "card", children: [
+                    {kind: "column", children: [
+                        {kind: "text_input", id: "name", label: "Name", value: ""},
+                        {kind: "text_input", id: "email", label: "Email", value: ""},
+                        {kind: "password", id: "password", label: "Password", value: ""},
+                        {kind: "checkbox", id: "updates", text: "Send me product updates", value: true}
+                    ]}
+                ]},
+                {kind: "row", children: [
+                    {kind: "button", id: "create", text: "Create account", close: true},
+                    {kind: "button", id: "cancel", text: "Cancel", close: true}
+                ]}
+            ]
+        }},
+        {name: "Dashboard", document: {
+            title: "Dashboard", width: 900, height: 620, theme: "midnight", state: {},
+            widgets: [
+                {kind: "row", children: [
+                    {kind: "heading", text: "Overview"},
+                    {kind: "badge", text: "Live"}
+                ]},
+                {kind: "grid", columns: 3, spacing: 12, children: [
+                    {kind: "card", children: [{kind: "label", text: "Revenue"}, {kind: "value_text", id: "revenue", text: "$", value: "24,850"}]},
+                    {kind: "card", children: [{kind: "label", text: "Projects"}, {kind: "value_text", id: "projects", value: 12}]},
+                    {kind: "card", children: [{kind: "label", text: "Capacity"}, {kind: "meter", id: "capacity", text: "68%", value: 0.68}]}
+                ]},
+                {kind: "collapsible", text: "Filters", open: true, children: [
+                    {kind: "wrap", children: [
+                        {kind: "select", id: "period", text: "Period", options: ["Week", "Month", "Year"], value: "Month"},
+                        {kind: "toggle", id: "archived", text: "Include archived", value: false}
+                    ]}
+                ]}
+            ]
+        }}
+    ]
+end
+
+export TEMPLATES = designer_templates()
+
 export fn heading(text)
     return {kind: "heading", text: text}
 end
 
 export fn label(text)
     return {kind: "label", text: text}
+end
+
+export fn code(text)
+    return {kind: "code", text: text}
+end
+
+export fn link(text, url)
+    return {kind: "link", text: text, url: url}
+end
+
+export fn badge(text)
+    return {kind: "badge", text: text}
 end
 
 export fn separator()
@@ -52,12 +118,24 @@ export fn row(children)
     return {kind: "row", children: children}
 end
 
+export fn wrap(children)
+    return {kind: "wrap", children: children}
+end
+
 export fn column(children)
     return {kind: "column", children: children}
 end
 
 export fn group(title, children)
     return {kind: "group", text: title, children: children}
+end
+
+export fn card(children)
+    return {kind: "card", children: children}
+end
+
+export fn collapsible(title, children, open = true)
+    return {kind: "collapsible", text: title, children: children, open: open}
 end
 
 export fn scroll(children, height = 300)
@@ -70,6 +148,10 @@ end
 
 export fn text_input(id, label_text, initial = "", on_change = nil)
     return {kind: "text_input", id: id, label: label_text, value: initial, on_change: on_change}
+end
+
+export fn password(id, label_text, initial = "", on_change = nil)
+    return {kind: "password", id: id, label: label_text, value: initial, on_change: on_change}
 end
 
 export fn multiline(id, label_text, initial = "", on_change = nil)
@@ -90,6 +172,10 @@ end
 
 export fn select(id, text, options, selected = "", on_change = nil)
     return {kind: "select", id: id, text: text, options: options, value: selected, on_change: on_change}
+end
+
+export fn radio(id, text, options, selected = "", on_change = nil)
+    return {kind: "radio", id: id, text: text, options: options, value: selected, on_change: on_change}
 end
 
 export fn toggle(id, text, active = false, on_change = nil)
@@ -116,6 +202,21 @@ export fn spacer(points = 8)
     return {kind: "spacer", value: points}
 end
 
+export fn with_tooltip(widget, text)
+    widget.tooltip = text
+    return widget
+end
+
+export fn enabled(widget, condition)
+    widget.enabled = condition
+    return widget
+end
+
+export fn visible(widget, condition)
+    widget.visible = condition
+    return widget
+end
+
 export fn document(title, widgets, width = 680, height = 560, state = {}, theme = "linen")
     assert(type_of(title) == "string", "window title must be a string")
     assert(type_of(widgets) == "array", "widgets must be an array")
@@ -129,7 +230,7 @@ export fn run(title, widgets, width = 680, height = 560, state = {}, theme = "li
 end
 
 export fn designer(path = "interface.json")
-    return native.designer(path, component_catalog())
+    return native.designer(path, component_catalog(), designer_templates())
 end
 
 export fn show(document)

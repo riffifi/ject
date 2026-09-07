@@ -37,13 +37,17 @@
 - Removed the bundled JGUI/JNUM backends and their hardcoded registry entries.
   Both libraries now live under `packages/`, require normal dependency declarations,
   and no longer add eframe, ndarray, or rand to the interpreter binary.
-- Expanded JGUI 0.2 with selectable Linen and Midnight themes, reusable documents,
+- Expanded JGUI 0.3 with selectable Linen and Midnight themes, reusable documents,
   nested layouts, grids, scrolling, selectors, numeric inputs,
   toggles, state-bound output, initial state, and callback-returned reactive patches.
 - Added JGUI Designer with a production-renderer preview, complete widget palette,
   hierarchy editing, property inspection, document settings, JSON persistence, and
   undo/redo. Its component catalog lives in the Ject facade rather than a duplicate
   hardcoded Rust palette.
+- Added cards, collapsible and wrapping layouts, code, links, badges, password
+  fields, radio groups, tooltips, enabled/visible state, searchable component
+  categories, starter templates, keyboard shortcuts, dirty-state tracking, and
+  unique widget-ID validation.
 
 ## 0.9.0
 
