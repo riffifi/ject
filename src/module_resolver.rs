@@ -33,10 +33,19 @@ impl std::fmt::Display for ResolveError {
             Self::NotFound {
                 specifier,
                 searched: None,
-            } => write!(
-                formatter,
-                "module '{specifier}' not found as a package, path, or standard module"
-            ),
+            } => {
+                if !specifier.contains('/') && !specifier.starts_with('.') {
+                    write!(
+                        formatter,
+                        "module '{specifier}' not found as a dependency or standard module; add a package with `ject add {specifier} ...`"
+                    )
+                } else {
+                    write!(
+                        formatter,
+                        "module '{specifier}' not found as a package, path, or standard module"
+                    )
+                }
+            }
             Self::Io {
                 specifier,
                 path,
@@ -336,5 +345,12 @@ mod tests {
             ModuleIdentity::File(path) if path.ends_with("stdlib/color.ject")
         ));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_bare_import_suggests_adding_a_dependency() {
+        let resolver = ModuleResolver::for_path(Path::new(env!("CARGO_MANIFEST_DIR")));
+        let error = resolver.resolve("third_party").unwrap_err().to_string();
+        assert!(error.contains("ject add third_party"));
     }
 }
