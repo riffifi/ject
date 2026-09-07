@@ -21,3 +21,23 @@ assert(type_of(range.on_change) == "lambda", "slider callback must be preserved"
 let button = gui.button("save", "Save", true, clicked)
 assert(button.close == true, "button close behavior must be preserved")
 assert(type_of(button.on_click) == "lambda", "button callback must be preserved")
+
+let layout = gui.group("Mixer", [
+    gui.row([gui.number_input("bpm", "BPM", 120), gui.select("wave", "Wave", ["sine", "square"], "sine")]),
+    gui.grid(2, [gui.toggle("a", "A"), gui.toggle("b", "B")])
+])
+assert(layout.kind == "group", "group constructor")
+assert(layout.children[0].kind == "row", "nested row constructor")
+assert(layout.children[1].columns == 2, "grid columns")
+assert(gui.value_text("status", "Status: ").kind == "value_text", "bound text constructor")
+assert(gui.meter("level", "Level").kind == "meter", "bound meter constructor")
+
+let document = gui.document("Studio", [layout], 900, 640, {bpm: 120}, "midnight")
+assert(document.title == "Studio", "document title")
+assert(document.width == 900 and document.height == 640, "document dimensions")
+assert(document.state.bpm == 120, "document initial state")
+assert(document.theme == "midnight", "document theme")
+assert(len(gui.THEMES) == 4, "published theme list")
+assert(len(gui.COMPONENTS) == 20, "Designer component catalog")
+assert(gui.COMPONENTS[2].defaults.text == "Button", "component defaults live in Ject")
+assert(len(gui.components()) == 20, "component catalog is available to facade functions")

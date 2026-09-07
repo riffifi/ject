@@ -1,0 +1,2 @@
+import "jgui" as gui
+gui.designer("interface.json")

@@ -1,0 +1,7 @@
+[package]
+name = "jgui-designer"
+version = "0.1.0"
+entry = "src/main.ject"
+
+[dependencies]
+jgui = { path = "../../packages/jgui" }

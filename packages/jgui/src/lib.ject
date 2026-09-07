@@ -1,6 +1,41 @@
 # JGUI's public API is ordinary Ject. Rust receives a declarative document only.
 import "@native/jgui" as native
 
+export THEMES = native.themes()
+
+# The Designer reads this catalog; adding a native widget does not require a second
+# palette or default-value table in Rust.
+fn component_catalog()
+    return [
+    {kind: "heading", defaults: {text: "Heading"}},
+    {kind: "label", defaults: {text: "Label"}},
+    {kind: "button", defaults: {id: "", text: "Button", close: false}},
+    {kind: "text_input", defaults: {id: "", label: "Label", value: ""}},
+    {kind: "multiline", defaults: {id: "", label: "Label", value: ""}},
+    {kind: "checkbox", defaults: {id: "", text: "Label", value: false}},
+    {kind: "slider", defaults: {id: "", text: "Value", value: 0, min: 0, max: 100}},
+    {kind: "number_input", defaults: {id: "", text: "Value", value: 0, speed: 1}},
+    {kind: "select", defaults: {id: "", text: "Choice", options: ["First", "Second"], value: "First"}},
+    {kind: "toggle", defaults: {id: "", text: "Label", value: false}},
+    {kind: "progress", defaults: {text: "Progress", value: 0.5}},
+    {kind: "meter", defaults: {id: "", text: "Level", value: 0.5}},
+    {kind: "value_text", defaults: {id: "", text: "Value: ", value: "Preview"}},
+    {kind: "spacer", defaults: {value: 8}},
+    {kind: "row", defaults: {children: []}},
+    {kind: "column", defaults: {children: []}},
+    {kind: "group", defaults: {text: "Group", children: []}},
+    {kind: "grid", defaults: {columns: 2, spacing: 8, children: []}},
+    {kind: "scroll", defaults: {height: 300, children: []}},
+    {kind: "separator", defaults: {}}
+    ]
+end
+
+export COMPONENTS = component_catalog()
+
+export fn components()
+    return component_catalog()
+end
+
 export fn heading(text)
     return {kind: "heading", text: text}
 end
@@ -11,6 +46,26 @@ end
 
 export fn separator()
     return {kind: "separator"}
+end
+
+export fn row(children)
+    return {kind: "row", children: children}
+end
+
+export fn column(children)
+    return {kind: "column", children: children}
+end
+
+export fn group(title, children)
+    return {kind: "group", text: title, children: children}
+end
+
+export fn scroll(children, height = 300)
+    return {kind: "scroll", children: children, height: height}
+end
+
+export fn grid(columns, children, spacing = 8)
+    return {kind: "grid", columns: columns, children: children, spacing: spacing}
 end
 
 export fn text_input(id, label_text, initial = "", on_change = nil)
@@ -29,8 +84,28 @@ export fn slider(id, text, value = 0, minimum = 0, maximum = 100, on_change = ni
     return {kind: "slider", id: id, text: text, value: value, min: minimum, max: maximum, on_change: on_change}
 end
 
+export fn number_input(id, text, value = 0, speed = 1, on_change = nil)
+    return {kind: "number_input", id: id, text: text, value: value, speed: speed, on_change: on_change}
+end
+
+export fn select(id, text, options, selected = "", on_change = nil)
+    return {kind: "select", id: id, text: text, options: options, value: selected, on_change: on_change}
+end
+
+export fn toggle(id, text, active = false, on_change = nil)
+    return {kind: "toggle", id: id, text: text, value: active, on_change: on_change}
+end
+
 export fn progress(value, text = "")
     return {kind: "progress", value: value, text: text}
+end
+
+export fn meter(id, text = "", value = 0)
+    return {kind: "meter", id: id, text: text, value: value}
+end
+
+export fn value_text(id, text = "", fallback = nil)
+    return {kind: "value_text", id: id, text: text, value: fallback}
 end
 
 export fn button(id, text, closes_window = false, on_click = nil)
@@ -41,11 +116,25 @@ export fn spacer(points = 8)
     return {kind: "spacer", value: points}
 end
 
-export fn run(title, widgets, width = 680, height = 560)
+export fn document(title, widgets, width = 680, height = 560, state = {}, theme = "linen")
     assert(type_of(title) == "string", "window title must be a string")
     assert(type_of(widgets) == "array", "widgets must be an array")
     assert(width > 0 and height > 0, "window dimensions must be positive")
-    return native.run({title: title, width: width, height: height, widgets: widgets})
+    assert(theme == "linen" or theme == "midnight" or theme == "egui-light" or theme == "egui-dark", "unknown JGUI theme")
+    return {title: title, width: width, height: height, widgets: widgets, state: state, theme: theme}
+end
+
+export fn run(title, widgets, width = 680, height = 560, state = {}, theme = "linen")
+    return show(document(title, widgets, width, height, state, theme))
+end
+
+export fn designer(path = "interface.json")
+    return native.designer(path, component_catalog())
+end
+
+export fn show(document)
+    assert(type_of(document) == "dictionary", "show expects a JGUI document")
+    return native.run(document)
 end
 
 export fn message(title, text)
