@@ -1454,4 +1454,43 @@ print "Program completed successfully!"
         interpreter.interpret(&statements).unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn exported_values_are_visible_inside_their_module() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-runtime-module-exports-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("values.ject"),
+            concat!(
+                "export BASE = 40\n",
+                "let ALMOST = BASE + 1\n",
+                "export ANSWER = ALMOST + 1\n",
+                "export fn answer()\n",
+                "    return ANSWER\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+        let source = concat!(
+            "import \"./values\" as values\n",
+            "assert(values.ANSWER == 42, \"dependent export\")\n",
+            "assert(values.answer() == 42, \"export used by function\")\n",
+        );
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect();
+        let statements = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.set_script_dir(root.clone());
+        interpreter.interpret(&statements).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

@@ -43,6 +43,8 @@
 - Added cards, collapsible and wrapping layouts, code, links, badges, password
   fields, radio groups, tooltips, enabled/visible state, and unique widget-ID
   validation.
+- Exported values are now ordinary module-local declarations as well as public
+  members, so later exports and exported functions can reference them reliably.
 
 ## 0.9.0
 

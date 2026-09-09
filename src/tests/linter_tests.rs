@@ -149,8 +149,9 @@ mod tests {
         let (errors, warnings) = lint(
             r#"
 export VERSION = "1.0.0"
+export DISPLAY_VERSION = VERSION
 export fn greet(name)
-    return "Hello, $name"
+    return "Hello, $name from " + DISPLAY_VERSION
 end
 "#,
         );

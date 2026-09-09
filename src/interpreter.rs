@@ -1987,44 +1987,41 @@ impl Interpreter {
         module_file_stem: &str,
         module_file_path: &str,
     ) -> RuntimeResult<HashMap<String, Value>> {
-        // First, execute all non-export statements to build up the module environment
+        // Functions are declarations, so make every local and exported function
+        // available before executing module code. This preserves forward calls and
+        // mutual recursion without reordering value-producing statements.
         for statement in statements {
             match statement {
-                Stmt::Export { .. } | Stmt::ExportFunction { .. } => {
-                    // Skip export statements for now
+                Stmt::Function { name, params, body }
+                | Stmt::ExportFunction { name, params, body } => {
+                    let function = Value::Function {
+                        name: name.clone(),
+                        source: Some(module_file_path.to_string()),
+                        params: params.clone(),
+                        body: body.clone(),
+                        closure_env: self.environment.clone(),
+                    };
+                    self.environment.define(name.clone(), function);
                 }
-                _ => {
-                    self.execute_statement(statement)?;
-                }
+                _ => {}
             }
         }
 
-        // Process export functions and define them in the module environment first
-        // This ensures they're available in the module scope for potential self-references
-        for statement in statements {
-            if let Stmt::ExportFunction { name, params, body } = statement {
-                let func = Value::Function {
-                    name: name.clone(),
-                    source: Some(module_file_path.to_string()),
-                    params: params.clone(),
-                    body: body.clone(),
-                    closure_env: self.environment.clone(),
-                };
-                self.environment.define(name.clone(), func);
-            }
-        }
-
-        // Now process export statements and create module functions with proper closure
+        // Execute declarations and side effects in source order. The old loader ran
+        // every non-export statement before every export, which made a `let` placed
+        // after an exported constant run too early and fail to see that constant.
         let mut exports = HashMap::new();
         for statement in statements {
             match statement {
                 Stmt::Export { name, value } => {
                     let val = self.evaluate_expression(value)?;
+                    // An export is still a declaration in its defining module.
+                    // Bind it before continuing so later exports and exported
+                    // functions can refer to it just like an ordinary `let`.
+                    self.environment.define(name.clone(), val.clone());
                     exports.insert(name.clone(), val.clone());
                 }
                 Stmt::ExportFunction { name, params, body } => {
-                    // Create ModuleFunction with the current module environment as closure
-                    // This captures all the module's variables and functions
                     let func = Value::ModuleFunction {
                         name: name.clone(),
                         source: Some(module_file_path.to_string()),
@@ -2034,8 +2031,9 @@ impl Interpreter {
                     };
                     exports.insert(name.clone(), func);
                 }
+                Stmt::Function { .. } => {}
                 _ => {
-                    // Already processed
+                    self.execute_statement(statement)?;
                 }
             }
         }

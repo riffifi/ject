@@ -809,6 +809,11 @@ export fn circle_area(radius)
 end
 ```
 
+An exported value is also a normal declaration inside its own module. Later
+declarations and functions can use `PI` directly, and module statements execute in
+source order. Functions are predeclared so forward calls and mutual recursion still
+work.
+
 Import with an alias:
 
 ```ject
