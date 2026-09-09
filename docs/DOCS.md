@@ -1185,12 +1185,11 @@ gui.run("Profile", widgets, 560, 380, {}, "midnight")
 | `document(title, widgets, width=680, height=560, state={}, theme="linen")` | Build a reusable, serializable window document |
 | `run(title, widgets, width=680, height=560, state={}, theme="linen")` | Build and run a document with initial state |
 | `show(document)` | Run a document built in Ject or loaded from JSON |
-| `designer(path="interface.json")` | Open the visual JGUI Designer |
 | `message(title, text)`, `confirm(title, question)` | Convenience dialogs |
 
 `gui.THEMES` lists the supported theme names. Documents are ordinary dictionaries,
-so an interface can be constructed in code, stored as JSON, edited visually, and
-shown through the same renderer.
+so an interface can be constructed in code, stored as JSON, loaded again, and shown
+through the same renderer.
 
 Application code cannot import `@native/jgui`; only the public JGUI facade may
 access that implementation module. The package uses a blocking, declarative window
@@ -1207,42 +1206,6 @@ A callback may return `{set: {key: value}}` (or `{values: {...}}`) to patch live
 window state. Returning `{close: true}` closes the window. State-bound controls and
 text repaint immediately, which allows substantial reactive applications without a
 JGUI-specific Rust extension.
-
-### JGUI Designer
-
-Create a tiny Ject project depending on JGUI and use the Designer as its entry point:
-
-```ject
-import "jgui" as gui
-gui.designer("interface.json")
-```
-
-The Designer edits the same document format accepted by `gui.show`. It opens with
-an editable form and includes Form and Dashboard starter templates. Its searchable,
-categorized palette covers every JGUI widget; the hierarchy supports nested insertion, moving,
-duplicating, nesting, unnesting, and deletion, and the property inspector edits
-text, booleans, numbers, and selector choices. The center pane uses the production
-renderer for its live preview. Window title, dimensions, and theme are editable;
-Save/Open use readable JSON and Undo/Redo keep the last 100 document states. The
-title bar tracks unsaved changes. Standard shortcuts work for save, open, undo,
-redo, duplication, and deletion.
-
-Run the complete example in `examples/jgui_designer`, then load its output in an
-application with:
-
-```ject
-let interface = parse_json(read_file("interface.json"))
-let result = gui.show(interface)
-```
-
-The Designer owns layout and static widget properties. Application callbacks stay
-in Ject source because functions are runtime values and intentionally are not
-serialized into the JSON interface document.
-
-The exported `gui.COMPONENTS` catalog (also returned by `gui.components()`) defines the Designer palette and initial
-properties in ordinary Ject data. The native Designer consumes that catalog instead
-of maintaining a second hardcoded widget table. Likewise, `gui.THEMES` is reported
-by the native theme provider, keeping the facade and backend in sync.
 
 ## 15. JNUM
 

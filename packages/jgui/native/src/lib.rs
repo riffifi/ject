@@ -1,5 +1,4 @@
 use eframe::egui;
-mod designer;
 mod theme;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -528,23 +527,6 @@ fn call(
     args: Vec<Value>,
     host: *const ject_native::HostV1,
 ) -> Result<Value, String> {
-    if function == "designer" {
-        let catalog = args
-            .get(1)
-            .and_then(Value::as_array)
-            .ok_or("designer expects a component catalog")?;
-        let templates = args
-            .get(2)
-            .and_then(Value::as_array)
-            .ok_or("designer expects a template catalog")?;
-        return designer::run(
-            args.first()
-                .and_then(Value::as_str)
-                .unwrap_or("interface.json"),
-            catalog,
-            templates,
-        );
-    }
     if function == "themes" {
         return Ok(json!(theme::NAMES));
     }
@@ -616,7 +598,7 @@ fn call(
     Ok(json!({ "values": output.values, "clicked": output.clicked }))
 }
 
-ject_native::ject_plugin_v2!("jgui", ["run", "designer", "themes"], call);
+ject_native::ject_plugin_v2!("jgui", ["run", "themes"], call);
 
 #[cfg(test)]
 mod tests {
