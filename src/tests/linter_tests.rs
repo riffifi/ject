@@ -176,6 +176,40 @@ print x
     }
 
     #[test]
+    fn constants_are_checked_for_use_and_assignment() {
+        let (errors, warnings) = lint("const answer = 42\nprint answer");
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+
+        for source in [
+            "const answer = 42\nanswer = 43",
+            "const values = [1]\nvalues[0] = 2",
+            "const answer = 42\nanswer++",
+        ] {
+            let (errors, _) = lint(source);
+            assert!(
+                errors.iter().any(|error| error.contains("constant")),
+                "{source}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn redeclaration_updates_binding_mutability() {
+        let (errors, warnings) = lint("const value = 1\nlet value = 2\nvalue = 3");
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("already declared")));
+
+        let (errors, warnings) = lint("let value = 1\nconst value = 2\nvalue = 3");
+        assert!(errors.iter().any(|error| error.contains("constant")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("already declared")));
+    }
+
+    #[test]
     fn test_underscore_variable_no_warning() {
         let (_, warnings) = lint(
             r#"
@@ -444,6 +478,12 @@ print E
         assert!(!errors.iter().any(|e| e.contains("undefined")));
     }
 
+    #[test]
+    fn builtin_constants_are_immutable() {
+        let (errors, _) = lint("PI = 3");
+        assert!(errors.iter().any(|error| error.contains("constant")));
+    }
+
     // ========== Import Tests ==========
 
     #[test]
@@ -455,6 +495,20 @@ print PHI
 "#,
         );
         assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn imported_names_cannot_be_reassigned() {
+        for source in [
+            "import \"math\" as math\nmath = 1",
+            "import {PHI} from \"math\"\nPHI = 1",
+        ] {
+            let (errors, _) = lint(source);
+            assert!(
+                errors.iter().any(|error| error.contains("constant")),
+                "{source}: {errors:?}"
+            );
+        }
     }
 
     // ========== Complex Programs ==========
@@ -597,6 +651,13 @@ end
 "#,
         );
         assert!(!errors.iter().any(|e| e.contains("undefined")));
+    }
+
+    #[test]
+    fn match_guard_resolves_its_pattern_binding() {
+        let (errors, _) =
+            lint("let value = 2\nmatch value\n    n when n > 0 -> n\n    _ -> 0\nend");
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     }
 
     #[test]

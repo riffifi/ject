@@ -171,6 +171,7 @@ mod tests {
     fn test_keywords() {
         let keywords = vec![
             ("let", Token::Let),
+            ("const", Token::Const),
             ("fn", Token::Fn),
             ("lambda", Token::Lambda),
             ("if", Token::If),
@@ -193,6 +194,7 @@ mod tests {
             ("as", Token::As),
             ("and", Token::And),
             ("or", Token::Or),
+            ("not", Token::Bang),
             ("match", Token::Match),
             ("when", Token::When),
             ("struct", Token::Struct),
@@ -200,6 +202,9 @@ mod tests {
             ("try", Token::Try),
             ("catch", Token::Catch),
             ("throw", Token::Throw),
+            ("break", Token::Break),
+            ("continue", Token::Continue),
+            ("to", Token::To),
         ];
 
         for (input, expected) in keywords {

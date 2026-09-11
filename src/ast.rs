@@ -111,12 +111,6 @@ pub enum Expr {
         iterable: Box<Expr>,
         condition: Option<Box<Expr>>,
     },
-    Generator {
-        expr: Box<Expr>,
-        var: String,
-        iterable: Box<Expr>,
-        condition: Option<Box<Expr>>,
-    },
     Dictionary(Vec<(String, Expr)>),
     Index {
         object: Box<Expr>,
@@ -127,10 +121,6 @@ pub enum Expr {
         from: Option<Box<Expr>>,
         to: Option<Box<Expr>>,
         step: Option<Box<Expr>>,
-    },
-    Member {
-        object: Box<Expr>,
-        property: String,
     },
     StructAccess {
         object: Box<Expr>,
@@ -224,6 +214,7 @@ pub enum Argument {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     pub patterns: Vec<Pattern>,
+    pub guard: Option<Expr>,
     pub body: MatchArmBody,
 }
 
@@ -241,7 +232,7 @@ pub enum Pattern {
     /// `> 90`, `< 10`, `>= 5`, `<= 5`, `== x`, `!= x` -- compares the match subject
     /// against `expr` using `op` (subject OP expr).
     Relational(BinaryOp, Expr),
-    /// `0..12` -- inclusive membership test: subject >= start and subject <= end.
+    /// `0..12` -- end-exclusive membership: subject >= start and subject < end.
     Range(Expr, Expr),
 }
 
@@ -249,6 +240,10 @@ pub enum Pattern {
 pub enum Stmt {
     Expression(Expr),
     Let {
+        name: String,
+        value: Expr,
+    },
+    Const {
         name: String,
         value: Expr,
     },
@@ -284,6 +279,7 @@ pub enum Stmt {
     Export {
         name: String,
         value: Expr,
+        mutable: bool,
     },
     ExportFunction {
         name: String,
@@ -396,18 +392,6 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "]")
             }
-            Expr::Generator {
-                expr,
-                var,
-                iterable,
-                condition,
-            } => {
-                write!(f, "<{} for {} in {}", expr, var, iterable)?;
-                if let Some(cond) = condition {
-                    write!(f, " if {}", cond)?;
-                }
-                write!(f, ">")
-            }
             Expr::Dictionary(pairs) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in pairs.iter().enumerate() {
@@ -440,9 +424,6 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "{}", parts.join(" "))?;
                 write!(f, "]")
-            }
-            Expr::Member { object, property } => {
-                write!(f, "{}.{}", object, property)
             }
             Expr::StructAccess { object, field } => {
                 write!(f, "{}.{}", object, field)
@@ -484,7 +465,11 @@ impl fmt::Display for Expr {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{:?} => {:?}", arm.patterns, arm.body)?;
+                    write!(f, "{:?}", arm.patterns)?;
+                    if let Some(guard) = &arm.guard {
+                        write!(f, " when {guard}")?;
+                    }
+                    write!(f, " => {:?}", arm.body)?;
                 }
                 write!(f, " }}")
             }
@@ -513,10 +498,10 @@ impl fmt::Display for Expr {
                     write!(f, "{}", val)?;
                 }
                 if let Some(sep) = sep {
-                    write!(f, " sep:{}", sep)?;
+                    write!(f, " sep={}", sep)?;
                 }
                 if let Some(end) = end {
-                    write!(f, " end:{}", end)?;
+                    write!(f, " end={}", end)?;
                 }
                 Ok(())
             }
@@ -580,6 +565,7 @@ impl fmt::Display for Stmt {
         match self {
             Stmt::Expression(expr) => write!(f, "{}", expr),
             Stmt::Let { name, value } => write!(f, "let {} = {}", name, value),
+            Stmt::Const { name, value } => write!(f, "const {} = {}", name, value),
             Stmt::Assign { target, value } => match target {
                 AssignTarget::Identifier(name) => write!(f, "{} = {}", name, value),
                 AssignTarget::Index { object, index } => {
@@ -631,7 +617,17 @@ impl fmt::Display for Stmt {
                 }
                 Ok(())
             }
-            Stmt::Export { name, value } => write!(f, "export {} = {}", name, value),
+            Stmt::Export {
+                name,
+                value,
+                mutable,
+            } => {
+                if *mutable {
+                    write!(f, "export {} = {}", name, value)
+                } else {
+                    write!(f, "export const {} = {}", name, value)
+                }
+            }
             Stmt::ExportFunction { name, params, .. } => {
                 write!(f, "export fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {

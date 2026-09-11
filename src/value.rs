@@ -304,7 +304,13 @@ impl Value {
 /// gives real closure semantics for free: a captured scope stays alive (and mutations to it
 /// stay visible to the closure) via the shared reference, even after the scope that declared
 /// it has been popped off the live call stack.
-pub type Scope = std::rc::Rc<std::cell::RefCell<HashMap<String, Value>>>;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Binding {
+    value: Value,
+    mutable: bool,
+}
+
+pub type Scope = std::rc::Rc<std::cell::RefCell<HashMap<String, Binding>>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
@@ -325,15 +331,23 @@ impl Environment {
     }
 
     pub fn define(&mut self, name: String, value: Value) {
+        self.define_binding(name, value, true);
+    }
+
+    pub fn define_const(&mut self, name: String, value: Value) {
+        self.define_binding(name, value, false);
+    }
+
+    fn define_binding(&mut self, name: String, value: Value, mutable: bool) {
         if let Some(scope) = self.scopes.last() {
-            scope.borrow_mut().insert(name, value);
+            scope.borrow_mut().insert(name, Binding { value, mutable });
         }
     }
 
     pub fn get(&self, name: &str) -> Option<Value> {
         for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.borrow().get(name) {
-                return Some(value.clone());
+            if let Some(binding) = scope.borrow().get(name) {
+                return Some(binding.value.clone());
             }
         }
         None
@@ -341,12 +355,30 @@ impl Environment {
 
     pub fn set(&mut self, name: &str, value: Value) -> bool {
         for scope in self.scopes.iter().rev() {
-            if scope.borrow().contains_key(name) {
-                scope.borrow_mut().insert(name.to_string(), value);
+            let mutable = scope.borrow().get(name).map(|binding| binding.mutable);
+            if mutable == Some(true) {
+                scope.borrow_mut().insert(
+                    name.to_string(),
+                    Binding {
+                        value,
+                        mutable: true,
+                    },
+                );
                 return true;
+            } else if mutable == Some(false) {
+                return false;
             }
         }
         false
+    }
+
+    pub fn is_mutable(&self, name: &str) -> Option<bool> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(binding) = scope.borrow().get(name) {
+                return Some(binding.mutable);
+            }
+        }
+        None
     }
 
     pub fn push_scope(&mut self) {

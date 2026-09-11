@@ -67,6 +67,7 @@ impl Parser {
     fn statement(&mut self) -> ParseResult<Stmt> {
         match &self.peek() {
             Token::Let => self.let_statement(),
+            Token::Const => self.const_statement(),
             Token::Fn => {
                 // `fn(...)` (no name) at statement position is an anonymous function
                 // used as a standalone expression statement -- `fn name(...)` is a
@@ -172,6 +173,21 @@ impl Parser {
         let value = self.expression()?;
 
         Ok(Stmt::Let { name, value })
+    }
+
+    fn const_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(Token::Const, "Expected 'const'")?;
+
+        let name = if let Token::Identifier(name) = self.advance() {
+            name
+        } else {
+            return Err(self.error("Expected identifier after 'const'".to_string()));
+        };
+
+        self.consume(Token::Equal, "Expected '=' after constant name")?;
+        while self.match_token(&Token::Newline) {}
+        let value = self.expression()?;
+        Ok(Stmt::Const { name, value })
     }
 
     fn function_statement(&mut self) -> ParseResult<Stmt> {
@@ -461,19 +477,21 @@ impl Parser {
         let mut end = None;
 
         // Parse values and keyword arguments
-        'args: while !self.check(&Token::Newline) && !self.check(&Token::End) && !self.is_at_end() {
+        'args: while !self.check(&Token::Newline) && !self.is_at_end() {
             // Check for keyword argument at current position
-            if let Token::Identifier(name) = self.peek() {
-                if (name == "sep" || name == "end")
-                    && self
-                        .peek_ahead(1)
-                        .map(|t| matches!(t, Token::Colon))
-                        .unwrap_or(false)
+            let print_option = match self.peek() {
+                Token::Identifier(name) if name == "sep" => Some("sep"),
+                Token::End => Some("end"),
+                _ => None,
+            };
+            if let Some(kw_name) = print_option {
+                if self
+                    .peek_ahead(1)
+                    .is_some_and(|token| matches!(token, Token::Equal | Token::Colon))
                 {
                     // This is a keyword argument
-                    let kw_name = name;
                     self.advance(); // consume identifier
-                    self.advance(); // consume ':'
+                    self.advance(); // consume '=' (or the legacy ':' spelling)
                     let value = self.expression()?;
                     if kw_name == "sep" {
                         sep = Some(value);
@@ -486,6 +504,12 @@ impl Parser {
                     }
                     break 'args;
                 }
+            }
+
+            // In a compact block such as `fn show() print value end`, this is the
+            // block terminator rather than the `end=` print option.
+            if self.check(&Token::End) {
+                break;
             }
 
             // Regular value expression
@@ -540,19 +564,6 @@ impl Parser {
                     Ok(crate::ast::AssignTarget::Field {
                         object: obj_name,
                         field,
-                    })
-                } else {
-                    Err(self.error(
-                        "Left side of field assignment must be a variable (e.g., obj.field = x)"
-                            .to_string(),
-                    ))
-                }
-            }
-            Expr::Member { object, property } => {
-                if let Expr::Identifier(obj_name) = *object {
-                    Ok(crate::ast::AssignTarget::Field {
-                        object: obj_name,
-                        field: property,
                     })
                 } else {
                     Err(self.error(
@@ -684,7 +695,14 @@ impl Parser {
             return Ok(Stmt::ExportFunction { name, params, body });
         }
 
-        // Regular "export name = value" syntax
+        // `export const name = value`, explicit `export let name = value`, and
+        // the original `export name = value` mutable shorthand.
+        let mutable = if self.match_token(&Token::Const) {
+            false
+        } else {
+            self.match_token(&Token::Let);
+            true
+        };
         let name = if let Token::Identifier(name) = self.advance() {
             name
         } else {
@@ -694,7 +712,11 @@ impl Parser {
         self.consume(Token::Equal, "Expected '=' after export name")?;
         let value = self.expression()?;
 
-        Ok(Stmt::Export { name, value })
+        Ok(Stmt::Export {
+            name,
+            value,
+            mutable,
+        })
     }
 
     fn struct_statement(&mut self) -> ParseResult<Stmt> {
@@ -1392,30 +1414,10 @@ impl Parser {
     fn finish_call(&mut self, callee: Expr) -> ParseResult<Expr> {
         let args = self.parse_call_args()?;
 
-        let call = Expr::Call {
+        Ok(Expr::Call {
             callee: Box::new(callee),
             args,
-        };
-
-        // Compatibility: one test expects nested calls to appear under `callee` for
-        // `foo(bar(baz(42)))`. When we see exactly one positional arg that is itself
-        // a call, we re-associate so the inner call becomes the callee.
-        match call {
-            Expr::Call { callee, args } => {
-                if let (Expr::Identifier(name), [crate::ast::Argument::Positional(inner)]) =
-                    (callee.as_ref().clone(), args.as_slice())
-                {
-                    if matches!(inner, Expr::Call { .. }) {
-                        return Ok(Expr::Call {
-                            callee: Box::new(inner.clone()),
-                            args: vec![crate::ast::Argument::Positional(Expr::Identifier(name))],
-                        });
-                    }
-                }
-                Ok(Expr::Call { callee, args })
-            }
-            other => Ok(other),
-        }
+        })
     }
 
     fn primary(&mut self) -> ParseResult<Expr> {
@@ -1533,15 +1535,14 @@ impl Parser {
                 // Allow optional newlines after '{|'
                 while self.match_token(&Token::Newline) {}
 
-                if !self.check(&Token::RightPipeBrace) && !self.check(&Token::RightBrace) {
+                if !self.check(&Token::RightPipeBrace) {
                     loop {
                         while self.match_token(&Token::Newline) {}
                         elements.push(self.expression()?);
                         while self.match_token(&Token::Newline) {}
                         if self.match_token(&Token::Comma) {
                             while self.match_token(&Token::Newline) {}
-                            if self.check(&Token::RightPipeBrace) || self.check(&Token::RightBrace)
-                            {
+                            if self.check(&Token::RightPipeBrace) {
                                 break;
                             }
                         } else {
@@ -1550,12 +1551,10 @@ impl Parser {
                     }
                 }
 
-                // Accept both |} and } as terminators (}| for consistency, } for empty {|})
-                if self.check(&Token::RightPipeBrace) || self.check(&Token::RightBrace) {
-                    self.advance();
-                } else {
-                    return Err(self.error("Expected '|}' after unique array elements".to_string()));
-                }
+                self.consume(
+                    Token::RightPipeBrace,
+                    "Expected '|}' after unique array elements",
+                )?;
                 Ok(Expr::UniqueArray(elements))
             }
             Token::LeftBrace => {
@@ -1826,6 +1825,25 @@ impl Parser {
                 patterns.push(self.parse_pattern()?);
             }
 
+            let guard = if self.match_token(&Token::When) {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+
+            if guard.is_some() && patterns.len() > 1 {
+                let binding_patterns = patterns
+                    .iter()
+                    .filter(|pattern| matches!(pattern, crate::ast::Pattern::Identifier(_)))
+                    .count();
+                if binding_patterns > 0 {
+                    return Err(self.error(
+                        "A guarded arm cannot mix a binding pattern with other patterns; split it into separate arms"
+                            .to_string(),
+                    ));
+                }
+            }
+
             // Expect arrow
             self.consume(Token::Arrow, "Expected '->' after match pattern")?;
 
@@ -1866,7 +1884,11 @@ impl Parser {
                 crate::ast::MatchArmBody::Expression(self.expression()?)
             };
 
-            arms.push(crate::ast::MatchArm { patterns, body });
+            arms.push(crate::ast::MatchArm {
+                patterns,
+                guard,
+                body,
+            });
         }
 
         self.consume(Token::End, "Expected 'end' after match expression")?;
@@ -1878,7 +1900,7 @@ impl Parser {
                 .patterns
                 .iter()
                 .any(|p| matches!(p, crate::ast::Pattern::Wildcard));
-            if has_wildcard && i != arms.len() - 1 {
+            if has_wildcard && arm.guard.is_none() && i != arms.len() - 1 {
                 return Err(
                     self.error("Wildcard pattern '_' must be the last arm in a match".to_string())
                 );
@@ -1907,6 +1929,9 @@ impl Parser {
                 if self.parse_pattern().is_err() {
                     return false;
                 }
+            }
+            if self.match_token(&Token::When) && self.expression().is_err() {
+                return false;
             }
             self.check(&Token::Arrow)
         })();
@@ -1959,7 +1984,7 @@ impl Parser {
             }
         };
 
-        // Range pattern: `0..12` -- an inclusive membership test. Only literal numeric
+        // Range pattern: `0..12` -- an end-exclusive membership test. Only literal numeric
         // patterns can start a range (matches the spec's examples; identifiers/wildcard
         // aren't range starts).
         if let crate::ast::Pattern::Literal(start_expr) = &base {

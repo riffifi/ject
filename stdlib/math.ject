@@ -3,9 +3,9 @@
 # Note: CorLib already provides: abs, sqrt, pow, sin, cos, tan, floor, ceil, round, min, max, log, log10, exp, PI, E
 
 # Additional constants
-export PHI = 1.618033988749895  # Golden ratio
-export SQRT2 = 1.414213562373095
-export SQRT3 = 1.732050807568877
+export const PHI = 1.618033988749895  # Golden ratio
+export const SQRT2 = 1.414213562373095
+export const SQRT3 = 1.732050807568877
 
 # Inverse trigonometric functions (NOT in CorLib)
 export fn asin(x)

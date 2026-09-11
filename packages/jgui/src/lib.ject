@@ -1,7 +1,7 @@
 # JGUI's public API is ordinary Ject. Rust receives a declarative document only.
 import "@native/jgui" as native
 
-export THEMES = native.themes()
+export const THEMES = native.themes()
 
 export fn heading(text)
     return {kind: "heading", text: text}

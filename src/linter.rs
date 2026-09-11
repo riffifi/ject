@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 struct Variable {
     name: String,
     used: bool,
+    mutable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -361,8 +362,8 @@ impl Linter {
         self.functions.insert("values".to_string());
 
         // Constants (variables, not functions)
-        self.declare_variable("PI".to_string());
-        self.declare_variable("E".to_string());
+        self.declare_constant("PI".to_string());
+        self.declare_constant("E".to_string());
 
         // ========== Module Functions (available via import) ==========
 
@@ -692,26 +693,45 @@ impl Linter {
     }
 
     fn declare_variable(&mut self, name: String) {
-        if let Some(current_scope) = self.scopes.last_mut() {
-            if current_scope.contains_key(&name) {
-                // Don't warn about redeclaration of builtin constants in REPL mode
-                // They may be re-initialized by the interpreter
-                if name == "PI" || name == "E" {
-                    return; // Silently ignore PI/E redeclaration
-                }
+        self.declare_binding(name, true);
+    }
 
-                let position = self.find_identifier_position(&name);
-                self.warnings.push(LintWarning {
-                    message: format!(
-                        "warning: variable `{}` is already declared in this scope",
-                        name
-                    ),
-                    position,
-                });
-            } else {
-                current_scope.insert(name.clone(), Variable { name, used: false });
-            }
+    fn declare_constant(&mut self, name: String) {
+        self.declare_binding(name, false);
+    }
+
+    fn declare_binding(&mut self, name: String, mutable: bool) {
+        let already_declared = self
+            .scopes
+            .last()
+            .is_some_and(|scope| scope.contains_key(&name));
+        if already_declared {
+            let position = self.find_identifier_position(&name);
+            self.warnings.push(LintWarning {
+                message: format!(
+                    "warning: variable `{}` is already declared in this scope",
+                    name
+                ),
+                position,
+            });
         }
+        if let Some(current_scope) = self.scopes.last_mut() {
+            current_scope.insert(
+                name.clone(),
+                Variable {
+                    name,
+                    used: false,
+                    mutable,
+                },
+            );
+        }
+    }
+
+    fn binding_is_mutable(&self, name: &str) -> Option<bool> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name).map(|variable| variable.mutable))
     }
 
     fn use_variable(&mut self, name: &str) -> bool {
@@ -821,9 +841,25 @@ impl Linter {
                 // Then declare the variable (Rust-like: can't use variable before declaration)
                 self.declare_variable(name.clone());
             }
+            Stmt::Const { name, value } => {
+                self.analyze_expr(value);
+                self.declare_constant(name.clone());
+            }
             Stmt::Assign { target, value } => {
                 // Analyze the value expression first
                 self.analyze_expr(value);
+                let root = match target {
+                    crate::ast::AssignTarget::Identifier(name)
+                    | crate::ast::AssignTarget::Index { object: name, .. }
+                    | crate::ast::AssignTarget::IndexChain { object: name, .. }
+                    | crate::ast::AssignTarget::Field { object: name, .. } => name,
+                };
+                if self.binding_is_mutable(root) == Some(false) {
+                    self.errors.push(LintError {
+                        message: format!("cannot assign through constant `{root}`"),
+                        position: self.find_identifier_position(root),
+                    });
+                }
                 // Check if variable exists based on target type
                 match target {
                     crate::ast::AssignTarget::Identifier(name) => {
@@ -1025,7 +1061,7 @@ impl Linter {
                 // Handle selective imports
                 if let Some(item_list) = items {
                     for item in item_list {
-                        self.declare_variable(item.clone());
+                        self.declare_constant(item.clone());
                         let mut valid_export = false;
                         if let Some(export) = module_api
                             .as_ref()
@@ -1059,7 +1095,7 @@ impl Linter {
                 } else if alias.is_none() {
                     if let Some(interface) = &module_api {
                         for export in &interface.exports {
-                            self.declare_variable(export.name.clone());
+                            self.declare_constant(export.name.clone());
                             if let ExportKind::Function { parameters } = &export.kind {
                                 self.function_signatures.insert(
                                     export.name.clone(),
@@ -1073,7 +1109,7 @@ impl Linter {
                 }
 
                 if let Some(alias_name) = alias {
-                    self.declare_variable(alias_name.clone());
+                    self.declare_constant(alias_name.clone());
                     if module_api.is_none() {
                         self.use_variable(alias_name);
                     }
@@ -1098,9 +1134,17 @@ impl Linter {
                     }
                 }
             }
-            Stmt::Export { name, value } => {
+            Stmt::Export {
+                name,
+                value,
+                mutable,
+            } => {
                 self.analyze_expr(value);
-                self.declare_variable(name.clone());
+                if *mutable {
+                    self.declare_variable(name.clone());
+                } else {
+                    self.declare_constant(name.clone());
+                }
                 // An export is consumed by other modules, outside this file's
                 // analysis boundary. Treat publication as a use.
                 self.use_variable(name);
@@ -1230,6 +1274,17 @@ impl Linter {
             Expr::Unary { operand, .. } => {
                 self.analyze_expr(operand);
             }
+            Expr::Increment { target, .. } | Expr::Decrement { target, .. } => {
+                self.analyze_expr(target);
+                if let Expr::Identifier(name) = target.as_ref() {
+                    if self.binding_is_mutable(name) == Some(false) {
+                        self.errors.push(LintError {
+                            message: format!("cannot assign through constant `{name}`"),
+                            position: self.find_identifier_position(name),
+                        });
+                    }
+                }
+            }
             Expr::Call { callee, args } => {
                 self.analyze_expr(callee);
                 for arg in args {
@@ -1263,9 +1318,6 @@ impl Linter {
                 self.analyze_expr(object);
                 self.analyze_expr(index);
             }
-            Expr::Member { object, .. } => {
-                self.analyze_expr(object);
-            }
             Expr::StructAccess { object, .. } => {
                 self.analyze_expr(object);
             }
@@ -1292,21 +1344,6 @@ impl Linter {
                 }
             }
             Expr::ListComprehension {
-                expr,
-                var,
-                iterable,
-                condition,
-            } => {
-                self.analyze_expr(iterable);
-                self.push_scope();
-                self.declare_variable(var.clone());
-                self.analyze_expr(expr);
-                if let Some(cond) = condition {
-                    self.analyze_expr(cond);
-                }
-                self.pop_scope();
-            }
-            Expr::Generator {
                 expr,
                 var,
                 iterable,
@@ -1360,6 +1397,9 @@ impl Linter {
                     self.push_scope();
                     for pattern in &arm.patterns {
                         self.analyze_pattern(pattern);
+                    }
+                    if let Some(guard) = &arm.guard {
+                        self.analyze_expr(guard);
                     }
                     match &arm.body {
                         crate::ast::MatchArmBody::Expression(expr) => {

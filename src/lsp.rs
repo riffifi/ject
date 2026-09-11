@@ -19,9 +19,10 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 const KEYWORDS: &[&str] = &[
-    "let", "fn", "if", "elseif", "else", "while", "for", "in", "return", "true", "false", "nil",
-    "end", "print", "import", "export", "from", "as", "struct", "new", "try", "catch", "throw",
-    "break", "continue", "match",
+    "let", "const", "fn", "lambda", "if", "then", "elseif", "else", "while", "for", "in", "do",
+    "return", "true", "false", "nil", "end", "print", "import", "export", "from", "as", "and",
+    "or", "not", "match", "when", "struct", "new", "try", "catch", "throw", "break", "continue",
+    "to",
 ];
 
 const BUILTINS: &[&str] = &[
@@ -786,20 +787,24 @@ fn index_document(source: &str) -> DocumentIndex {
         if let Token::Identifier(name) = &located.token {
             let after_dot = matches!(previous, Some(Token::Dot));
             if !after_dot {
+                let match_binding = is_match_binding(&tokens, token_index);
                 let definition = matches!(
                     previous,
                     Some(
                         Token::Let
+                            | Token::Const
                             | Token::Fn
                             | Token::Struct
                             | Token::Catch
                             | Token::As
                             | Token::Export
                     )
-                ) || expect_for_binding;
+                ) || expect_for_binding
+                    || match_binding;
                 let kind = match previous {
                     Some(Token::Fn) => SymbolKind::FUNCTION,
                     Some(Token::Struct) => SymbolKind::STRUCT,
+                    Some(Token::Const) => SymbolKind::CONSTANT,
                     _ => SymbolKind::VARIABLE,
                 };
                 let detail = if definition {
@@ -808,14 +813,30 @@ fn index_document(source: &str) -> DocumentIndex {
                             Some(function_signature(source, &tokens, token_index, name))
                         }
                         Some(Token::Struct) => Some(format!("struct {name}")),
-                        Some(Token::Let | Token::Export) => semantic
+                        Some(Token::Let | Token::Const | Token::Export) => semantic
                             .symbol_at(located.position.line, located.position.column)
                             .and_then(|id| inferred_types.get(&id))
-                            .map(|kind| format!("let {name}: {kind}"))
-                            .or_else(|| Some(format!("let {name}: unknown"))),
+                            .map(|kind| {
+                                let declaration = if matches!(previous, Some(Token::Const)) {
+                                    "const"
+                                } else {
+                                    "let"
+                                };
+                                format!("{declaration} {name}: {kind}")
+                            })
+                            .or_else(|| {
+                                let declaration = if matches!(previous, Some(Token::Const)) {
+                                    "const"
+                                } else {
+                                    "let"
+                                };
+                                Some(format!("{declaration} {name}: unknown"))
+                            }),
                         Some(Token::As) => Some(format!("module {name}")),
                         Some(Token::Catch) => Some(format!("let {name}: error")),
-                        _ if expect_for_binding => Some(format!("let {name}: unknown")),
+                        _ if expect_for_binding || match_binding => {
+                            Some(format!("let {name}: unknown"))
+                        }
                         _ => None,
                     }
                 } else {
@@ -873,6 +894,19 @@ fn index_document(source: &str) -> DocumentIndex {
         glob_imports,
         reexport_references,
     }
+}
+
+fn is_match_binding(tokens: &[crate::lexer::LocatedToken], position: usize) -> bool {
+    if matches!(tokens.get(position).map(|token| &token.token), Some(Token::Identifier(name)) if name == "_")
+    {
+        return false;
+    }
+    let at_pattern_start = position > 0 && matches!(tokens[position - 1].token, Token::Newline);
+    at_pattern_start
+        && matches!(
+            tokens.get(position + 1).map(|token| &token.token),
+            Some(Token::Arrow | Token::When)
+        )
 }
 
 fn function_signature(
@@ -945,7 +979,7 @@ fn module_metadata(
                 let mut name_index = index + 1;
                 if matches!(
                     tokens.get(name_index).map(|item| &item.token),
-                    Some(Token::Fn)
+                    Some(Token::Fn | Token::Const | Token::Let)
                 ) {
                     name_index += 1;
                 }
@@ -1064,7 +1098,10 @@ fn infer_symbol_types(
 ) -> HashMap<crate::semantic::SymbolId, String> {
     let mut types = HashMap::new();
     for symbol in &semantic.symbols {
-        if symbol.kind != crate::semantic::SymbolKind::Variable {
+        if !matches!(
+            symbol.kind,
+            crate::semantic::SymbolKind::Variable | crate::semantic::SymbolKind::Constant
+        ) {
             continue;
         }
         let Some(name_index) = tokens.iter().position(|token| {
@@ -1184,7 +1221,7 @@ fn infer_expression_type(
     }
     if tokens
         .iter()
-        .any(|token| matches!(token, Token::True | Token::False | Token::Bool(_)))
+        .any(|token| matches!(token, Token::True | Token::False))
         || referenced_types.contains(&"boolean")
     {
         return "boolean".into();
@@ -1955,6 +1992,7 @@ fn completion_items(
                 Some(CompletionItemKind::FUNCTION) => SymbolKind::FUNCTION,
                 Some(CompletionItemKind::STRUCT) => SymbolKind::STRUCT,
                 Some(CompletionItemKind::MODULE) => SymbolKind::MODULE,
+                Some(CompletionItemKind::CONSTANT) => SymbolKind::CONSTANT,
                 _ => SymbolKind::VARIABLE,
             };
             glob_names
@@ -2013,6 +2051,7 @@ fn semantic_completion_kind(kind: crate::semantic::SymbolKind) -> SymbolKind {
         crate::semantic::SymbolKind::Function => SymbolKind::FUNCTION,
         crate::semantic::SymbolKind::Struct => SymbolKind::STRUCT,
         crate::semantic::SymbolKind::Module => SymbolKind::MODULE,
+        crate::semantic::SymbolKind::Constant => SymbolKind::CONSTANT,
         _ => SymbolKind::VARIABLE,
     }
 }
@@ -2169,6 +2208,8 @@ fn completion_kind(kind: SymbolKind) -> CompletionItemKind {
         CompletionItemKind::STRUCT
     } else if kind == SymbolKind::MODULE {
         CompletionItemKind::MODULE
+    } else if kind == SymbolKind::CONSTANT {
+        CompletionItemKind::CONSTANT
     } else {
         CompletionItemKind::VARIABLE
     }
@@ -2179,6 +2220,8 @@ fn symbol_kind_name(kind: SymbolKind) -> &'static str {
         "function"
     } else if kind == SymbolKind::STRUCT {
         "struct"
+    } else if kind == SymbolKind::CONSTANT {
+        "constant"
     } else {
         "variable"
     }
@@ -2284,6 +2327,7 @@ mod tests {
     fn infers_basic_hover_types() {
         for (source, expected) in [
             ("let value = 1.5", "let value: float"),
+            ("const value = 42", "const value: integer"),
             ("let value = \"hello\"", "let value: string"),
             ("let value = [1, 2]", "let value: array"),
             ("let value = true", "let value: boolean"),
@@ -2293,6 +2337,47 @@ mod tests {
                 Some(expected)
             );
         }
+    }
+
+    #[test]
+    fn match_bindings_are_indexed_as_definitions() {
+        let index =
+            index_document("let value = 2\nmatch value\n    n when n > 0 -> n\n    _ -> 0\nend");
+        assert_eq!(
+            index
+                .occurrences
+                .iter()
+                .filter(|occurrence| occurrence.name == "n" && occurrence.definition)
+                .count(),
+            1
+        );
+        assert_eq!(
+            index
+                .occurrences
+                .iter()
+                .filter(|occurrence| occurrence.name == "n" && !occurrence.definition)
+                .count(),
+            2
+        );
+        assert!(!index
+            .occurrences
+            .iter()
+            .any(|occurrence| occurrence.name == "_" && occurrence.definition));
+    }
+
+    #[test]
+    fn constants_use_constant_completion_items() {
+        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let source = "const answer = 42\nans";
+        let indexes = HashMap::from([(uri.clone(), index_document(source))]);
+        let documents = HashMap::from([(uri.clone(), source.into())]);
+        let completions = completion_items(&indexes, &documents, &uri, Position::new(1, 3));
+        let answer = completions
+            .iter()
+            .find(|item| item.label == "answer")
+            .unwrap();
+        assert_eq!(answer.kind, Some(CompletionItemKind::CONSTANT));
+        assert_eq!(answer.detail.as_deref(), Some("const answer: integer"));
     }
 
     #[test]

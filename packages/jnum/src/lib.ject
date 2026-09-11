@@ -1,10 +1,10 @@
 # JNUM's public API is ordinary Ject. Rust owns only numerical resources and kernels.
 import "@native/jnum" as native
 
-export PI = 3.141592653589793
-export E = 2.718281828459045
-export INF = native.inf()
-export NAN = native.nan()
+export const PI = 3.141592653589793
+export const E = 2.718281828459045
+export const INF = native.inf()
+export const NAN = native.nan()
 
 export fn array(data) return native.array(data) end
 export fn zeros(shape) return native.zeros(shape) end

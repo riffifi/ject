@@ -161,7 +161,11 @@ impl Interpreter {
         // Load CorLib (core library - always available)
         let corlib = crate::stdlib::create_corlib();
         for (name, value) in corlib {
-            environment.define(name, value);
+            if matches!(name.as_str(), "PI" | "E") {
+                environment.define_const(name, value);
+            } else {
+                environment.define(name, value);
+            }
         }
 
         // Note: Standard library modules are now loaded via import statements
@@ -347,7 +351,23 @@ impl Interpreter {
                 self.environment.define(name.clone(), val);
                 Ok(ControlFlow::None)
             }
+            Stmt::Const { name, value } => {
+                let val = self.evaluate_expression(value)?;
+                self.environment.define_const(name.clone(), val);
+                Ok(ControlFlow::None)
+            }
             Stmt::Assign { target, value } => {
+                let root = match target {
+                    crate::ast::AssignTarget::Identifier(name)
+                    | crate::ast::AssignTarget::Index { object: name, .. }
+                    | crate::ast::AssignTarget::IndexChain { object: name, .. }
+                    | crate::ast::AssignTarget::Field { object: name, .. } => name,
+                };
+                if self.environment.is_mutable(root) == Some(false) {
+                    return Err(RuntimeError {
+                        message: format!("Cannot assign through constant '{root}'"),
+                    });
+                }
                 let val = self.evaluate_expression(value)?;
 
                 match target {
@@ -571,10 +591,18 @@ impl Interpreter {
                 self.load_module(module_path, items, alias)?;
                 Ok(ControlFlow::None)
             }
-            Stmt::Export { name, value } => {
-                // For now, just evaluate and store the value like a let statement
+            Stmt::Export {
+                name,
+                value,
+                mutable,
+            } => {
+                // An export is also a binding in its defining environment.
                 let val = self.evaluate_expression(value)?;
-                self.environment.define(name.clone(), val);
+                if *mutable {
+                    self.environment.define(name.clone(), val);
+                } else {
+                    self.environment.define_const(name.clone(), val);
+                }
                 Ok(ControlFlow::None)
             }
             Stmt::ExportFunction { name, params, body } => {
@@ -765,23 +793,6 @@ impl Interpreter {
                 self.evaluate_increment_decrement(target, *prefix, false)
             }
             Expr::Call { callee, args } => {
-                // Parser compatibility: some nested-call parses are re-associated so that
-                // the inner call appears under `callee` and the original callee identifier
-                // becomes the single positional argument.
-                //
-                // Reconstruct the canonical AST shape to preserve runtime semantics.
-                if let (
-                    Expr::Call { .. },
-                    [crate::ast::Argument::Positional(Expr::Identifier(name))],
-                ) = (callee.as_ref(), args.as_slice())
-                {
-                    let rebuilt = Expr::Call {
-                        callee: Box::new(Expr::Identifier(name.clone())),
-                        args: vec![crate::ast::Argument::Positional((**callee).clone())],
-                    };
-                    return self.evaluate_expression(&rebuilt);
-                }
-
                 // Check for higher-order functions that need special handling
                 if let Expr::Identifier(func_name) = &**callee {
                     if func_name == "map"
@@ -939,56 +950,6 @@ impl Interpreter {
                     }
                 }
 
-                Ok(Value::array(result))
-            }
-            Expr::Generator {
-                expr,
-                var,
-                iterable,
-                condition,
-            } => {
-                // For now, generators evaluate eagerly like list comprehensions
-                // In the future, this could return a lazy iterator
-                let iter_value = self.evaluate_expression(iterable)?;
-
-                let elements = match iter_value {
-                    Value::Array(arr) => arr.borrow().clone(),
-                    Value::UniqueArray(arr) => arr,
-                    Value::String(s) => s.chars().map(|c| Value::String(c.to_string())).collect(),
-                    _ => {
-                        return Err(RuntimeError {
-                            message: "Can only iterate over arrays, strings, or ranges".to_string(),
-                        })
-                    }
-                };
-
-                let mut result = Vec::new();
-
-                for item in &elements {
-                    self.environment.push_scope();
-                    self.environment.define(var.clone(), item.clone());
-
-                    let outcome: RuntimeResult<Option<Value>> = (|| {
-                        let include = if let Some(cond) = condition {
-                            self.evaluate_expression(cond)?.is_truthy()
-                        } else {
-                            true
-                        };
-                        if include {
-                            Ok(Some(self.evaluate_expression(expr)?))
-                        } else {
-                            Ok(None)
-                        }
-                    })();
-
-                    self.environment.pop_scope();
-
-                    if let Some(value) = outcome? {
-                        result.push(value);
-                    }
-                }
-
-                // Return as array for now (could be made lazy in future)
                 Ok(Value::array(result))
             }
             Expr::Dictionary(pairs) => {
@@ -1295,24 +1256,6 @@ impl Interpreter {
                     closure_env: self.environment.clone(),
                 })
             }
-            Expr::Member { object, property } => {
-                let obj = self.evaluate_expression(object)?;
-
-                match obj {
-                    Value::ModuleObject(exports) => {
-                        exports.get(property).cloned().ok_or_else(|| RuntimeError {
-                            message: format!("Property '{}' not found in module", property),
-                        })
-                    }
-                    _ => Err(RuntimeError {
-                        message: format!(
-                            "Cannot access property '{}' on {}",
-                            property,
-                            obj.type_name()
-                        ),
-                    }),
-                }
-            }
             Expr::StructAccess { object, field } => {
                 let obj = self.evaluate_expression(object)?;
 
@@ -1493,6 +1436,20 @@ impl Interpreter {
                         self.environment.push_scope();
                         if let Some(name) = bound_name {
                             self.environment.define(name.clone(), match_value.clone());
+                        }
+                        let guard_matches = match &arm.guard {
+                            Some(guard) => match self.evaluate_expression(guard) {
+                                Ok(value) => value.is_truthy(),
+                                Err(error) => {
+                                    self.environment.pop_scope();
+                                    return Err(error);
+                                }
+                            },
+                            None => true,
+                        };
+                        if !guard_matches {
+                            self.environment.pop_scope();
+                            continue;
                         }
                         let result = self.evaluate_match_arm_body(&arm.body);
                         self.environment.pop_scope();
@@ -1865,7 +1822,7 @@ impl Interpreter {
 
             // Add module functions to current environment
             for (name, value) in module_env {
-                self.environment.define(name, value);
+                self.environment.define_const(name, value);
             }
 
             return Ok(());
@@ -1951,7 +1908,11 @@ impl Interpreter {
         // Load standard library into module environment
         let stdlib = crate::stdlib::create_stdlib();
         for (name, value) in stdlib {
-            module_env.define(name, value);
+            if matches!(name.as_str(), "PI" | "E") {
+                module_env.define_const(name, value);
+            } else {
+                module_env.define(name, value);
+            }
         }
 
         let module_file_stem = if module_file_path.starts_with("<embedded:") {
@@ -2013,12 +1974,20 @@ impl Interpreter {
         let mut exports = HashMap::new();
         for statement in statements {
             match statement {
-                Stmt::Export { name, value } => {
+                Stmt::Export {
+                    name,
+                    value,
+                    mutable,
+                } => {
                     let val = self.evaluate_expression(value)?;
                     // An export is still a declaration in its defining module.
                     // Bind it before continuing so later exports and exported
                     // functions can refer to it just like an ordinary `let`.
-                    self.environment.define(name.clone(), val.clone());
+                    if *mutable {
+                        self.environment.define(name.clone(), val.clone());
+                    } else {
+                        self.environment.define_const(name.clone(), val.clone());
+                    }
                     exports.insert(name.clone(), val.clone());
                 }
                 Stmt::ExportFunction { name, params, body } => {
@@ -2058,7 +2027,8 @@ impl Interpreter {
                 // import {item1, item2} from "module"
                 for item_name in item_list {
                     if let Some(value) = exports.get(item_name) {
-                        self.environment.define(item_name.clone(), value.clone());
+                        self.environment
+                            .define_const(item_name.clone(), value.clone());
                     } else {
                         return Err(RuntimeError {
                             message: format!(
@@ -2073,12 +2043,13 @@ impl Interpreter {
                 // import "module" as alias
                 // Create a module object with all exports
                 let module_obj = Value::ModuleObject(exports);
-                self.environment.define(alias_name.clone(), module_obj);
+                self.environment
+                    .define_const(alias_name.clone(), module_obj);
             }
             (None, None) => {
                 // import "module" - import all exports directly
                 for (name, value) in exports {
-                    self.environment.define(name, value);
+                    self.environment.define_const(name, value);
                 }
             }
             (Some(_), Some(_)) => {
@@ -2420,7 +2391,9 @@ impl Interpreter {
                 let end_value = self.evaluate_expression(end_expr)?;
                 let above_start =
                     self.evaluate_binary_op(value, &BinaryOp::GreaterEqual, &start_value)?;
-                let below_end = self.evaluate_binary_op(value, &BinaryOp::LessEqual, &end_value)?;
+                // Ranges are end-exclusive everywhere in Ject. Match patterns should
+                // behave exactly like a range used by `for`, `in`, or slicing.
+                let below_end = self.evaluate_binary_op(value, &BinaryOp::Less, &end_value)?;
                 match (above_start, below_end) {
                     (Value::Bool(a), Value::Bool(b)) => Ok(a && b),
                     _ => Ok(false),
@@ -2539,6 +2512,11 @@ impl Interpreter {
     ) -> RuntimeResult<Value> {
         match target {
             Expr::Identifier(name) => {
+                if self.environment.is_mutable(name) == Some(false) {
+                    return Err(RuntimeError {
+                        message: format!("Cannot assign through constant '{name}'"),
+                    });
+                }
                 let current = self.environment.get(name).ok_or_else(|| RuntimeError {
                     message: format!("Undefined variable '{}'", name),
                 })?;

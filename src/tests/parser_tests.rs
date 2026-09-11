@@ -31,6 +31,19 @@ mod tests {
     }
 
     #[test]
+    fn test_const_statement() {
+        let stmts = parse("const limit = 42").unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Const { name, value } => {
+                assert_eq!(name, "limit");
+                assert!(matches!(value, Expr::Integer(42)));
+            }
+            _ => panic!("Expected Const statement"),
+        }
+    }
+
+    #[test]
     fn test_let_statement_with_string() {
         let stmts = parse("let name = \"Alice\"").unwrap();
         assert_eq!(stmts.len(), 1);
@@ -147,6 +160,20 @@ if true then 1 else 2 end";
         } else {
             panic!("Expected Print statement");
         }
+    }
+
+    #[test]
+    fn test_print_options_use_named_argument_syntax() {
+        let stmts = parse("print \"a\", \"b\", sep=\"-\", end=\"!\"").unwrap();
+        let Stmt::Print { values, sep, end } = &stmts[0] else {
+            panic!("Expected Print statement");
+        };
+        assert_eq!(values.len(), 2);
+        assert!(matches!(sep, Some(Expr::String(value)) if value == "-"));
+        assert!(matches!(end, Some(Expr::String(value)) if value == "!"));
+
+        assert!(parse("print \"a\", sep:\"-\", end:\"!\"").is_ok());
+        assert!(parse("fn show() print \"a\" end").is_ok());
     }
 
     // ========== Arithmetic Expression Tests ==========
@@ -720,6 +747,19 @@ if true then 1 else 2 end";
     }
 
     #[test]
+    fn unique_arrays_require_their_full_delimiter() {
+        assert!(matches!(
+            &parse("{||}").unwrap()[0],
+            Stmt::Expression(Expr::UniqueArray(values)) if values.is_empty()
+        ));
+        assert!(matches!(
+            &parse("{|1, 2, 1|}").unwrap()[0],
+            Stmt::Expression(Expr::UniqueArray(values)) if values.len() == 3
+        ));
+        assert!(parse("{|1, 2}").is_err());
+    }
+
+    #[test]
     fn test_array_indexing() {
         let stmts = parse("arr[0]").unwrap();
         assert_eq!(stmts.len(), 1);
@@ -927,11 +967,35 @@ if true then 1 else 2 end";
     fn test_export_statement() {
         let stmts = parse("export PI = 3.14159").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Export { name, .. } = &stmts[0] {
+        if let Stmt::Export { name, mutable, .. } = &stmts[0] {
             assert_eq!(name, "PI");
+            assert!(*mutable);
         } else {
             panic!("Expected Export statement");
         }
+    }
+
+    #[test]
+    fn test_explicit_mutable_and_constant_exports() {
+        let mutable = parse("export let count = 0").unwrap();
+        assert!(matches!(
+            &mutable[0],
+            Stmt::Export {
+                name,
+                mutable: true,
+                ..
+            } if name == "count"
+        ));
+
+        let constant = parse("export const PI = 3.14159").unwrap();
+        assert!(matches!(
+            &constant[0],
+            Stmt::Export {
+                name,
+                mutable: false,
+                ..
+            } if name == "PI"
+        ));
     }
 
     #[test]
@@ -973,6 +1037,27 @@ if true then 1 else 2 end";
         } else {
             panic!("Expected Match expression");
         }
+    }
+
+    #[test]
+    fn test_match_guard() {
+        let stmts = parse("match value\n    n when n > 10 -> n\n    _ -> 0\nend").unwrap();
+        let Stmt::Expression(Expr::Match { arms, .. }) = &stmts[0] else {
+            panic!("Expected Match expression");
+        };
+        assert!(matches!(arms[0].guard, Some(Expr::Binary { .. })));
+        assert!(arms[1].guard.is_none());
+    }
+
+    #[test]
+    fn guarded_wildcard_may_precede_the_fallback_arm() {
+        assert!(parse("match value\n    _ when value > 0 -> 1\n    _ -> 0\nend").is_ok());
+    }
+
+    #[test]
+    fn guarded_binding_cannot_be_mixed_with_other_patterns() {
+        let error = parse("match value\n    1, n when n > 0 -> n\nend").unwrap_err();
+        assert!(error.contains("cannot mix a binding pattern"), "{error}");
     }
 
     // ========== Conditional Expression Tests ==========
@@ -1083,25 +1168,23 @@ if true then 1 else 2 end";
     fn test_chained_function_calls() {
         let stmts = parse("foo(bar(baz(42)))").unwrap();
         assert_eq!(stmts.len(), 1);
-        if let Stmt::Expression(Expr::Call { callee, .. }) = &stmts[0] {
-            // callee should be a call to bar
-            if let Expr::Call {
-                callee: inner_callee,
-                ..
-            } = &**callee
-            {
-                // inner_callee should be a call to baz
-                if let Expr::Call { .. } = &**inner_callee {
-                    // Success - nested calls
-                } else {
-                    panic!("Expected nested Call");
-                }
-            } else {
-                panic!("Expected nested Call");
-            }
-        } else {
+        let Stmt::Expression(Expr::Call { callee, args }) = &stmts[0] else {
             panic!("Expected Call expression");
-        }
+        };
+        assert!(matches!(&**callee, Expr::Identifier(name) if name == "foo"));
+        let [crate::ast::Argument::Positional(Expr::Call {
+            callee: bar,
+            args: bar_args,
+        })] = args.as_slice()
+        else {
+            panic!("Expected bar(...) as foo's argument");
+        };
+        assert!(matches!(&**bar, Expr::Identifier(name) if name == "bar"));
+        assert!(matches!(
+            bar_args.as_slice(),
+            [crate::ast::Argument::Positional(Expr::Call { callee, .. })]
+                if matches!(&**callee, Expr::Identifier(name) if name == "baz")
+        ));
     }
 
     #[test]
@@ -1212,6 +1295,46 @@ if true then 1 else 2 end";
             let source = std::fs::read_to_string(&file).expect("read Ject source");
             parse(&source)
                 .unwrap_or_else(|error| panic!("{} did not parse: {}", file.display(), error));
+        }
+    }
+
+    #[test]
+    fn all_documented_ject_examples_parse() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for relative in ["README.md", "docs/DOCS.md", "docs/PACKAGES.md"] {
+            let path = root.join(relative);
+            let document = std::fs::read_to_string(&path).expect("read documentation");
+            let mut in_ject_block = false;
+            let mut snippet = String::new();
+            let mut start_line = 0;
+
+            for (index, line) in document.lines().enumerate() {
+                if !in_ject_block && line.trim() == "```ject" {
+                    in_ject_block = true;
+                    start_line = index + 2;
+                    snippet.clear();
+                } else if in_ject_block && line.trim() == "```" {
+                    parse(&snippet).unwrap_or_else(|error| {
+                        panic!(
+                            "{}:{} documented example did not parse: {}\n{}",
+                            path.display(),
+                            start_line,
+                            error,
+                            snippet
+                        )
+                    });
+                    in_ject_block = false;
+                } else if in_ject_block {
+                    snippet.push_str(line);
+                    snippet.push('\n');
+                }
+            }
+
+            assert!(
+                !in_ject_block,
+                "{} has an unclosed Ject fence",
+                path.display()
+            );
         }
     }
 }

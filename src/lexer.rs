@@ -42,13 +42,13 @@ pub enum Token {
     Float(f64),
     String(String),
     InterpolatedString(Vec<InterpolationPart>),
-    Bool(bool),
 
     // Identifiers
     Identifier(String),
 
     // Keywords
     Let,
+    Const,
     Fn,
     Lambda,
     If,
@@ -76,7 +76,6 @@ pub enum Token {
     Try,
     Catch,
     Throw,
-    Error,
     Break,
     Continue,
     To,
@@ -124,7 +123,6 @@ pub enum Token {
     Colon,
     Semicolon,
     Arrow,
-    DoubleArrow,
 
     // Special
     Invalid(char),
@@ -139,7 +137,6 @@ impl fmt::Display for Token {
             Token::Integer(n) => write!(f, "{}", n),
             Token::Float(n) => write!(f, "{}", n),
             Token::String(s) => write!(f, "\"{}\"", s),
-            Token::Bool(b) => write!(f, "{}", b),
             Token::Identifier(s) => write!(f, "{}", s),
             _ => write!(f, "{:?}", self),
         }
@@ -453,6 +450,7 @@ impl Lexer {
 
         match identifier.as_str() {
             "let" => Token::Let,
+            "const" => Token::Const,
             "fn" => Token::Fn,
             "lambda" => Token::Lambda,
             "if" => Token::If,
@@ -475,6 +473,7 @@ impl Lexer {
             "as" => Token::As,
             "and" => Token::And,
             "or" => Token::Or,
+            "not" => Token::Bang,
             "match" => Token::Match,
             "when" => Token::When,
             "struct" => Token::Struct,

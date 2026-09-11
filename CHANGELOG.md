@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.10.0
+
+### Bindings and pattern matching
+
+- Added immutable `const` bindings and `export const`, including assignment checks,
+  source diagnostics, semantic symbols, completion kinds, hover types, and standard
+  library constants.
+- Import declarations are now immutable bindings, avoiding local reassignments that
+  misleadingly look like updates to the source module.
+- Added `when` guards to match arms and the readable `not` operator spelling.
+- Made match ranges end-exclusive like every other range, standardized documented
+  keyword arguments on `name=value`, and completed the LSP keyword catalog.
+- Fixed nested calls and direct calls on returned functions so the AST and runtime
+  preserve the source call tree; fixed the previously unreachable `print end=` option.
+- Removed unreachable generator/member AST branches, made unique-array delimiters
+  strict, and added parser validation for every Ject snippet in the documentation.
+- Rewrote the README, language guide, package/native guide, and examples index around
+  the behavior shipped by 0.10.0.
+
 ## 0.9.1
 
 ### Packages, runtime diagnostics, and performance

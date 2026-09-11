@@ -10,6 +10,7 @@ pub type SymbolId = usize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolKind {
     Variable,
+    Constant,
     Parameter,
     Function,
     Struct,
@@ -141,6 +142,7 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
         match &located.token {
             Token::End => pop_scope(&mut index, &mut scope_stack, &located.position),
             Token::Let => pending = Some(SymbolKind::Variable),
+            Token::Const => pending = Some(SymbolKind::Constant),
             Token::Export => pending = Some(SymbolKind::Variable),
             Token::Import => import_may_be_selective = true,
             Token::Fn => {
@@ -212,6 +214,8 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
                 } else if parameter_depth == Some(1) && expect_parameter {
                     expect_parameter = false;
                     Some(SymbolKind::Parameter)
+                } else if is_match_binding(tokens, position) {
+                    Some(SymbolKind::Variable)
                 } else {
                     pending.take()
                 };
@@ -325,6 +329,22 @@ fn is_keyword_argument(
         )
 }
 
+fn is_match_binding(tokens: &[LocatedToken], position: usize) -> bool {
+    if matches!(tokens.get(position).map(|token| &token.token), Some(Token::Identifier(name)) if name == "_")
+    {
+        return false;
+    }
+    let at_pattern_start = position > 0 && matches!(tokens[position - 1].token, Token::Newline);
+    if !at_pattern_start {
+        return false;
+    }
+
+    matches!(
+        tokens.get(position + 1).map(|token| &token.token),
+        Some(Token::Arrow | Token::When)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +385,57 @@ mod tests {
             .references
             .iter()
             .any(|reference| reference.name == "name" && reference.resolved == Some(name.id)));
+    }
+
+    #[test]
+    fn constants_have_their_own_symbol_kind() {
+        let index = analyze("const answer = 42\nprint answer");
+        let answer = index
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "answer")
+            .unwrap();
+        assert_eq!(answer.kind, SymbolKind::Constant);
+        assert!(index.references.iter().any(|reference| {
+            reference.name == "answer" && reference.resolved == Some(answer.id)
+        }));
+    }
+
+    #[test]
+    fn match_bindings_resolve_in_guards_and_bodies() {
+        let index = analyze("let value = 2\nmatch value\n    n when n > 0 -> n\n    _ -> 0\nend");
+        let binding = index
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "n")
+            .unwrap();
+        assert_eq!(binding.kind, SymbolKind::Variable);
+        assert_eq!(
+            index
+                .references
+                .iter()
+                .filter(|reference| reference.name == "n")
+                .map(|reference| reference.resolved)
+                .collect::<Vec<_>>(),
+            vec![Some(binding.id), Some(binding.id)]
+        );
+    }
+
+    #[test]
+    fn multiline_call_arguments_are_not_match_bindings() {
+        let index = analyze("let value = 2\nprint max(\n    value,\n    3\n)");
+        assert_eq!(
+            index
+                .symbols
+                .iter()
+                .filter(|symbol| symbol.name == "value")
+                .count(),
+            1
+        );
+        assert!(index
+            .references
+            .iter()
+            .any(|reference| reference.name == "value"));
     }
 
     #[test]

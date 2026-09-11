@@ -38,6 +38,42 @@ mod tests {
     }
 
     #[test]
+    fn constants_can_be_read_but_not_reassigned() {
+        assert!(run("const answer = 42\nassert(answer == 42)").is_ok());
+
+        let error = run("const answer = 42\nanswer = 43").unwrap_err();
+        assert!(error.contains("constant 'answer'"), "{error}");
+    }
+
+    #[test]
+    fn core_constants_cannot_be_reassigned() {
+        for source in ["PI = 3", "E = 2"] {
+            let error = run(source).unwrap_err();
+            assert!(error.contains("constant"), "{source}: {error}");
+        }
+    }
+
+    #[test]
+    fn assignment_through_a_constant_binding_is_rejected() {
+        for source in [
+            "const values = [1]\nvalues[0] = 2",
+            "const record = {value: 1}\nrecord.value = 2",
+            "const count = 1\ncount++",
+            "const count = 1\ncount--",
+        ] {
+            let error = run(source).unwrap_err();
+            assert!(error.contains("constant"), "{source}: {error}");
+        }
+    }
+
+    #[test]
+    fn const_does_not_deep_freeze_aliased_values() {
+        let result =
+            run("const values = [1]\nlet alias = values\nalias[0] = 2\nassert(values[0] == 2)");
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
     fn test_variable_reassignment() {
         let result = run(r#"
 let x = 10
@@ -310,8 +346,15 @@ print false or false
 print !true
 print !false
 print !!true
+print not true
+print not not true
 "#);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn print_accepts_canonical_named_options() {
+        assert!(run("print \"a\", \"b\", sep=\"-\", end=\"\"").is_ok());
     }
 
     #[test]
@@ -490,6 +533,22 @@ let result = square(5)
 print result
 "#);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn nested_calls_preserve_source_order_and_callees() {
+        let result = run(
+            "fn foo(value) return value * 2 end\nfn bar(value) return value + 3 end\nfn baz(value) return value - 1 end\nassert(foo(bar(baz(5))) == 14)",
+        );
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn result_of_a_call_can_be_called_directly() {
+        let result = run(
+            "fn multiplier(factor) return fn(value) -> value * factor end\nassert(multiplier(3)(5) == 15)",
+        );
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
@@ -978,6 +1037,17 @@ print m.PI
     }
 
     #[test]
+    fn imported_names_are_immutable_bindings() {
+        for source in [
+            "import \"math\" as math\nmath = 1",
+            "import {PHI} from \"math\"\nPHI = 1",
+        ] {
+            let error = run(source).unwrap_err();
+            assert!(error.contains("constant"), "{source}: {error}");
+        }
+    }
+
+    #[test]
     fn test_selective_import() {
         let result = run(r#"
 import {factorial, clamp} from "math"
@@ -1055,6 +1125,29 @@ match x
 end
 "#);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn match_guards_can_use_pattern_bindings_and_fall_through() {
+        let result = run(r#"
+let classify = fn(value)
+    return match value
+        n when n > 10 -> "large"
+        n when n > 0 -> "positive"
+        _ -> "other"
+    end
+end
+assert(classify(20) == "large")
+assert(classify(5) == "positive")
+assert(classify(0) == "other")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn match_ranges_are_end_exclusive() {
+        assert!(run("assert((match 59\n0..60 -> true\n_ -> false\nend))").is_ok());
+        assert!(run("assert((match 60\n0..60 -> false\n_ -> true\nend))").is_ok());
     }
 
     // ========== Edge Cases and Bug Tests ==========
@@ -1467,9 +1560,9 @@ print "Program completed successfully!"
         std::fs::write(
             root.join("values.ject"),
             concat!(
-                "export BASE = 40\n",
+                "export const BASE = 40\n",
                 "let ALMOST = BASE + 1\n",
-                "export ANSWER = ALMOST + 1\n",
+                "export const ANSWER = ALMOST + 1\n",
                 "export fn answer()\n",
                 "    return ANSWER\n",
                 "end\n",
