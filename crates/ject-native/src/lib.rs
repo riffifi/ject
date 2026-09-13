@@ -20,7 +20,10 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn from_vec(mut bytes: Vec<u8>) -> Self {
+    pub fn from_vec(bytes: Vec<u8>) -> Self {
+        // A Vec's capacity is not part of the ABI. Convert to a boxed slice so
+        // the allocation can be reconstructed from the pointer and length alone.
+        let mut bytes = bytes.into_boxed_slice();
         let result = Self {
             ptr: bytes.as_mut_ptr(),
             len: bytes.len(),
@@ -265,14 +268,17 @@ pub unsafe fn invoke_callback(
         .unwrap_or(serde_json::Value::Null))
 }
 
-/// Frees a buffer allocated by [`dispatch`].
+/// Frees a buffer allocated by [`Buffer::from_vec`].
 ///
 /// # Safety
 /// The buffer must have been returned by this SDK and must be freed exactly once.
+/// Its pointer and length must not be changed before this call.
 pub unsafe extern "C" fn free_buffer(buffer: Buffer) {
     if !buffer.ptr.is_null() {
-        // SAFETY: required by this function's contract.
-        unsafe { drop(Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.len)) };
+        // SAFETY: from_vec transfers ownership of a boxed slice with precisely
+        // this pointer and length. The caller must return it only once.
+        let slice = std::ptr::slice_from_raw_parts_mut(buffer.ptr, buffer.len);
+        unsafe { drop(Box::from_raw(slice)) };
     }
 }
 
@@ -399,6 +405,24 @@ mod tests {
         let bytes = unsafe { std::slice::from_raw_parts(buffer.ptr, buffer.len) }.to_vec();
         unsafe { free_buffer(buffer) };
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[test]
+    fn buffers_round_trip_when_vec_capacity_exceeds_length() {
+        let mut bytes = Vec::with_capacity(128);
+        bytes.extend_from_slice(b"hello");
+        assert!(bytes.capacity() > bytes.len());
+        let buffer = Buffer::from_vec(bytes);
+        assert_eq!(buffer.len, 5);
+        assert_eq!(
+            unsafe { std::slice::from_raw_parts(buffer.ptr, buffer.len) },
+            b"hello"
+        );
+        unsafe { free_buffer(buffer) };
+
+        let empty = Buffer::from_vec(Vec::with_capacity(128));
+        assert_eq!(empty.len, 0);
+        unsafe { free_buffer(empty) };
     }
 
     unsafe extern "C" fn echo_callback(

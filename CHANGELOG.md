@@ -19,6 +19,11 @@
 - Rewrote the README, language guide, package/native guide, and examples index around
   the behavior shipped by 0.10.0.
 
+### Native ABI
+
+- Fixed buffer ownership so vectors with spare capacity are freed with the
+  correct allocation layout, including in the bundled JGUI/JNUM SDKs.
+
 ## 0.9.1
 
 ### Packages, runtime diagnostics, and performance

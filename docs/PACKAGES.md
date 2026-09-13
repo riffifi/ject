@@ -319,6 +319,9 @@ ject_native::ject_plugin!("audio_engine", ["double"], call);
 The macro publishes the stable entry symbol and export catalog. No Rust-owned layout,
 string, vector, or error crosses the dynamic-library boundary directly; the SDK owns
 encoding, result envelopes, panic containment, and buffer release.
+If you use the ABI directly, return buffers created by `Buffer::from_vec` and
+release them with the matching SDK's `free_buffer` exactly once. Do not change
+the pointer or length, or free a buffer with a different allocator.
 
 ## 10. Values across the native boundary
 
