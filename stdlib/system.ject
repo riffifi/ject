@@ -1,10 +1,14 @@
 # System Standard Library Module
-# input, exec, env, exit, cwd, args, now, timestamp, sleep, file ops: Rust builtins (injected).
+# Process and directory primitives are provided by the host.
 
 export fn get_cwd()
-    return exec("pwd")
+    return cwd()
 end
 
 export fn change_dir(path)
-    return exec("cd " + path)
+    return _change_dir(path)
+end
+
+export fn run_process(program, arguments=[], directory=nil)
+    return _run_process(program, arguments, directory)
 end

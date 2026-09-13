@@ -690,6 +690,14 @@ pub fn get_system_module() -> HashMap<String, Value> {
         Value::BuiltinFunction("args".to_string()),
     );
     module.insert("cwd".to_string(), Value::BuiltinFunction("cwd".to_string()));
+    module.insert(
+        "_change_dir".to_string(),
+        Value::BuiltinFunction("_change_dir".to_string()),
+    );
+    module.insert(
+        "_run_process".to_string(),
+        Value::BuiltinFunction("_run_process".to_string()),
+    );
     module.insert("now".to_string(), Value::BuiltinFunction("now".to_string()));
     module.insert(
         "timestamp".to_string(),
@@ -3205,6 +3213,86 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 message: format!("cwd() failed: {}", e),
             })?;
             Ok(Value::String(cwd.to_string_lossy().to_string()))
+        }
+        "_change_dir" => {
+            let [Value::String(path)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "change_dir() requires one string path".to_string(),
+                });
+            };
+            std::env::set_current_dir(path).map_err(|error| RuntimeError {
+                message: format!("change_dir() failed for '{path}': {error}"),
+            })?;
+            Ok(Value::Nil)
+        }
+        "_run_process" => {
+            if !(1..=3).contains(&args.len()) {
+                return Err(RuntimeError {
+                    message: "run_process() takes a program, optional argument array, and optional directory".to_string(),
+                });
+            }
+            let Value::String(program) = &args[0] else {
+                return Err(RuntimeError {
+                    message: "run_process() requires a string program".to_string(),
+                });
+            };
+            if program.is_empty() {
+                return Err(RuntimeError {
+                    message: "run_process() requires a nonempty program".to_string(),
+                });
+            }
+            let mut command = std::process::Command::new(program);
+            if let Some(arguments) = args.get(1) {
+                let Value::Array(arguments) = arguments else {
+                    return Err(RuntimeError {
+                        message: "run_process() arguments must be an array of strings".to_string(),
+                    });
+                };
+                for argument in arguments.borrow().iter() {
+                    let Value::String(argument) = argument else {
+                        return Err(RuntimeError {
+                            message: "run_process() arguments must be an array of strings"
+                                .to_string(),
+                        });
+                    };
+                    command.arg(argument);
+                }
+            }
+            if let Some(directory) = args.get(2) {
+                match directory {
+                    Value::Nil => {}
+                    Value::String(directory) => {
+                        command.current_dir(directory);
+                    }
+                    _ => {
+                        return Err(RuntimeError {
+                            message: "run_process() directory must be a string path or nil"
+                                .to_string(),
+                        });
+                    }
+                }
+            }
+            let output = command.output().map_err(|error| RuntimeError {
+                message: format!("run_process() failed to start '{program}': {error}"),
+            })?;
+            Ok(Value::dictionary(HashMap::from([
+                (
+                    "stdout".to_string(),
+                    Value::String(String::from_utf8_lossy(&output.stdout).into_owned()),
+                ),
+                (
+                    "stderr".to_string(),
+                    Value::String(String::from_utf8_lossy(&output.stderr).into_owned()),
+                ),
+                ("success".to_string(), Value::Bool(output.status.success())),
+                (
+                    "status".to_string(),
+                    output
+                        .status
+                        .code()
+                        .map_or(Value::Nil, |code| Value::Integer(i64::from(code))),
+                ),
+            ])))
         }
 
         _ => Err(RuntimeError {

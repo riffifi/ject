@@ -2008,7 +2008,11 @@ impl Interpreter {
         }
 
         for (k, v) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
-            exports.entry(k).or_insert(v);
+            // Underscore-prefixed host primitives are available to the source
+            // facade, but are not part of the imported module's public API.
+            if !k.starts_with('_') {
+                exports.entry(k).or_insert(v);
+            }
         }
 
         Ok(exports)

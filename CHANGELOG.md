@@ -24,6 +24,13 @@
 - Fixed buffer ownership so vectors with spare capacity are freed with the
   correct allocation layout, including in the bundled JGUI/JNUM SDKs.
 
+### System APIs
+
+- Added direct, argument-safe `system.run_process` with stdout, stderr, success,
+  exit status, and optional child working directory.
+- Made `system.change_dir` change the running process's directory and made
+  `system.get_cwd` use the native current-directory API instead of shell commands.
+
 ## 0.9.1
 
 ### Packages, runtime diagnostics, and performance

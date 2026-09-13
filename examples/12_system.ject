@@ -1,18 +1,13 @@
-import "system"
+import "system" as system
 
-print "Current directory:"
-let cwd = exec("pwd")
-print cwd
+print "Current directory: " + system.get_cwd()
+print "HOME: " + system.env("HOME")
 
-print "\nListing files:"
-let files = exec("ls -la")
-print files
-
-print "\nEnvironment variable HOME:"
-let home = env("HOME")
-print home
-
-print "\nSystem info:"
-let uname = exec("uname -a")
-print uname
-
+# run_process passes each argument literally and reports both output streams.
+let result = system.run_process("git", ["--version"])
+if result.success then
+    print result.stdout.trim()
+else
+    print "git exited with status " + result.status
+    print result.stderr
+end

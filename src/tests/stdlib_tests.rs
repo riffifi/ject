@@ -791,6 +791,37 @@ assert(type_of(s.exec) == "builtin", "module should export exec builtin")
     }
 
     #[test]
+    #[cfg(unix)]
+    fn test_run_process_returns_output_and_failure_status() {
+        let result = run(r#"
+import "system" as system
+let output = system.run_process("sh", ["-c", "printf hello; printf warning >&2; exit 7"])
+assert(output.stdout == "hello", "stdout should be preserved")
+assert(output.stderr == "warning", "stderr should be preserved")
+assert(output.status == 7, "exit status should be preserved")
+assert(output.success == false, "failed exit should not be success")
+let literal = system.run_process("printf", ["%s", "hello; echo unexpected"])
+assert(literal.stdout == "hello; echo unexpected", "arguments must not be interpreted by a shell")
+assert(literal.success == true, "successful exit should be success")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn test_run_process_rejects_bad_arguments() {
+        let result = run("import \"system\" as system\nsystem.run_process(42)");
+        assert!(result.unwrap_err().contains("string program"));
+        let result = run("import \"system\" as system\nsystem.run_process(\"echo\", [2])");
+        assert!(result.unwrap_err().contains("array of strings"));
+    }
+
+    #[test]
+    fn test_system_host_primitives_are_private() {
+        let result = run("import \"system\" as system\nsystem._run_process");
+        assert!(result.unwrap_err().contains("not found in module"));
+    }
+
+    #[test]
     fn test_native_only_module_flags() {
         assert!(!crate::stdlib::is_native_only_module("jnum"));
         assert!(!crate::stdlib::is_native_only_module("jgui"));

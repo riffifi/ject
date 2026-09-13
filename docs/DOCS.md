@@ -654,6 +654,27 @@ import "color" as color
 JGUI and JNUM are installable mixed packages, not hardcoded interpreter modules. Add
 them as dependencies before importing them.
 
+For external commands, prefer `system.run_process(program, arguments=[], directory=nil)`:
+
+```ject
+import "system" as system
+
+let result = system.run_process("git", ["status", "--short"])
+if not result.success then
+    throw "git failed: ${result.stderr}"
+end
+print result.stdout
+```
+
+The program is launched directly; arguments are not passed through a shell. The result
+has `stdout`, `stderr`, `success`, and `status` fields. Output is decoded as UTF-8 with
+replacement characters for invalid bytes; `status` is `nil` when the process ended
+without an exit code. A failure to start the program throws a runtime error, while a
+nonzero exit is returned in the result. `directory` sets only that child's working
+directory. `system.change_dir(path)` changes the current Ject process's directory;
+`system.get_cwd()` and `system.cwd()` read it. `system.exec(command)` remains for
+compatibility, but invokes a shell and returns only trimmed stdout.
+
 ## 16. Packages and projects
 
 Create packages through `ject`:
