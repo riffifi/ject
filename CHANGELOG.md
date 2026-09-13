@@ -24,12 +24,15 @@
 - Fixed buffer ownership so vectors with spare capacity are freed with the
   correct allocation layout, including in the bundled JGUI/JNUM SDKs.
 
-### System APIs
+### System and filesystem APIs
 
 - Added direct, argument-safe `system.run_process` with stdout, stderr, success,
   exit status, and optional child working directory.
 - Made `system.change_dir` change the running process's directory and made
   `system.get_cwd` use the native current-directory API instead of shell commands.
+- Implemented the previously advertised `list_dir`, `mkdir`, and `remove_file`
+  primitives; exposed source-level functions in `io` and tested directory
+  creation, sorted listings, file removal, and error paths.
 
 ## 0.9.1
 

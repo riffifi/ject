@@ -772,6 +772,46 @@ assert(text == "hello world", "append_file should append content")
     }
 
     #[test]
+    fn test_directory_primitives_work_from_core_and_io_module() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("ject-fs-test-{unique}"));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.to_string_lossy().replace('\\', "/");
+        let script = format!(
+            r#"
+import "io" as io
+io.mkdir("{path}/nested/deep")
+io.mkdir("{path}/nested/deep")
+assert(io.is_dir("{path}/nested/deep"), "mkdir should create parent directories")
+write_file("{path}/b.txt", "b")
+write_file("{path}/a.txt", "a")
+assert(io.file_exists("{path}/a.txt"), "file_exists should find a file")
+assert(is_file("{path}/a.txt"), "is_file should be a real core builtin")
+assert(is_dir("{path}/nested"), "is_dir should be a real core builtin")
+let names = io.list_dir("{path}")
+assert(names[0] == "a.txt" and names[1] == "b.txt" and names[2] == "nested", "list_dir should return sorted names")
+assert(len(list_dir("{path}")) == 3, "list_dir should be a real core builtin")
+io.remove_file("{path}/b.txt")
+assert(not file_exists("{path}/b.txt"), "remove_file should remove only the named file")
+"#
+        );
+        let result = run(&script);
+        std::fs::remove_dir_all(&directory).unwrap();
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn test_directory_primitives_report_errors() {
+        let result = run("import \"io\" as io\nio.list_dir(42)");
+        assert!(result.unwrap_err().contains("string path"));
+        let result = run("import \"io\" as io\nio.remove_file(42)");
+        assert!(result.unwrap_err().contains("string path"));
+    }
+
+    #[test]
     fn test_inject_system_module_includes_exec() {
         let m = crate::stdlib::inject_module_file_builtins("system");
         assert!(

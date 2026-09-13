@@ -203,6 +203,9 @@ pub fn create_corlib() -> HashMap<String, Value> {
         "file_exists".to_string(),
         Value::BuiltinFunction("file_exists".to_string()),
     );
+    for name in ["is_file", "is_dir", "list_dir", "mkdir", "remove_file"] {
+        corlib.insert(name.to_string(), Value::BuiltinFunction(name.to_string()));
+    }
 
     // ========== Testing ==========
     corlib.insert(
@@ -656,6 +659,16 @@ pub fn get_io_module() -> HashMap<String, Value> {
         "write_file".to_string(),
         Value::BuiltinFunction("write_file".to_string()),
     );
+    for name in [
+        "file_exists",
+        "is_file",
+        "is_dir",
+        "list_dir",
+        "mkdir",
+        "remove_file",
+    ] {
+        module.insert(format!("_{name}"), Value::BuiltinFunction(name.to_string()));
+    }
 
     module
 }
@@ -790,13 +803,7 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
         .collect(),
         "io" => {
             let mut h = get_io_module();
-            for k in [
-                "file_exists",
-                "is_file",
-                "is_dir",
-                "append_file",
-                "read_lines",
-            ] {
+            for k in ["append_file", "read_lines"] {
                 h.insert(k.to_string(), Value::BuiltinFunction(k.to_string()));
             }
             for (k, v) in get_json_module() {
@@ -1344,8 +1351,8 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             if let Value::String(path) = &args[0] {
                 match std::fs::read_to_string(path) {
                     Ok(contents) => Ok(Value::String(contents)),
-                    Err(_) => Err(RuntimeError {
-                        message: format!("Failed to read file: {}", path),
+                    Err(error) => Err(RuntimeError {
+                        message: format!("read_file() failed for '{path}': {error}"),
                     }),
                 }
             } else {
@@ -1364,8 +1371,8 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             if let (Value::String(path), Value::String(content)) = (&args[0], &args[1]) {
                 match std::fs::write(path, content) {
                     Ok(_) => Ok(Value::Nil),
-                    Err(_) => Err(RuntimeError {
-                        message: format!("Failed to write to file: {}", path),
+                    Err(error) => Err(RuntimeError {
+                        message: format!("write_file() failed for '{path}': {error}"),
                     }),
                 }
             } else {
@@ -2714,6 +2721,47 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "is_dir() requires a string path".to_string(),
                 }),
             }
+        }
+        "list_dir" => {
+            let [Value::String(path)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "list_dir() requires one string path".to_string(),
+                });
+            };
+            let entries = std::fs::read_dir(path).map_err(|error| RuntimeError {
+                message: format!("list_dir() failed for '{path}': {error}"),
+            })?;
+            let mut names = Vec::new();
+            for entry in entries {
+                let entry = entry.map_err(|error| RuntimeError {
+                    message: format!("list_dir() failed for '{path}': {error}"),
+                })?;
+                names.push(entry.file_name().to_string_lossy().into_owned());
+            }
+            names.sort();
+            Ok(Value::array(names.into_iter().map(Value::String).collect()))
+        }
+        "mkdir" => {
+            let [Value::String(path)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "mkdir() requires one string path".to_string(),
+                });
+            };
+            std::fs::create_dir_all(path).map_err(|error| RuntimeError {
+                message: format!("mkdir() failed for '{path}': {error}"),
+            })?;
+            Ok(Value::Nil)
+        }
+        "remove_file" => {
+            let [Value::String(path)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "remove_file() requires one string path".to_string(),
+                });
+            };
+            std::fs::remove_file(path).map_err(|error| RuntimeError {
+                message: format!("remove_file() failed for '{path}': {error}"),
+            })?;
+            Ok(Value::Nil)
         }
 
         "contains_str" => {

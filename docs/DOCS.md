@@ -675,6 +675,25 @@ directory. `system.change_dir(path)` changes the current Ject process's director
 `system.get_cwd()` and `system.cwd()` read it. `system.exec(command)` remains for
 compatibility, but invokes a shell and returns only trimmed stdout.
 
+The `io` module exposes ordinary directory operations:
+
+```ject
+import "io" as io
+
+io.mkdir("notes/archive")
+for name in io.list_dir("notes")
+    if io.is_file("notes/" + name)
+        print name
+    end
+end
+```
+
+`io.mkdir` creates missing parent directories and succeeds if the directory already
+exists. `io.list_dir` returns sorted entry names, not full paths. `io.remove_file`
+removes one file or symlink, never a directory tree. The same `list_dir`, `mkdir`,
+`remove_file`, `is_file`, and `is_dir` primitives are available in CorLib. Failures
+from the three directory operations include the path and operating-system cause.
+
 ## 16. Packages and projects
 
 Create packages through `ject`:

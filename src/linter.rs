@@ -253,6 +253,12 @@ impl Linter {
                 | "exec"
                 | "_change_dir"
                 | "_run_process"
+                | "_file_exists"
+                | "_is_file"
+                | "_is_dir"
+                | "_list_dir"
+                | "_mkdir"
+                | "_remove_file"
                 | "file_exists"
                 | "is_file"
                 | "is_dir"
@@ -478,6 +484,16 @@ impl Linter {
         self.functions.insert("cwd".to_string());
         self.functions.insert("_change_dir".to_string());
         self.functions.insert("_run_process".to_string());
+        for name in [
+            "_file_exists",
+            "_is_file",
+            "_is_dir",
+            "_list_dir",
+            "_mkdir",
+            "_remove_file",
+        ] {
+            self.functions.insert(name.to_string());
+        }
         self.functions.insert("now".to_string());
         self.functions.insert("timestamp".to_string());
         self.functions.insert("sleep".to_string());
