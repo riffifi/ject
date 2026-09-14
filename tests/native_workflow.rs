@@ -117,6 +117,29 @@ fn check_does_not_build_native_but_test_and_run_do() {
     .unwrap();
     assert_success(&run_ject(&app, "run"), "ject run");
 
+    let manifest_path = library.join("Ject.toml");
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    fs::write(
+        &manifest_path,
+        manifest.replace("library = \"probe_native\"", "library = \"missing_probe\""),
+    )
+    .unwrap();
+    let wrong_library = run_ject(&app, "run");
+    assert!(!wrong_library.status.success());
+    assert!(String::from_utf8_lossy(&wrong_library.stderr)
+        .contains("native build succeeded but artifact was not found"));
+    fs::write(&manifest_path, &manifest).unwrap();
+
+    fs::write(
+        &manifest_path,
+        manifest.replace("abi = \"ject-native-2\"", "abi = \"unknown\""),
+    )
+    .unwrap();
+    let wrong_abi = run_ject(&app, "run");
+    assert!(!wrong_abi.status.success());
+    assert!(String::from_utf8_lossy(&wrong_abi.stderr).contains("unsupported native ABI"));
+    fs::write(&manifest_path, manifest).unwrap();
+
     assert_success(&run_ject(&app, "install"), "ject install");
     assert!(
         app.join("Ject.lock").is_file(),
