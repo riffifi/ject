@@ -717,7 +717,9 @@ end
 ```
 
 `io.mkdir` creates missing parent directories and succeeds if the directory already
-exists. `io.list_dir` returns sorted entry names, not full paths. `io.remove_file`
+exists. `io.list_dir` returns sorted UTF-8 entry names, not full paths; it errors
+on names Ject cannot represent instead of returning paths that cannot reopen the
+file. `io.remove_file`
 removes one file or symlink, never a directory tree. The same `list_dir`, `mkdir`,
 `remove_file`, `is_file`, and `is_dir` primitives are available in CorLib. Failures
 from the three directory operations include the path and operating-system cause.

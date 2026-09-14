@@ -2986,7 +2986,12 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 let entry = entry.map_err(|error| RuntimeError {
                     message: format!("list_dir() failed for '{path}': {error}"),
                 })?;
-                names.push(entry.file_name().to_string_lossy().into_owned());
+                let name = entry.file_name().into_string().map_err(|_| RuntimeError {
+                    message: format!(
+                        "list_dir() found a non-UTF-8 filename in '{path}'; Ject paths must be UTF-8"
+                    ),
+                })?;
+                names.push(name);
             }
             names.sort();
             Ok(Value::array(names.into_iter().map(Value::String).collect()))

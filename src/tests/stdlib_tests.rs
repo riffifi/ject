@@ -887,6 +887,27 @@ assert(not file_exists("{path}/b.txt"), "remove_file should remove only the name
     }
 
     #[test]
+    #[cfg(unix)]
+    fn list_dir_rejects_names_that_cannot_be_reopened_from_ject() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("ject-nonutf8-test-{unique}"));
+        std::fs::create_dir(&directory).unwrap();
+        let name = std::ffi::OsStr::from_bytes(b"invalid-\xff");
+        std::fs::write(directory.join(name), b"data").unwrap();
+        let result = run(&format!(
+            "import \"io\" as io\nio.list_dir(\"{}\")",
+            directory.display()
+        ));
+        std::fs::remove_dir_all(&directory).unwrap();
+        assert!(result.unwrap_err().contains("non-UTF-8 filename"));
+    }
+
+    #[test]
     fn test_binary_file_round_trip_and_validation() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
