@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed standard-library inverse trig outside the Taylor-series convergence range,
+  median indexing in `math` and `array`, and real odd roots of negative numbers.
+  Integer-domain math helpers now reject fractional and overflowing inputs
+  consistently; factorial no longer recurses into a stack overflow.
 - `ject run`, direct scripts, the REPL, and `ject test` build native package
   artifacts before execution; `ject check` no longer requires or loads them.
 - `ject test` now runs all test files, reports each result and totals, and exits

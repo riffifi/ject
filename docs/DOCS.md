@@ -657,6 +657,16 @@ and `math.E`, or import them explicitly with `import {PI, E} from "math"`.
 The `jnum` package exports its own `PI` and `E` alongside its numerical API.
 The special float values `inf` and `nan` remain immutable core constants.
 
+`math.asin` and `math.acos` return `nil` outside the real interval `[-1, 1]`.
+`math.nth_root(x, n)` requires a positive integer degree; it returns `nil`
+when the real root does not exist. Integer-domain helpers such as
+`math.factorial`, `math.fibonacci`, and `math.combinations` also return `nil`
+for fractional inputs. Use `math.median` or `array.median` for numeric arrays;
+both return `nil` for an empty array.
+Factorials and the current factorial-based permutations/combinations return `nil`
+for `n > 20`, and Fibonacci returns `nil` for `n > 92`, because larger results
+can exceed Ject's 64-bit integer range.
+
 JGUI and JNUM are installable mixed packages, not hardcoded interpreter modules. Add
 them as dependencies before importing them.
 

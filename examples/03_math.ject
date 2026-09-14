@@ -1,3 +1,6 @@
+import "math" as math
+import "array" as array
+
 let a = 10
 let b = 5
 
@@ -6,4 +9,10 @@ print "Product: " + (a * b)
 print "Quotient: " + (a / b)
 print "Power: " + pow(a, b)
 print "Square root of 16: " + sqrt(16)
+print "Arctangent of 2: " + math.atan(2)
+print "Median: " + math.median([9, 2, 5])
 
+assert(abs(math.atan(2) - 1.1071487177940904) < 0.000001, "atan(2)")
+assert(math.median([9, 2, 5]) == 5, "math median")
+assert(array.median([9, 2, 5, 4]) == 4.5, "array median")
+assert(abs(math.nth_root(-8, 3) + 2) < 0.000001, "negative cube root")

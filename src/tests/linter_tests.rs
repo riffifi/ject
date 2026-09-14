@@ -381,6 +381,22 @@ end
     }
 
     #[test]
+    fn loop_variable_used_in_arithmetic_is_not_unused() {
+        let (errors, warnings) = lint(
+            "export fn series(x)\n    let total = 0\n    for i in 1..30 do\n        total = total + x * (2 * i - 1) / (2 * i + 1)\n    end\n    return total\nend",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn math_stdlib_has_no_unused_bindings() {
+        let (errors, warnings) = lint(include_str!("../../stdlib/math.ject"));
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
     fn test_nested_scope_access() {
         let (errors, _) = lint(
             r#"

@@ -16,10 +16,11 @@ export fn median(arr)
     end
     let sorted_arr = sort(arr)
     let length = len(sorted_arr)
+    let mid = to_int(length / 2)
     if length % 2 == 0 then
-        return (sorted_arr[length / 2 - 1] + sorted_arr[length / 2]) / 2.0
+        return (sorted_arr[mid - 1] + sorted_arr[mid]) / 2.0
     else
-        return sorted_arr[to_int(length / 2)]
+        return sorted_arr[mid]
     end
 end
 

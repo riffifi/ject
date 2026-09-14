@@ -704,6 +704,69 @@ assert(math.sinh(0) == 0, "hyperbolic functions use math.E")
         assert!(result.is_ok(), "{result:?}");
     }
 
+    #[test]
+    fn math_inverse_trig_handles_quadrants_and_boundaries() {
+        let result = run(r#"
+import "math" as math
+assert(abs(math.atan(2) - 1.1071487177940904) < 0.000001, "atan outside unit interval")
+assert(abs(math.atan(1) - math.PI / 4) < 0.000001, "atan at one")
+assert(abs(math.atan(-2) + 1.1071487177940904) < 0.000001, "negative atan")
+assert(abs(math.asin(0.9) - 1.1197695149986342) < 0.000001, "asin near boundary")
+assert(abs(math.acos(-0.9) - 2.6905658417935308) < 0.000001, "acos near boundary")
+assert(abs(math.atan2(1, -1) - 3 * math.PI / 4) < 0.000001, "atan2 upper left")
+assert(abs(math.atan2(-1, -1) + 3 * math.PI / 4) < 0.000001, "atan2 lower left")
+assert(math.asin(2) == nil, "asin outside real domain")
+assert(math.acos(-2) == nil, "acos outside real domain")
+assert(math.asin(nan) != math.asin(nan), "asin propagates NaN")
+assert(math.acos(nan) != math.acos(nan), "acos propagates NaN")
+assert(math.atan2(nan, nan) != math.atan2(nan, nan), "atan2 propagates NaN")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn math_median_and_roots_handle_integer_inputs() {
+        let result = run(r#"
+import "math" as math
+import "array" as array
+assert(math.median([3, 1, 2]) == 2, "math odd median")
+assert(math.median([4, 1, 3, 2]) == 2.5, "math even median")
+assert(array.median([3, 1, 2]) == 2, "array odd median")
+assert(array.median([4, 1, 3, 2]) == 2.5, "array even median")
+assert(abs(math.nth_root(-8, 3) + 2) < 0.000001, "negative odd root")
+assert(math.nth_root(-8, 2) == nil, "negative even root")
+assert(math.nth_root(8, 0) == nil, "zero-degree root")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn math_integer_domain_helpers_reject_fractional_inputs() {
+        let result = run(r#"
+import "math" as math
+assert(math.factorial(2.5) == nil, "fractional factorial")
+assert(math.factorial_iter(2.5) == nil, "fractional iterative factorial")
+assert(math.is_prime(2.5) == false, "fractional prime")
+assert(math.primes_up_to(2.5) == [], "fractional sieve limit")
+assert(math.fibonacci(2.5) == nil, "fractional Fibonacci index")
+assert(math.is_power_of_2(0.5) == false, "fractional power of two")
+assert(math.nth_root(8, 2.5) == nil, "fractional root degree")
+assert(math.permutations(5, 2.5) == nil, "fractional permutation count")
+assert(math.combinations(5, 2.5) == nil, "fractional combination count")
+assert(math.factorial(5) == 120, "integer factorial remains valid")
+assert(math.factorial(20) == 2432902008176640000, "largest i64 factorial")
+assert(math.factorial_iter(20) == 2432902008176640000, "iterative factorial boundary")
+assert(math.fibonacci(7) == 13, "integer Fibonacci remains valid")
+assert(math.fibonacci(92) == 7540113804746346429, "largest i64 Fibonacci")
+assert(math.factorial(21) == nil, "factorial outside integer range")
+assert(math.factorial_iter(21) == nil, "iterative factorial outside integer range")
+assert(math.fibonacci(93) == nil, "Fibonacci outside integer range")
+assert(math.permutations(21, 1) == nil, "permutations outside factorial range")
+assert(math.combinations(21, 1) == nil, "combinations outside factorial range")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
     // ========== Edge Cases ==========
 
     #[test]
