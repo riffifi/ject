@@ -15,11 +15,11 @@ fn invalid(message: impl Into<String>) -> RuntimeError {
 }
 
 pub fn request(args: Vec<Value>) -> Result<Value, RuntimeError> {
-    let [Value::String(method), Value::String(url), Value::Dictionary(headers), body, Value::Integer(timeout_ms)] =
+    let [Value::String(method), Value::String(url), Value::Dictionary(headers), body, Value::Integer(timeout_ms), Value::Integer(max_response_bytes)] =
         args.as_slice()
     else {
         return Err(invalid(
-            "http.request() requires method, URL, header dictionary, body, and timeout in milliseconds",
+            "http.request() requires method, URL, header dictionary, body, timeout in milliseconds, and response limit in bytes",
         ));
     };
     if method.is_empty() || !method.bytes().all(|byte| byte.is_ascii_alphabetic()) {
@@ -36,6 +36,12 @@ pub fn request(args: Vec<Value>) -> Result<Value, RuntimeError> {
         .ok()
         .filter(|timeout| *timeout > 0)
         .ok_or_else(|| invalid("http.request() timeout must be a positive integer"))?;
+    let max_response_bytes = usize::try_from(*max_response_bytes)
+        .ok()
+        .filter(|limit| *limit <= MAX_RESPONSE_BYTES)
+        .ok_or_else(|| {
+            invalid("http.request() response limit must be from 0 to 16777216 bytes (16 MiB)")
+        })?;
     let body = match body {
         Value::Nil => None,
         Value::String(text) => Some(text.as_bytes().to_vec()),
@@ -97,12 +103,12 @@ pub fn request(args: Vec<Value>) -> Result<Value, RuntimeError> {
     let mut bytes = Vec::new();
     response
         .into_reader()
-        .take(MAX_RESPONSE_BYTES as u64 + 1)
+        .take(max_response_bytes as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| invalid(format!("http.request() failed to read '{url}': {error}")))?;
-    if bytes.len() > MAX_RESPONSE_BYTES {
+    if bytes.len() > max_response_bytes {
         return Err(invalid(format!(
-            "http.request() response from '{url}' exceeds the 16 MiB limit"
+            "http.request() response from '{url}' exceeds the {max_response_bytes} byte limit"
         )));
     }
     let text = String::from_utf8_lossy(&bytes).into_owned();

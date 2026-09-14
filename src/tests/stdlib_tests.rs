@@ -1081,7 +1081,67 @@ assert(response.bytes[0] == 0 and response.bytes[1] == 255 and response.bytes[2]
         let (url, server) = serve_http_once("200 OK", &body);
         let result = run(&format!("import \"http\" as http\nhttp.get(\"{url}\")"));
         let error = result.unwrap_err();
-        assert!(error.contains("exceeds the 16 MiB limit"), "{error}");
+        assert!(error.contains("exceeds the 16777216 byte limit"), "{error}");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn http_respects_per_request_response_budget() {
+        let (url, server) = serve_http_once("200 OK", b"hello");
+        let result = run(&format!(
+            "import \"http\" as http\nhttp.get(\"{url}\", max_response_bytes=4)"
+        ));
+        assert!(result.unwrap_err().contains("4 byte limit"));
+        server.join().unwrap();
+
+        let (url, server) = serve_http_once("200 OK", b"hello");
+        let result = run(&format!(
+            "import \"http\" as http\nlet response = http.get(\"{url}\", max_response_bytes=5)\nassert(response.text == \"hello\", \"exact response budget\")"
+        ));
+        assert!(result.is_ok(), "{result:?}");
+        server.join().unwrap();
+
+        for limit in [-1, 16 * 1024 * 1024 + 1] {
+            let result = run(&format!(
+                "import \"http\" as http\nhttp.get(\"http://localhost\", max_response_bytes={limit})"
+            ));
+            assert!(result.unwrap_err().contains("response limit"));
+        }
+    }
+
+    #[test]
+    fn http_timeout_covers_a_stalled_response_body() {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/slow", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0u8; 1024];
+            let count = stream.read(&mut request).unwrap();
+            assert!(request[..count].starts_with(b"GET /slow HTTP/1.1"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nh")
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        });
+        let started = std::time::Instant::now();
+        let result = run(&format!(
+            "import \"http\" as http\nhttp.get(\"{url}\", timeout_ms=75)"
+        ));
+        let elapsed = started.elapsed();
+        let error = result.unwrap_err();
+        assert!(
+            error.contains("failed to read") || error.contains("failed for"),
+            "{error}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_millis(350),
+            "{elapsed:?}"
+        );
         server.join().unwrap();
     }
 

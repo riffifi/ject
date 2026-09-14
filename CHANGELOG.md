@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- HTTP calls now accept a per-request response-byte budget up to the existing
+  16 MiB ceiling; stalled response bodies have timeout regression coverage.
 - `system.run_process` now supports an optional timeout and a configurable
   per-stream output limit (16 MiB by default), with bounded memory and prompt
   errors for runaway children.

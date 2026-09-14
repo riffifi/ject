@@ -755,14 +755,18 @@ else
 end
 ```
 
-`http.get(url, headers={}, timeout_ms=30000)` and
-`http.post(url, body, headers={}, timeout_ms=30000)` are shortcuts for
-`http.request(method, url, headers={}, body=nil, timeout_ms=30000)`.
+`http.get(url, headers={}, timeout_ms=30000, max_response_bytes=16777216)` and
+`http.post(url, body, headers={}, timeout_ms=30000, max_response_bytes=16777216)`
+are shortcuts for `http.request(method, url, headers={}, body=nil,
+timeout_ms=30000, max_response_bytes=16777216)`.
 Pass a string or byte array as the body, and set `Content-Type` in `headers` when
 needed. The result has `status`, `reason`, `success` (2xx), final `url`, lowercase
 `headers`, decoded `text`, and exact `bytes`. Non-2xx responses return normally,
 including their bodies; invalid requests and transport failures raise errors.
-Responses are limited to 16 MiB and are read into memory. Invalid UTF-8 in
+Responses are read into memory. The per-request `max_response_bytes` budget can
+be reduced to any value from 0 to 16 MiB; the 16 MiB maximum cannot be raised
+without a future streaming API. The timeout also applies while reading the body.
+Invalid UTF-8 in
 `text` is replaced; use `bytes` when exact data matters.
 
 ## 16. Packages and projects
