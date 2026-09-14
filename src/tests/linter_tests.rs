@@ -427,6 +427,27 @@ x = 42
     }
 
     #[test]
+    fn return_outside_function_points_to_each_return_keyword() {
+        let source = "fn valid()\n    return 1\nend\nreturn 2\nreturn\n";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect::<Vec<_>>();
+        let statements = Parser::new(tokens.clone()).parse().unwrap();
+        let (diagnostics, _) = Linter::new()
+            .with_tokens_and_source(tokens, source.into())
+            .lint(&statements);
+        let lines = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message == "`return` outside of function")
+            .map(|diagnostic| diagnostic.line)
+            .collect::<Vec<_>>();
+        assert_eq!(lines, vec![Some(4), Some(5)]);
+    }
+
+    #[test]
     fn test_return_inside_function() {
         let (errors, _) = lint(
             r#"

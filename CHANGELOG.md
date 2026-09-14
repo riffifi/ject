@@ -10,6 +10,8 @@
   projects. Generated native build artifacts are no longer tracked.
 - The LSP now offers `inf` and `nan` as constants and infers `float` for bindings
   initialized from them.
+- Checker diagnostics for `return` outside a function now point to the offending
+  keyword, even when valid returns appear earlier in the file.
 
 ## 0.11.0
 

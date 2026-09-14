@@ -39,6 +39,7 @@ pub struct Linter {
     in_function: bool,
     // Store positioned tokens to find locations of identifiers
     positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
+    next_return_token: usize,
     source: String,
     source_path: std::path::PathBuf,
     module_interfaces: RefCell<HashMap<String, Result<ModuleInterface, String>>>,
@@ -291,6 +292,7 @@ impl Linter {
             module_signatures: HashMap::new(),
             in_function: false,
             positioned_tokens: Vec::new(),
+            next_return_token: 0,
             source: String::new(),
             source_path: std::env::current_dir().unwrap_or_default(),
             module_interfaces: RefCell::new(HashMap::new()),
@@ -564,6 +566,7 @@ impl Linter {
     }
 
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
+        self.next_return_token = 0;
         self.scopes.clear();
         self.scopes.push(HashMap::new()); // Global scope
         self.warnings.clear();
@@ -638,6 +641,7 @@ impl Linter {
 
     // REPL-specific linting that maintains state between statements
     pub fn lint_repl(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
+        self.next_return_token = 0;
         // Only clear warnings and errors, keep global scope variables and functions
         self.warnings.clear();
         self.errors.clear();
@@ -1035,19 +1039,21 @@ impl Linter {
                 self.pop_scope();
             }
             Stmt::Return(Some(expr)) => {
+                let position = self.take_return_position();
                 self.analyze_expr(expr);
                 if !self.in_function {
                     self.errors.push(LintError {
                         message: "`return` outside of function".to_string(),
-                        position: None, // TODO: Could find 'return' keyword position
+                        position,
                     });
                 }
             }
             Stmt::Return(None) => {
+                let position = self.take_return_position();
                 if !self.in_function {
                     self.errors.push(LintError {
                         message: "`return` outside of function".to_string(),
-                        position: None, // TODO: Could find 'return' keyword position
+                        position,
                     });
                 }
             }
@@ -1515,6 +1521,17 @@ impl Linter {
             }
         }
         None
+    }
+
+    fn take_return_position(&mut self) -> Option<crate::lexer::SourcePosition> {
+        let (index, (_, position)) = self
+            .positioned_tokens
+            .iter()
+            .enumerate()
+            .skip(self.next_return_token)
+            .find(|(_, (token, _))| matches!(token, crate::lexer::Token::Return))?;
+        self.next_return_token = index + 1;
+        Some(position.clone())
     }
 
     fn find_module_position(&self, module: &str) -> Option<crate::lexer::SourcePosition> {
