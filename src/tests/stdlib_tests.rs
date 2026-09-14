@@ -812,6 +812,69 @@ assert(not file_exists("{path}/b.txt"), "remove_file should remove only the name
     }
 
     #[test]
+    fn test_binary_file_round_trip_and_validation() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("ject-bytes-test-{}-{unique}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let file = directory.join("data.bin");
+        let path = file.to_string_lossy().replace('\\', "/");
+        let script = format!(
+            r#"
+import "io" as io
+io.write_bytes("{path}", [0, 10, 127, 128, 255])
+let data = io.read_bytes("{path}")
+assert(len(data) == 5, "binary length changed")
+assert(data[0] == 0 and data[3] == 128 and data[4] == 255, "binary values changed")
+"#
+        );
+        let result = run(&script);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(std::fs::read(&file).unwrap(), [0, 10, 127, 128, 255]);
+
+        for invalid in ["-1", "256", "2.5", "\"text\""] {
+            let script = format!("import \"io\" as io\nio.write_bytes(\"{path}\", [1, {invalid}])");
+            let error = run(&script).unwrap_err();
+            assert!(error.contains("item 1"), "{error}");
+            assert_eq!(
+                std::fs::read(&file).unwrap(),
+                [0, 10, 127, 128, 255],
+                "invalid input must not overwrite the file"
+            );
+        }
+
+        let result = run(&format!(
+            "import \"io\" as io\nio.write_bytes(\"{path}\", [])\nassert(len(io.read_bytes(\"{path}\")) == 0, \"empty file should round trip\")"
+        ));
+        assert!(result.is_ok(), "{result:?}");
+        assert!(std::fs::read(&file).unwrap().is_empty());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn test_binary_file_errors_include_path() {
+        let result = run("import \"io\" as io\nio.write_bytes(42, [])");
+        assert!(result.unwrap_err().contains("string path"));
+        let result = run("import \"io\" as io\nio.read_bytes(42)");
+        assert!(result.unwrap_err().contains("string path"));
+        let missing = std::env::temp_dir().join(format!(
+            "ject-missing-bytes-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = missing.to_string_lossy().replace('\\', "/");
+        let result = run(&format!("import \"io\" as io\nio.read_bytes(\"{path}\")"));
+        let error = result.unwrap_err();
+        assert!(error.contains(&path), "{error}");
+    }
+
+    #[test]
     fn test_inject_system_module_includes_exec() {
         let m = crate::stdlib::inject_module_file_builtins("system");
         assert!(

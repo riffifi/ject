@@ -259,6 +259,8 @@ impl Linter {
                 | "_list_dir"
                 | "_mkdir"
                 | "_remove_file"
+                | "_read_bytes"
+                | "_write_bytes"
                 | "file_exists"
                 | "is_file"
                 | "is_dir"
@@ -491,6 +493,8 @@ impl Linter {
             "_list_dir",
             "_mkdir",
             "_remove_file",
+            "_read_bytes",
+            "_write_bytes",
         ] {
             self.functions.insert(name.to_string());
         }

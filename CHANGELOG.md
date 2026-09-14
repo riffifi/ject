@@ -33,6 +33,8 @@
 - Implemented the previously advertised `list_dir`, `mkdir`, and `remove_file`
   primitives; exposed source-level functions in `io` and tested directory
   creation, sorted listings, file removal, and error paths.
+- Added `io.read_bytes` and `io.write_bytes` for binary files with validated byte
+  arrays and clear filesystem errors.
 
 ## 0.9.1
 

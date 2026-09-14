@@ -694,6 +694,21 @@ removes one file or symlink, never a directory tree. The same `list_dir`, `mkdir
 `remove_file`, `is_file`, and `is_dir` primitives are available in CorLib. Failures
 from the three directory operations include the path and operating-system cause.
 
+Use `io.read_bytes(path)` and `io.write_bytes(path, bytes)` for binary files:
+
+```ject
+import "io" as io
+
+io.write_bytes("header.bin", [0, 127, 128, 255])
+let header = io.read_bytes("header.bin")
+assert(header[3] == 255)
+```
+
+Bytes are ordinary integer arrays. `write_bytes` rejects non-integers and values
+outside `0..255` before opening the file. Both operations load the entire file into
+memory; they are intended for small to moderate files, not streaming large media.
+Text files still use `read_file` and `write_file`.
+
 ## 16. Packages and projects
 
 Create packages through `ject`:

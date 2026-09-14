@@ -666,6 +666,8 @@ pub fn get_io_module() -> HashMap<String, Value> {
         "list_dir",
         "mkdir",
         "remove_file",
+        "read_bytes",
+        "write_bytes",
     ] {
         module.insert(format!("_{name}"), Value::BuiltinFunction(name.to_string()));
     }
@@ -1380,6 +1382,49 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "write_file() requires a string file path and content".to_string(),
                 })
             }
+        }
+        "read_bytes" => {
+            let [Value::String(path)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "read_bytes() requires one string path".to_string(),
+                });
+            };
+            let bytes = std::fs::read(path).map_err(|error| RuntimeError {
+                message: format!("read_bytes() failed for '{path}': {error}"),
+            })?;
+            Ok(Value::array(
+                bytes
+                    .into_iter()
+                    .map(|byte| Value::Integer(i64::from(byte)))
+                    .collect(),
+            ))
+        }
+        "write_bytes" => {
+            let [Value::String(path), Value::Array(values)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "write_bytes() requires a string path and an array of bytes"
+                        .to_string(),
+                });
+            };
+            let values = values.borrow();
+            let mut bytes = Vec::with_capacity(values.len());
+            for (index, value) in values.iter().enumerate() {
+                let Value::Integer(number) = value else {
+                    return Err(RuntimeError {
+                        message: format!(
+                            "write_bytes() item {index} must be an integer from 0 to 255"
+                        ),
+                    });
+                };
+                let byte = u8::try_from(*number).map_err(|_| RuntimeError {
+                    message: format!("write_bytes() item {index} must be an integer from 0 to 255"),
+                })?;
+                bytes.push(byte);
+            }
+            std::fs::write(path, bytes).map_err(|error| RuntimeError {
+                message: format!("write_bytes() failed for '{path}': {error}"),
+            })?;
+            Ok(Value::Nil)
         }
         "max" => {
             if args.is_empty() {

@@ -7,6 +7,8 @@ export fn is_dir(path) return _is_dir(path) end
 export fn list_dir(path) return _list_dir(path) end
 export fn mkdir(path) return _mkdir(path) end
 export fn remove_file(path) return _remove_file(path) end
+export fn read_bytes(path) return _read_bytes(path) end
+export fn write_bytes(path, bytes) return _write_bytes(path, bytes) end
 
 # Write lines to file
 export fn write_lines(path, lines_arr)
