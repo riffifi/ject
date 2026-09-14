@@ -1,15 +1,18 @@
 # JSON Standard Library Module
 # parse_json / to_json are Rust builtins (injected).
 
-# Pretty print JSON (simple indentation)
-export fn to_json_pretty(value, indent)
-    return to_json(value)
+export fn to_json_pretty(value, indent=2)
+    return _to_json_pretty(value, indent)
 end
 
 # Validate JSON string
 export fn is_valid_json(str)
-    let result = parse_json(str)
-    return result != nil
+    try
+        parse_json(str)
+        return true
+    catch
+        return false
+    end
 end
 
 # Get JSON value at path (simple dot notation)

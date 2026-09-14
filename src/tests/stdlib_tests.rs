@@ -874,6 +874,28 @@ assert(data[0] == 0 and data[3] == 128 and data[4] == 255, "binary values change
         assert!(error.contains(&path), "{error}");
     }
 
+    #[test]
+    fn test_json_objects_round_trip_as_dictionaries() {
+        let result = run(r#"
+import "json" as json
+import "string" as string
+let decoded = json.parse_json("{\"outer\":{\"items\":[1,2],\"enabled\":true}}")
+assert(type_of(decoded) == "dictionary", "JSON objects must become dictionaries")
+assert(decoded.outer.items[1] == 2, "nested JSON data changed")
+assert(json.json_get(decoded, "outer.enabled") == true, "JSON paths must work")
+assert(json.is_valid_json("null"), "JSON null is valid")
+assert(not json.is_valid_json("{broken"), "invalid JSON must return false")
+let encoded = json.to_json(decoded)
+assert(json.parse_json(encoded).outer.items[0] == 1, "JSON must round trip")
+let pretty = json.to_json_pretty({outer: {item: 1}}, 4)
+assert(string.contains_str(pretty, "\n    \"outer\": {"), "pretty JSON should use four spaces")
+assert(string.contains_str(pretty, "\n        \"item\": 1"), "nested indent should grow")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+        let invalid = run("import \"json\" as json\njson.to_json_pretty({a: 1}, -1)");
+        assert!(invalid.unwrap_err().contains("indent must be from 0 to 16"));
+    }
+
     fn serve_http_once(status: &str, body: &[u8]) -> (String, std::thread::JoinHandle<Vec<u8>>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

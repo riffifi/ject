@@ -716,6 +716,11 @@ outside `0..255` before opening the file. Both operations load the entire file i
 memory; they are intended for small to moderate files, not streaming large media.
 Text files still use `read_file` and `write_file`.
 
+`json.parse_json(text)` turns JSON objects into Ject dictionaries, including nested
+objects. `json.is_valid_json(text)` returns true for every valid JSON value (including
+`null`) and false for malformed input. `json.to_json_pretty(value, indent=2)`
+formats with 0 to 16 spaces per level.
+
 The blocking HTTP module covers ordinary HTTP(S) requests:
 
 ```ject

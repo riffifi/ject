@@ -532,6 +532,7 @@ dependencies = [
  "rustc-hash",
  "rustyline",
  "semver",
+ "serde",
  "serde_json",
  "sha2",
  "smallvec",

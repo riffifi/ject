@@ -18,11 +18,7 @@ end
 
 # Read JSON file
 export fn read_json(path)
-    let content = read_file(path)
-    if content == nil then
-        return nil
-    end
-    return parse_json(content)
+    return parse_json(read_file(path))
 end
 
 # Write JSON file

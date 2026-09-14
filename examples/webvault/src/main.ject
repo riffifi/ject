@@ -1,0 +1,63 @@
+import "system" as system
+import "http" as http
+import "io" as io
+
+fn usage()
+    print "Webvault — save and inspect HTTP snapshots"
+    print "  ject run -- fetch URL DIRECTORY"
+    print "  ject run -- show DIRECTORY"
+end
+
+fn fetch(url, directory)
+    if io.file_exists(directory)
+        throw "destination already exists: $directory"
+    end
+
+    let response = http.get(url)
+    if not response.success
+        throw "HTTP " + response.status + ": " + response.reason
+    end
+
+    let content_type = ""
+    if has_key(response.headers, "content-type")
+        content_type = response.headers["content-type"]
+    end
+    let metadata = {
+        url: response.url,
+        status: response.status,
+        size: len(response.bytes),
+        content_type: content_type
+    }
+    io.mkdir(directory)
+    io.write_bytes(directory + "/body.bin", response.bytes)
+    io.write_json(directory + "/meta.json", metadata)
+    print "Saved " + metadata.size + " bytes to " + directory
+end
+
+fn show(directory)
+    let metadata = io.read_json(directory + "/meta.json")
+    let body = io.read_bytes(directory + "/body.bin")
+    if len(body) != metadata.size
+        throw "snapshot body size does not match its metadata"
+    end
+    print metadata.url
+    print "HTTP " + metadata.status + " · " + metadata.content_type
+    print metadata.size + " bytes verified"
+end
+
+let arguments = system.args()
+if len(arguments) == 0 or arguments[0] == "help"
+    usage()
+elseif arguments[0] == "fetch"
+    if len(arguments) != 3
+        throw "usage: ject run -- fetch URL DIRECTORY"
+    end
+    fetch(arguments[1], arguments[2])
+elseif arguments[0] == "show"
+    if len(arguments) != 2
+        throw "usage: ject run -- show DIRECTORY"
+    end
+    show(arguments[1])
+else
+    throw "unknown command: " + arguments[0]
+end

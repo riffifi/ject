@@ -39,6 +39,11 @@
   validated headers and bodies, non-2xx responses, and bounded binary results.
 - Made `system.args()` return only application arguments for direct scripts and
   `ject run`, with optional `--` separation.
+- JSON objects now parse as dictionaries rather than key/value arrays;
+  `json.is_valid_json` handles malformed input and `null` correctly, and
+  `json.to_json_pretty` honors its indent.
+- Added Webvault, a source-only HTTP snapshot CLI and end-to-end test exercising
+  the new application APIs.
 
 ## 0.9.1
 

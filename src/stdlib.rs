@@ -1,5 +1,6 @@
 use crate::interpreter::RuntimeError;
 use crate::value::Value;
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -696,6 +697,10 @@ pub fn get_json_module() -> HashMap<String, Value> {
     module.insert(
         "to_json".to_string(),
         Value::BuiltinFunction("to_json".to_string()),
+    );
+    module.insert(
+        "_to_json_pretty".to_string(),
+        Value::BuiltinFunction("to_json_pretty".to_string()),
     );
 
     module
@@ -1792,6 +1797,33 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 },
                 Err(e) => Err(e),
             }
+        }
+        "to_json_pretty" => {
+            let [value, Value::Integer(indent)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "to_json_pretty() requires a value and integer indent".to_string(),
+                });
+            };
+            let indent = usize::try_from(*indent)
+                .ok()
+                .filter(|indent| *indent <= 16)
+                .ok_or_else(|| RuntimeError {
+                    message: "to_json_pretty() indent must be from 0 to 16".to_string(),
+                })?;
+            let json = ject_value_to_json(value)?;
+            let spaces = vec![b' '; indent];
+            let formatter = serde_json::ser::PrettyFormatter::with_indent(&spaces);
+            let mut output = Vec::new();
+            let mut serializer = serde_json::Serializer::with_formatter(&mut output, formatter);
+            json.serialize(&mut serializer)
+                .map_err(|error| RuntimeError {
+                    message: format!("to_json_pretty() failed: {error}"),
+                })?;
+            String::from_utf8(output)
+                .map(Value::String)
+                .map_err(|error| RuntimeError {
+                    message: format!("to_json_pretty() produced invalid UTF-8: {error}"),
+                })
         }
         "char_at" => {
             if args.len() != 2 {
@@ -3436,12 +3468,11 @@ fn json_to_ject_value(json_value: serde_json::Value) -> Value {
             Value::array(ject_array)
         }
         serde_json::Value::Object(obj) => {
-            // Convert JSON object to Ject array of [key, value] pairs
-            let pairs: Vec<Value> = obj
+            let fields: HashMap<String, Value> = obj
                 .into_iter()
-                .map(|(k, v)| Value::array(vec![Value::String(k), json_to_ject_value(v)]))
+                .map(|(key, value)| (key, json_to_ject_value(value)))
                 .collect();
-            Value::array(pairs)
+            Value::dictionary(fields)
         }
     }
 }

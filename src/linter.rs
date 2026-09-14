@@ -263,6 +263,7 @@ impl Linter {
                 | "_write_bytes"
                 | "_request"
                 | "_args"
+                | "_to_json_pretty"
                 | "file_exists"
                 | "is_file"
                 | "is_dir"
@@ -499,6 +500,7 @@ impl Linter {
             "_write_bytes",
             "_request",
             "_args",
+            "_to_json_pretty",
         ] {
             self.functions.insert(name.to_string());
         }

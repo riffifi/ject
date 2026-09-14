@@ -1,0 +1,7 @@
+import "http" as http
+import "io" as io
+import "system" as system
+
+assert(type_of(http.get) == "function", "HTTP facade is available")
+assert(type_of(io.read_bytes) == "function", "binary I/O facade is available")
+assert(len(system.args()) == 0, "package tests have no app arguments")

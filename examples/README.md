@@ -66,5 +66,10 @@ ject install
 ject run
 ```
 
+### `webvault`
+
+A source-only CLI using Ject's HTTP, binary I/O, JSON, directory, and application
+argument APIs. See [its README](webvault/README.md) for the two commands.
+
 For explanations of the syntax, see [the language guide](../docs/DOCS.md). For the package
 layout and native ABI, see [the package guide](../docs/PACKAGES.md).
