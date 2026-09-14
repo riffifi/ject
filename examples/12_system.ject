@@ -2,6 +2,7 @@ import "system" as system
 
 print "Current directory: " + system.get_cwd()
 print "HOME: " + system.env("HOME")
+print "Application arguments: " + system.args()
 
 # run_process passes each argument literally and reports both output streams.
 let result = system.run_process("git", ["--version"])

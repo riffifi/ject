@@ -37,6 +37,8 @@
   arrays and clear filesystem errors.
 - Added a blocking source-level `http` module with direct HTTP(S) requests,
   validated headers and bodies, non-2xx responses, and bounded binary results.
+- Made `system.args()` return only application arguments for direct scripts and
+  `ject run`, with optional `--` separation.
 
 ## 0.9.1
 

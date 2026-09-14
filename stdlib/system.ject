@@ -1,6 +1,10 @@
 # System Standard Library Module
 # Process and directory primitives are provided by the host.
 
+export fn args()
+    return _args()
+end
+
 export fn get_cwd()
     return cwd()
 end

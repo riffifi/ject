@@ -676,6 +676,12 @@ directory. `system.change_dir(path)` changes the current Ject process's director
 `system.get_cwd()` and `system.cwd()` read it. `system.exec(command)` remains for
 compatibility, but invokes a shell and returns only trimmed stdout.
 
+`system.args()` returns the application's arguments, excluding Ject's own
+command or script path. For example, `ject run -- first --second` and
+`ject src/main.ject first --second` both make `system.args()` return
+`["first", "--second"]`. The optional `--` after `run` separates Ject
+options from application arguments. In the REPL, `system.args()` is empty.
+
 The `io` module exposes ordinary directory operations:
 
 ```ject

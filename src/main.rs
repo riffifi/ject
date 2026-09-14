@@ -78,7 +78,7 @@ fn main() {
             }
             let entry = project.entry.to_string_lossy().into_owned();
             if args[0] == "run" {
-                run_file(&entry);
+                run_file(&entry, script_arguments(&args[1..]));
             } else {
                 check_project_sources(&project);
                 if args[0] == "build" {
@@ -141,7 +141,7 @@ fn main() {
                 std::process::exit(2);
             }
             for path in files {
-                run_file(path);
+                run_file(path, &[]);
             }
         }
         flag if flag.starts_with('-') => {
@@ -154,7 +154,7 @@ fn main() {
         }
         _ => {
             // Legacy: `ject script.ject`
-            run_file(&args[0]);
+            run_file(&args[0], script_arguments(&args[1..]));
         }
     }
 }
@@ -190,10 +190,10 @@ Ject language interpreter
 
 USAGE:
     ject                      Start REPL
-    ject <file.ject>          Run a script
+    ject <file.ject> [args...]  Run a script with application arguments
     ject new <name> [--lib|--native]  Create a package
     ject init [--lib|--native]        Create a package in the current directory
-    ject run                  Run the current package
+    ject run [-- args...]      Run the current package with application arguments
     ject check                Check the current package
     ject test                 Run tests/*.ject in the current package
     ject install [--locked]   Resolve, lock, and build dependencies
@@ -499,6 +499,14 @@ fn create_project(args: &[String]) {
     }
 }
 
+fn script_arguments(args: &[String]) -> &[String] {
+    if args.first().is_some_and(|arg| arg == "--") {
+        &args[1..]
+    } else {
+        args
+    }
+}
+
 fn run_project_tests() {
     let project = current_project_or_exit();
     let tests_dir = project.root.join("tests");
@@ -518,11 +526,12 @@ fn run_project_tests() {
     }
     for test in tests {
         println!("test {}", test.display());
-        run_file(&test.to_string_lossy());
+        run_file(&test.to_string_lossy(), &[]);
     }
 }
 
-fn run_file(filename: &str) {
+fn run_file(filename: &str, script_args: &[String]) {
+    stdlib::set_script_args(script_args);
     prepare_native_for(Path::new(filename));
     match fs::read_to_string(filename) {
         Ok(source) => {

@@ -1,9 +1,19 @@
 use crate::interpreter::RuntimeError;
 use crate::value::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEED: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static SCRIPT_ARGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Set the application arguments visible to `system.args()` on this interpreter thread.
+pub fn set_script_args(args: &[String]) {
+    SCRIPT_ARGS.with(|stored| *stored.borrow_mut() = args.to_vec());
+}
 
 /// Modules that are implemented only in Rust (`get_module` returns `Some`).
 /// Every other import name should prefer `stdlib/<name>.ject` when present.
@@ -702,6 +712,10 @@ pub fn get_system_module() -> HashMap<String, Value> {
     );
     module.insert(
         "args".to_string(),
+        Value::BuiltinFunction("args".to_string()),
+    );
+    module.insert(
+        "_args".to_string(),
         Value::BuiltinFunction("args".to_string()),
     );
     module.insert("cwd".to_string(), Value::BuiltinFunction("cwd".to_string()));
@@ -3305,7 +3319,8 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             std::process::exit(code);
         }
         "args" => {
-            let argv = std::env::args().skip(1).map(Value::String).collect();
+            let argv = SCRIPT_ARGS
+                .with(|stored| stored.borrow().iter().cloned().map(Value::String).collect());
             Ok(Value::array(argv))
         }
         "cwd" => {
