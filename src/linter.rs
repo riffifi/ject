@@ -261,6 +261,7 @@ impl Linter {
                 | "_remove_file"
                 | "_read_bytes"
                 | "_write_bytes"
+                | "_request"
                 | "file_exists"
                 | "is_file"
                 | "is_dir"
@@ -495,6 +496,7 @@ impl Linter {
             "_remove_file",
             "_read_bytes",
             "_write_bytes",
+            "_request",
         ] {
             self.functions.insert(name.to_string());
         }

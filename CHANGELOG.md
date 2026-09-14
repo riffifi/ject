@@ -35,6 +35,8 @@
   creation, sorted listings, file removal, and error paths.
 - Added `io.read_bytes` and `io.write_bytes` for binary files with validated byte
   arrays and clear filesystem errors.
+- Added a blocking source-level `http` module with direct HTTP(S) requests,
+  validated headers and bodies, non-2xx responses, and bounded binary results.
 
 ## 0.9.1
 

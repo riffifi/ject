@@ -874,6 +874,120 @@ assert(data[0] == 0 and data[3] == 128 and data[4] == 255, "binary values change
         assert!(error.contains(&path), "{error}");
     }
 
+    fn serve_http_once(status: &str, body: &[u8]) -> (String, std::thread::JoinHandle<Vec<u8>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/test", listener.local_addr().unwrap());
+        let status = status.to_string();
+        let body = body.to_vec();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let count = stream.read(&mut chunk).unwrap();
+                assert!(count > 0, "client closed before sending its request");
+                request.extend_from_slice(&chunk[..count]);
+                if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let content_length = headers
+                        .lines()
+                        .filter_map(|line| line.split_once(':'))
+                        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= end + 4 + content_length {
+                        break;
+                    }
+                }
+            }
+            let headers = format!(
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nX-Reply: ready\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(headers.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+            request
+        });
+        (url, server)
+    }
+
+    #[test]
+    fn test_http_returns_non_success_responses() {
+        let (url, server) = serve_http_once("404 Not Found", b"missing");
+        let script = format!(
+            r#"
+import "http" as http
+let response = http.get("{url}")
+assert(response.status == 404, "status should be preserved")
+assert(response.success == false, "404 is not success")
+assert(response.text == "missing", "error body should be available")
+assert(response.headers["x-reply"] == "ready", "response header missing")
+assert(len(response.bytes) == 7, "response bytes missing")
+"#
+        );
+        let result = run(&script);
+        assert!(result.is_ok(), "{result:?}");
+        let request = server.join().unwrap();
+        assert!(request.starts_with(b"GET /test HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn test_http_sends_and_receives_binary_data() {
+        let (url, server) = serve_http_once("201 Created", &[0, 255, 13]);
+        let script = format!(
+            r#"
+import "http" as http
+let response = http.post("{url}", [0, 255, 10], {{"X-Mode": "binary"}})
+assert(response.status == 201 and response.success, "successful status missing")
+assert(response.bytes[0] == 0 and response.bytes[1] == 255 and response.bytes[2] == 13, "response bytes changed")
+"#
+        );
+        let result = run(&script);
+        assert!(result.is_ok(), "{result:?}");
+        let request = server.join().unwrap();
+        let end = request
+            .windows(4)
+            .position(|part| part == b"\r\n\r\n")
+            .unwrap();
+        assert!(request.starts_with(b"POST /test HTTP/1.1\r\n"));
+        assert_eq!(&request[end + 4..], &[0, 255, 10]);
+        assert!(String::from_utf8_lossy(&request[..end])
+            .to_ascii_lowercase()
+            .contains("x-mode: binary"));
+    }
+
+    #[test]
+    fn test_http_rejects_invalid_requests_before_transport() {
+        for (source, expected) in [
+            ("http.get(\"file:///tmp/data\")", "URL must start"),
+            ("http.request(\"GET BAD\", \"http://localhost\")", "method"),
+            (
+                "http.get(\"http://localhost\", {\"X-Test\": 42})",
+                "string value",
+            ),
+            ("http.post(\"http://localhost\", [256])", "body item 0"),
+            ("http.get(\"http://localhost\", {}, 0)", "positive integer"),
+        ] {
+            let result = run(&format!("import \"http\" as http\n{source}"));
+            let error = result.unwrap_err();
+            assert!(error.contains(expected), "{source}: {error}");
+        }
+    }
+
+    #[test]
+    fn test_http_rejects_oversized_response_bodies() {
+        let body = vec![b'x'; 16 * 1024 * 1024 + 1];
+        let (url, server) = serve_http_once("200 OK", &body);
+        let result = run(&format!("import \"http\" as http\nhttp.get(\"{url}\")"));
+        let error = result.unwrap_err();
+        assert!(error.contains("exceeds the 16 MiB limit"), "{error}");
+        server.join().unwrap();
+    }
+
     #[test]
     fn test_inject_system_module_includes_exec() {
         let m = crate::stdlib::inject_module_file_builtins("system");

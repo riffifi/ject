@@ -1,0 +1,13 @@
+# Blocking HTTP client. Rust provides transport; this file defines the public API.
+
+export fn request(method, url, headers={}, body=nil, timeout_ms=30000)
+    return _request(method, url, headers, body, timeout_ms)
+end
+
+export fn get(url, headers={}, timeout_ms=30000)
+    return request("GET", url, headers, nil, timeout_ms)
+end
+
+export fn post(url, body, headers={}, timeout_ms=30000)
+    return request("POST", url, headers, body, timeout_ms)
+end

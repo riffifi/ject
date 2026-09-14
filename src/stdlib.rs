@@ -813,6 +813,10 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
             }
             h
         }
+        "http" => HashMap::from([(
+            "_request".to_string(),
+            Value::BuiltinFunction("http_request".to_string()),
+        )]),
         "json" => get_json_module(),
         "system" => {
             let mut h = get_system_module();
@@ -858,6 +862,7 @@ pub fn embedded_stdlib_module_source(name: &str) -> Option<&'static str> {
         "array" => Some(include_str!("../stdlib/array.ject")),
         "string" => Some(include_str!("../stdlib/string.ject")),
         "io" => Some(include_str!("../stdlib/io.ject")),
+        "http" => Some(include_str!("../stdlib/http.ject")),
         "json" => Some(include_str!("../stdlib/json.ject")),
         "system" => Some(include_str!("../stdlib/system.ject")),
         "datetime" => Some(include_str!("../stdlib/datetime.ject")),
@@ -880,6 +885,7 @@ pub fn introspect_native_kernel_json() -> String {
         "collections",
         "datetime",
         "io",
+        "http",
         "json",
         "math",
         "system",
@@ -917,6 +923,7 @@ pub fn create_stdlib() -> HashMap<String, Value> {
 pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
     std::env::set_var("RUST_BACKTRACE", "full");
     match name {
+        "http_request" => crate::http::request(args),
         // Enhanced array functions
         "sort" => {
             if args.len() != 1 {

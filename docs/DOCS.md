@@ -645,9 +645,10 @@ import "math" as math
 import "string" as string
 import "array" as array
 import "collections" as collections
-import "file" as file
+import "io" as io
 import "system" as system
-import "time" as time
+import "datetime" as datetime
+import "http" as http
 import "color" as color
 ```
 
@@ -708,6 +709,29 @@ Bytes are ordinary integer arrays. `write_bytes` rejects non-integers and values
 outside `0..255` before opening the file. Both operations load the entire file into
 memory; they are intended for small to moderate files, not streaming large media.
 Text files still use `read_file` and `write_file`.
+
+The blocking HTTP module covers ordinary HTTP(S) requests:
+
+```ject
+import "http" as http
+
+let response = http.get("https://example.com")
+if response.success then
+    print response.text
+else
+    print "HTTP status: " + response.status
+end
+```
+
+`http.get(url, headers={}, timeout_ms=30000)` and
+`http.post(url, body, headers={}, timeout_ms=30000)` are shortcuts for
+`http.request(method, url, headers={}, body=nil, timeout_ms=30000)`.
+Pass a string or byte array as the body, and set `Content-Type` in `headers` when
+needed. The result has `status`, `reason`, `success` (2xx), final `url`, lowercase
+`headers`, decoded `text`, and exact `bytes`. Non-2xx responses return normally,
+including their bodies; invalid requests and transport failures raise errors.
+Responses are limited to 16 MiB and are read into memory. Invalid UTF-8 in
+`text` is replaced; use `bytes` when exact data matters.
 
 ## 16. Packages and projects
 
