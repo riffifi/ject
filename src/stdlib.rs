@@ -3,7 +3,11 @@ use crate::value::Value;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::io::Read;
+use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 static SEED: AtomicU64 = AtomicU64::new(0);
 
@@ -12,6 +16,153 @@ pub const CORE_CONSTANT_NAMES: &[&str] = &["inf", "nan"];
 
 thread_local! {
     static SCRIPT_ARGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+fn collect_process_stream(
+    mut stream: impl Read,
+    max_bytes: Option<usize>,
+    exceeded: &AtomicBool,
+    cancelled: &AtomicBool,
+) -> std::io::Result<Vec<u8>> {
+    let mut output = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        let count = stream.read(&mut chunk)?;
+        if cancelled.load(Ordering::Relaxed) {
+            return Ok(output);
+        }
+        if count == 0 {
+            return Ok(output);
+        }
+        let allowed =
+            max_bytes.map_or(count, |limit| limit.saturating_sub(output.len()).min(count));
+        output.extend_from_slice(&chunk[..allowed]);
+        if allowed < count {
+            exceeded.store(true, Ordering::Relaxed);
+            cancelled.store(true, Ordering::Relaxed);
+            return Ok(output);
+        }
+    }
+}
+
+fn run_process_with_limits(
+    mut command: Command,
+    program: &str,
+    timeout: Option<Duration>,
+    max_output_bytes: Option<usize>,
+) -> Result<Output, RuntimeError> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| RuntimeError {
+        message: format!("run_process() failed to start '{program}': {error}"),
+    })?;
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+    let exceeded = Arc::new(AtomicBool::new(false));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let stdout_exceeded = Arc::clone(&exceeded);
+    let stderr_exceeded = Arc::clone(&exceeded);
+    let stdout_cancelled = Arc::clone(&cancelled);
+    let stderr_cancelled = Arc::clone(&cancelled);
+    let stdout_reader = std::thread::spawn(move || {
+        collect_process_stream(
+            stdout,
+            max_output_bytes,
+            &stdout_exceeded,
+            &stdout_cancelled,
+        )
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        collect_process_stream(
+            stderr,
+            max_output_bytes,
+            &stderr_exceeded,
+            &stderr_cancelled,
+        )
+    });
+
+    let started = Instant::now();
+    let mut timed_out = false;
+    let mut exit_status = None;
+    let status = loop {
+        if exceeded.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            break child.wait();
+        }
+        if exit_status.is_none() {
+            match child.try_wait() {
+                Ok(Some(status)) => exit_status = Some(status),
+                Ok(None) => {}
+                Err(error) => {
+                    let _ = child.kill();
+                    break Err(error);
+                }
+            }
+        }
+        if let Some(status) = exit_status {
+            if stdout_reader.is_finished() && stderr_reader.is_finished() {
+                break Ok(status);
+            }
+        }
+        if timeout.is_some_and(|limit| started.elapsed() >= limit) {
+            timed_out = true;
+            cancelled.store(true, Ordering::Relaxed);
+            let _ = child.kill();
+            break child.wait();
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    .map_err(|error| RuntimeError {
+        message: format!("run_process() failed while waiting for '{program}': {error}"),
+    })?;
+
+    // Descendants can inherit the child's pipe handles. On an abort, waiting for
+    // readers to see EOF would turn a short timeout into an unbounded wait.
+    if timed_out {
+        return Err(RuntimeError {
+            message: format!("run_process() timed out while running '{program}'"),
+        });
+    }
+    if exceeded.load(Ordering::Relaxed) {
+        return Err(RuntimeError {
+            message: format!(
+                "run_process() output limit of {} bytes per stream exceeded for '{program}'",
+                max_output_bytes.unwrap_or(0)
+            ),
+        });
+    }
+
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| RuntimeError {
+            message: "run_process() stdout reader failed".to_string(),
+        })?
+        .map_err(|error| RuntimeError {
+            message: format!("run_process() failed to read stdout: {error}"),
+        })?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| RuntimeError {
+            message: "run_process() stderr reader failed".to_string(),
+        })?
+        .map_err(|error| RuntimeError {
+            message: format!("run_process() failed to read stderr: {error}"),
+        })?;
+    if exceeded.load(Ordering::Relaxed) {
+        return Err(RuntimeError {
+            message: format!(
+                "run_process() output limit of {} bytes per stream exceeded for '{program}'",
+                max_output_bytes.unwrap_or(0)
+            ),
+        });
+    }
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 /// Set the application arguments visible to `system.args()` on this interpreter thread.
@@ -3374,9 +3525,9 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             Ok(Value::Nil)
         }
         "_run_process" => {
-            if !(1..=3).contains(&args.len()) {
+            if !(1..=5).contains(&args.len()) {
                 return Err(RuntimeError {
-                    message: "run_process() takes a program, optional argument array, and optional directory".to_string(),
+                    message: "run_process() takes a program, optional argument array, directory, timeout, and output limit".to_string(),
                 });
             }
             let Value::String(program) = &args[0] else {
@@ -3389,7 +3540,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     message: "run_process() requires a nonempty program".to_string(),
                 });
             }
-            let mut command = std::process::Command::new(program);
+            let mut command = Command::new(program);
             if let Some(arguments) = args.get(1) {
                 let Value::Array(arguments) = arguments else {
                     return Err(RuntimeError {
@@ -3420,9 +3571,34 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     }
                 }
             }
-            let output = command.output().map_err(|error| RuntimeError {
-                message: format!("run_process() failed to start '{program}': {error}"),
-            })?;
+            let timeout = match args.get(3) {
+                None | Some(Value::Nil) => None,
+                Some(Value::Integer(milliseconds)) if *milliseconds > 0 => {
+                    Some(Duration::from_millis(*milliseconds as u64))
+                }
+                _ => {
+                    return Err(RuntimeError {
+                        message: "run_process() timeout must be a positive integer in milliseconds or nil".to_string(),
+                    });
+                }
+            };
+            let max_output_bytes = match args.get(4) {
+                None => Some(16 * 1024 * 1024),
+                Some(Value::Nil) => None,
+                Some(Value::Integer(limit)) => Some(usize::try_from(*limit).map_err(|_| {
+                    RuntimeError {
+                        message: "run_process() output limit must be a nonnegative integer or nil"
+                            .to_string(),
+                    }
+                })?),
+                _ => {
+                    return Err(RuntimeError {
+                        message: "run_process() output limit must be a nonnegative integer or nil"
+                            .to_string(),
+                    });
+                }
+            };
+            let output = run_process_with_limits(command, program, timeout, max_output_bytes)?;
             Ok(Value::dictionary(HashMap::from([
                 (
                     "stdout".to_string(),

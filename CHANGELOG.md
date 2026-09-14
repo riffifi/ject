@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `system.run_process` now supports an optional timeout and a configurable
+  per-stream output limit (16 MiB by default), with bounded memory and prompt
+  errors for runaway children.
 - Fixed standard-library inverse trig outside the Taylor-series convergence range,
   median indexing in `math` and `array`, and real odd roots of negative numbers.
   Integer-domain math helpers now reject fractional and overflowing inputs

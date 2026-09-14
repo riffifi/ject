@@ -13,6 +13,6 @@ export fn change_dir(path)
     return _change_dir(path)
 end
 
-export fn run_process(program, arguments=[], directory=nil)
-    return _run_process(program, arguments, directory)
+export fn run_process(program, arguments=[], directory=nil, timeout_ms=nil, max_output_bytes=16777216)
+    return _run_process(program, arguments, directory, timeout_ms, max_output_bytes)
 end

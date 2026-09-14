@@ -1130,6 +1130,65 @@ assert(literal.success == true, "successful exit should be success")
     }
 
     #[test]
+    #[cfg(unix)]
+    fn run_process_enforces_output_limit() {
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"printf\", [\"abcdef\"], nil, nil, 4)",
+        );
+        assert!(result.unwrap_err().contains("output limit"));
+
+        let result = run(
+            "import \"system\" as system\nlet output = system.run_process(\"printf\", [\"abcd\"], max_output_bytes=4)\nassert(output.stdout == \"abcd\", \"exact limit should succeed\")",
+        );
+        assert!(result.is_ok(), "{result:?}");
+
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"sh\", [\"-c\", \"printf abcdef >&2\"], nil, nil, 4)",
+        );
+        assert!(result.unwrap_err().contains("output limit"));
+
+        let start = std::time::Instant::now();
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"sh\", [\"-c\", \"while :; do printf x; done\"], nil, nil, 4)",
+        );
+        assert!(result.unwrap_err().contains("output limit"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn run_process_times_out_and_rejects_invalid_limits() {
+        let start = std::time::Instant::now();
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"sleep\", [\"2\"], timeout_ms=40)",
+        );
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+
+        let start = std::time::Instant::now();
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"sh\", [\"-c\", \"sleep 2 &\"], nil, 40)",
+        );
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+
+        let start = std::time::Instant::now();
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"sh\", [\"-c\", \"sleep 2\"], nil, 40)",
+        );
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+
+        let result =
+            run("import \"system\" as system\nsystem.run_process(\"printf\", [\"x\"], nil, 0)");
+        assert!(result.unwrap_err().contains("timeout"));
+        let result = run(
+            "import \"system\" as system\nsystem.run_process(\"printf\", [\"x\"], nil, nil, -1)",
+        );
+        assert!(result.unwrap_err().contains("output limit"));
+    }
+
+    #[test]
     fn test_system_host_primitives_are_private() {
         let result = run("import \"system\" as system\nsystem._run_process");
         assert!(result.unwrap_err().contains("not found in module"));
