@@ -804,7 +804,9 @@ Codes identify the subsystem:
 | `E41xx`–`E42xx` | Native builds and loading |
 | `W20xx` | Non-fatal source warnings |
 
-`ject check` is safe for editor and CI use because it never executes application code.
+`ject check` is safe for editor and CI use because it never executes application code
+or builds/loads native libraries. `ject run` and `ject test` build native packages before
+execution; `ject test` runs all test files and reports pass/fail counts.
 The built-in language server is started with `ject lsp` and provides diagnostics,
 hover types, definitions, references, rename, signatures, symbols, highlights, and
 completion from the same parser and semantic index as the CLI.

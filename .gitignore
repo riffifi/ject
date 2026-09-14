@@ -1,6 +1,5 @@
 /target/
 /**/target/
-/tests
 temp.ject
 temp.jt
 .ject_history
@@ -9,3 +8,4 @@ vscode-ject.zip
 n.jt
 Cargo.lock
 .idea/
+.ject-roadmap.md

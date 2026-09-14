@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `ject run`, direct scripts, the REPL, and `ject test` build native package
+  artifacts before execution; `ject check` no longer requires or loads them.
+- `ject test` now runs all test files, reports each result and totals, and exits
+  nonzero if any fail.
+- CI now tests the installed binary with source-only, native, and locked-dependency
+  projects. Generated native build artifacts are no longer tracked.
+- The LSP now offers `inf` and `nan` as constants and infers `float` for bindings
+  initialized from them.
+
 ## 0.11.0
 
 - Moved `PI` and `E` out of CorLib and into explicit `math` exports. `jnum`

@@ -1,4 +1,4 @@
-name: Rust
+name: Ject
 
 on:
   push:
@@ -11,16 +11,33 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
     - name: Check formatting
-      run: cargo fmt --all -- --check
+      run: cargo fmt --all --check
     - name: Lint
-      run: cargo clippy --workspace --all-targets -- -D warnings
-    - name: Build
-      run: cargo build --verbose
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --workspace --locked
+    - name: Install the CLI
+      run: cargo install --path . --force --locked --target-dir target
+    - name: Smoke-test the installed CLI
+      run: |
+        ject --version
+        cd examples/webvault
+        ject check
+        ject test
+        ject run
+    - name: Smoke-test a native package
+      working-directory: packages/jnum
+      run: |
+        ject check
+        ject test
+    - name: Smoke-test locked native dependencies
+      working-directory: examples/native_double_demo
+      run: |
+        ject install
+        ject install --locked
+        ject run
+        ject build --release

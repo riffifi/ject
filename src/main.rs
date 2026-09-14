@@ -78,7 +78,10 @@ fn main() {
             }
             let entry = project.entry.to_string_lossy().into_owned();
             if args[0] == "run" {
-                run_file(&entry, script_arguments(&args[1..]));
+                prepare_native_for_execution(&project.root);
+                if !run_file(&entry, script_arguments(&args[1..])) {
+                    std::process::exit(1);
+                }
             } else {
                 check_project_sources(&project);
                 if args[0] == "build" {
@@ -141,7 +144,10 @@ fn main() {
                 std::process::exit(2);
             }
             for path in files {
-                run_file(path, &[]);
+                prepare_native_for_execution(Path::new(path));
+                if !run_file(path, &[]) {
+                    std::process::exit(1);
+                }
             }
         }
         flag if flag.starts_with('-') => {
@@ -154,7 +160,10 @@ fn main() {
         }
         _ => {
             // Legacy: `ject script.ject`
-            run_file(&args[0], script_arguments(&args[1..]));
+            prepare_native_for_execution(Path::new(&args[0]));
+            if !run_file(&args[0], script_arguments(&args[1..])) {
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -524,15 +533,31 @@ fn run_project_tests() {
         println!("No tests found in {}", tests_dir.display());
         return;
     }
+    prepare_native_for_execution(&project.root);
+    let mut passed = 0;
+    let mut failed = 0;
     for test in tests {
-        println!("test {}", test.display());
-        run_file(&test.to_string_lossy(), &[]);
+        let label = test.strip_prefix(&project.root).unwrap_or(&test);
+        println!("test {} ...", label.display());
+        if run_file(&test.to_string_lossy(), &[]) {
+            passed += 1;
+            println!("ok");
+        } else {
+            failed += 1;
+            println!("FAILED");
+        }
+    }
+    println!(
+        "\ntest result: {}. {passed} passed; {failed} failed",
+        if failed == 0 { "ok" } else { "FAILED" }
+    );
+    if failed > 0 {
+        std::process::exit(1);
     }
 }
 
-fn run_file(filename: &str, script_args: &[String]) {
+fn run_file(filename: &str, script_args: &[String]) -> bool {
     stdlib::set_script_args(script_args);
-    prepare_native_for(Path::new(filename));
     match fs::read_to_string(filename) {
         Ok(source) => {
             let mut interpreter = Interpreter::new();
@@ -541,14 +566,12 @@ fn run_file(filename: &str, script_args: &[String]) {
                     interpreter.set_script_dir(dir.to_path_buf());
                 }
             }
-            if !execute_source(
+            execute_source(
                 &source,
                 &mut interpreter,
                 Some(filename.to_string()),
                 ExecutionMode::Run,
-            ) {
-                std::process::exit(1);
-            }
+            )
         }
         Err(error) => {
             emit_cli_error(
@@ -556,13 +579,12 @@ fn run_file(filename: &str, script_args: &[String]) {
                 format!("could not read `{filename}`: {error}"),
                 Some("check that the path exists and is readable"),
             );
-            std::process::exit(1);
+            false
         }
     }
 }
 
 fn check_file(filename: &str) {
-    prepare_native_for(Path::new(filename));
     validate_module_graph_or_exit(Path::new(filename));
     match fs::read_to_string(filename) {
         Ok(source) => {
@@ -593,7 +615,6 @@ fn check_file(filename: &str) {
 }
 
 fn check_project_sources(project: &package::Project) {
-    prepare_native_for(&project.root);
     validate_module_graph_or_exit(&project.entry);
     let mut projects = package::dependency_projects(project).unwrap_or_else(|error| {
         emit_cli_error(
@@ -794,7 +815,7 @@ mod module_tree_tests {
     }
 }
 
-fn prepare_native_for(path: &Path) {
+fn prepare_native_for_execution(path: &Path) {
     let start = if path.is_dir() {
         path
     } else {
@@ -803,6 +824,14 @@ fn prepare_native_for(path: &Path) {
     let Ok(project) = package::discover(start) else {
         return;
     };
+    if let Err(error) = package::build_native_graph(&project, false) {
+        emit_cli_error(
+            "E4101",
+            error,
+            Some("fix the native build error before running the package"),
+        );
+        std::process::exit(1);
+    }
     let mut projects = match package::dependency_projects(&project) {
         Ok(projects) => projects,
         Err(error) => {
@@ -976,7 +1005,7 @@ fn run_repl() {
     // context as `ject run`. Without this, manifest imports incorrectly fell
     // through to stdlib lookup.
     if let Ok(cwd) = env::current_dir() {
-        prepare_native_for(&cwd);
+        prepare_native_for_execution(&cwd);
         interpreter.set_script_dir(cwd);
     }
     let mut linter = linter::Linter::new(); // Persistent linter for REPL

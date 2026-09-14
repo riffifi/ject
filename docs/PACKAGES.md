@@ -234,9 +234,10 @@ ject build --release
 ```
 
 `check` covers every `.ject` file under `src/` plus an external configured entry. It
-does not execute code. `test` runs top-level `.ject` files in `tests/` in sorted order;
-use `assert` and let any failure produce a non-zero exit. `build` checks source and runs
-Cargo for native components.
+does not execute code or build/load native artifacts. `test` builds native packages when
+needed, then runs top-level `.ject` files in `tests/` in sorted order. It runs every
+test, reports pass/fail counts, and exits nonzero if any fail. `run` also builds native
+packages before execution. `build` checks source and runs Cargo for native components.
 
 Registry and Git native packages build with Cargo's `--locked` flag. Commit
 `native/Cargo.lock` before publishing a mixed package.

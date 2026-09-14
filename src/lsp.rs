@@ -1170,6 +1170,9 @@ fn infer_expression_type(
             {
                 return types.get(&id).cloned().unwrap_or_else(|| "unknown".into());
             }
+            if crate::stdlib::CORE_CONSTANT_NAMES.contains(&name.as_str()) {
+                return "float".into();
+            }
         }
     }
     if matches!(tokens.first(), Some(Token::New)) {
@@ -1969,7 +1972,9 @@ fn completion_items(
         return exported_completion_items(indexes, uri, module);
     }
 
-    let mut items = Vec::with_capacity(KEYWORDS.len() + BUILTINS.len());
+    let mut items = Vec::with_capacity(
+        KEYWORDS.len() + BUILTINS.len() + crate::stdlib::CORE_CONSTANT_NAMES.len(),
+    );
     items.extend(KEYWORDS.iter().map(|name| CompletionItem {
         label: (*name).into(),
         kind: Some(CompletionItemKind::KEYWORD),
@@ -1981,6 +1986,16 @@ fn completion_items(
         detail: Some(builtin_signature(name).into()),
         ..CompletionItem::default()
     }));
+    items.extend(
+        crate::stdlib::CORE_CONSTANT_NAMES
+            .iter()
+            .map(|name| CompletionItem {
+                label: (*name).into(),
+                kind: Some(CompletionItemKind::CONSTANT),
+                detail: Some("core constant: float".into()),
+                ..CompletionItem::default()
+            }),
+    );
     let Some(index) = indexes.get(uri) else {
         return items;
     };
@@ -2403,6 +2418,31 @@ mod tests {
         assert_eq!(details["check"], "let check: boolean");
         assert_eq!(details["text"], "let text: string");
         assert_eq!(details["items"], "let items: array");
+    }
+
+    #[test]
+    fn special_float_constants_are_typed_and_completed() {
+        let source = "let positive = inf\nlet missing = nan\nna";
+        let index = index_document(source);
+        assert!(index.occurrences.iter().any(|item| {
+            item.name == "positive" && item.detail.as_deref() == Some("let positive: float")
+        }));
+        assert!(index.occurrences.iter().any(|item| {
+            item.name == "missing" && item.detail.as_deref() == Some("let missing: float")
+        }));
+
+        let uri = Url::parse("file:///tmp/special-floats.ject").unwrap();
+        let indexes = HashMap::from([(uri.clone(), index)]);
+        let documents = HashMap::from([(uri.clone(), source.into())]);
+        let completions = completion_items(&indexes, &documents, &uri, Position::new(2, 2));
+        for name in ["inf", "nan"] {
+            assert!(completions.iter().any(|item| {
+                item.label == name && item.kind == Some(CompletionItemKind::CONSTANT)
+            }));
+        }
+        assert!(!completions
+            .iter()
+            .any(|item| item.label == "PI" || item.label == "E"));
     }
 
     #[test]
