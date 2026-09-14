@@ -46,10 +46,10 @@ mod tests {
     }
 
     #[test]
-    fn core_constants_cannot_be_reassigned() {
-        for source in ["PI = 3", "E = 2"] {
+    fn math_constants_are_not_implicit_globals() {
+        for source in ["print PI", "print E"] {
             let error = run(source).unwrap_err();
-            assert!(error.contains("constant"), "{source}: {error}");
+            assert!(error.contains("Undefined variable"), "{source}: {error}");
         }
     }
 
@@ -1031,9 +1031,10 @@ print PI
     fn test_import_with_alias() {
         let result = run(r#"
 import "math" as m
-print m.PI
+assert(m.PI > 3.14 and m.PI < 3.15, "math.PI")
+assert(m.E > 2.71 and m.E < 2.72, "math.E")
 "#);
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok(), "aliased math constants failed: {result:?}");
     }
 
     #[test]

@@ -1,5 +1,8 @@
 import "../src/lib" as numbers
 
+assert(numbers.PI > 3.14 and numbers.PI < 3.15, "jnum.PI is exported")
+assert(numbers.E > 2.71 and numbers.E < 2.72, "jnum.E is exported")
+
 let values = numbers.arange(1, 6)
 assert(numbers.shape(values) == [5], "arange shape")
 assert(numbers.to_array(values) == [1.0, 2.0, 3.0, 4.0, 5.0], "arange values")

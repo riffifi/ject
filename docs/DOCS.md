@@ -1,6 +1,6 @@
 # The Ject guide
 
-This is the user guide and language reference for Ject 0.10.0. It starts with the
+This is the user guide and language reference for Ject 0.11.0. It starts with the
 smallest useful programs, then builds toward modules, packages, editor tooling, and
 the complete syntax. Package authors who need Rust should continue with
 [Packages and native libraries](PACKAGES.md).
@@ -651,6 +651,10 @@ import "datetime" as datetime
 import "http" as http
 import "color" as color
 ```
+
+Mathematical constants are library values, not implicit globals. Use `math.PI`
+and `math.E`, or import them explicitly with `import {PI, E} from "math"`.
+The `jnum` package exports its own `PI` and `E` alongside its numerical API.
 
 JGUI and JNUM are installable mixed packages, not hardcoded interpreter modules. Add
 them as dependencies before importing them.

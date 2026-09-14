@@ -468,9 +468,14 @@ print upper("hello")
     }
 
     #[test]
-    fn test_builtin_constant_no_error() {
+    fn math_constants_require_an_import() {
+        let (missing, _) = lint("print PI\nprint E");
+        assert!(missing.iter().any(|error| error.contains("PI")));
+        assert!(missing.iter().any(|error| error.contains("E")));
+
         let (errors, _) = lint(
             r#"
+import {PI, E} from "math"
 print PI
 print E
 "#,
@@ -479,9 +484,16 @@ print E
     }
 
     #[test]
-    fn builtin_constants_are_immutable() {
-        let (errors, _) = lint("PI = 3");
+    fn imported_math_constants_are_immutable() {
+        let (errors, _) = lint("import {PI} from \"math\"\nPI = 3");
         assert!(errors.iter().any(|error| error.contains("constant")));
+    }
+
+    #[test]
+    fn exported_math_constants_do_not_redeclare_core_bindings() {
+        let (errors, warnings) = lint("export const PI = 3.14\nexport const E = 2.71");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     // ========== Import Tests ==========

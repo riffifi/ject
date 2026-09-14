@@ -679,7 +679,8 @@ assert(2 + 2 == 5, "this should fail")
     #[test]
     fn test_pi_constant() {
         let result = run(r#"
-assert(PI > 3.14 and PI < 3.15, "PI should be approximately 3.14")
+import "math" as math
+assert(math.PI > 3.14 and math.PI < 3.15, "PI should be approximately 3.14")
 "#);
         assert!(result.is_ok());
     }
@@ -687,9 +688,20 @@ assert(PI > 3.14 and PI < 3.15, "PI should be approximately 3.14")
     #[test]
     fn test_e_constant() {
         let result = run(r#"
-assert(E > 2.71 and E < 2.72, "E should be approximately 2.71")
+import "math" as math
+assert(math.E > 2.71 and math.E < 2.72, "E should be approximately 2.71")
 "#);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn math_functions_see_their_module_constants() {
+        let result = run(r#"
+import "math" as math
+assert(abs(math.deg_to_rad(180) - math.PI) < 0.000001, "angle conversion uses math.PI")
+assert(math.sinh(0) == 0, "hyperbolic functions use math.E")
+"#);
+        assert!(result.is_ok(), "{result:?}");
     }
 
     // ========== Edge Cases ==========

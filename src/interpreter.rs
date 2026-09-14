@@ -161,11 +161,7 @@ impl Interpreter {
         // Load CorLib (core library - always available)
         let corlib = crate::stdlib::create_corlib();
         for (name, value) in corlib {
-            if matches!(name.as_str(), "PI" | "E") {
-                environment.define_const(name, value);
-            } else {
-                environment.define(name, value);
-            }
+            environment.define(name, value);
         }
 
         // Note: Standard library modules are now loaded via import statements
@@ -1908,11 +1904,7 @@ impl Interpreter {
         // Load standard library into module environment
         let stdlib = crate::stdlib::create_stdlib();
         for (name, value) in stdlib {
-            if matches!(name.as_str(), "PI" | "E") {
-                module_env.define_const(name, value);
-            } else {
-                module_env.define(name, value);
-            }
+            module_env.define(name, value);
         }
 
         let module_file_stem = if module_file_path.starts_with("<embedded:") {

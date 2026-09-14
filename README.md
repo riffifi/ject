@@ -4,7 +4,7 @@ Ject is a small, dynamically typed language for scripts, applications, and libra
 It pairs readable, expression-friendly syntax with one tool for running code, checking
 projects, testing packages, managing dependencies, and building optional Rust extensions.
 
-The current language version is **0.10.0**.
+The current language version is **0.11.0**.
 
 ```ject
 const greeting = "Hello"

@@ -241,8 +241,6 @@ pub fn create_corlib() -> HashMap<String, Value> {
     );
 
     // ========== Constants ==========
-    corlib.insert("PI".to_string(), Value::Float(std::f64::consts::PI));
-    corlib.insert("E".to_string(), Value::Float(std::f64::consts::E));
     corlib.insert("inf".to_string(), Value::Float(f64::INFINITY));
     corlib.insert("nan".to_string(), Value::Float(f64::NAN));
 

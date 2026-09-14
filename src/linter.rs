@@ -97,8 +97,7 @@ impl Linter {
         }
         matches!(
             name,
-            "PI" | "E"
-                | "type_of"
+            "type_of"
                 | "to_int"
                 | "to_float"
                 | "to_string"
@@ -373,10 +372,6 @@ impl Linter {
         self.functions.insert("delete".to_string());
         self.functions.insert("keys".to_string());
         self.functions.insert("values".to_string());
-
-        // Constants (variables, not functions)
-        self.declare_constant("PI".to_string());
-        self.declare_constant("E".to_string());
 
         // ========== Module Functions (available via import) ==========
 

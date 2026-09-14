@@ -1,6 +1,9 @@
 # Enhanced Math Standard Library Module
 # Advanced mathematical functions written in pure Ject
-# Note: CorLib already provides: abs, sqrt, pow, sin, cos, tan, floor, ceil, round, min, max, log, log10, exp, PI, E
+# CorLib provides the primitive operations; mathematical constants live here.
+
+export const PI = 3.141592653589793
+export const E = 2.718281828459045
 
 # Additional constants
 export const PHI = 1.618033988749895  # Golden ratio

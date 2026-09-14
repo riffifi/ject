@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.0
+
+- Moved `PI` and `E` out of CorLib and into explicit `math` exports. `jnum`
+  retains its own exports, and unqualified constants now require an import.
+
 ## 0.10.0
 
 ### Bindings and pattern matching
