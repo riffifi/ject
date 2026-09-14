@@ -92,7 +92,7 @@ impl Linter {
     }
 
     fn should_skip_unused_warning(name: &str) -> bool {
-        if name.starts_with('_') {
+        if name.starts_with('_') || crate::stdlib::CORE_CONSTANT_NAMES.contains(&name) {
             return true;
         }
         matches!(
@@ -372,6 +372,10 @@ impl Linter {
         self.functions.insert("delete".to_string());
         self.functions.insert("keys".to_string());
         self.functions.insert("values".to_string());
+
+        for name in crate::stdlib::CORE_CONSTANT_NAMES {
+            self.declare_constant((*name).to_string());
+        }
 
         // ========== Module Functions (available via import) ==========
 

@@ -496,6 +496,21 @@ print E
         assert!(warnings.is_empty(), "{warnings:?}");
     }
 
+    #[test]
+    fn special_float_constants_are_known_and_immutable() {
+        let (errors, warnings) = lint("assert(inf > 1)\nassert(nan != nan)");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        for source in ["inf = 3", "nan = 2"] {
+            let (errors, _) = lint(source);
+            assert!(
+                errors.iter().any(|error| error.contains("constant")),
+                "{source}: {errors:?}"
+            );
+        }
+    }
+
     // ========== Import Tests ==========
 
     #[test]

@@ -7,6 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEED: AtomicU64 = AtomicU64::new(0);
 
+/// Special floating-point values available without importing a math library.
+pub const CORE_CONSTANT_NAMES: &[&str] = &["inf", "nan"];
+
 thread_local! {
     static SCRIPT_ARGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }

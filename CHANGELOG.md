@@ -4,6 +4,8 @@
 
 - Moved `PI` and `E` out of CorLib and into explicit `math` exports. `jnum`
   retains its own exports, and unqualified constants now require an import.
+- Made core `inf` and `nan` immutable and visible to the checker, matching their
+  runtime status as special floating-point constants.
 
 ## 0.10.0
 

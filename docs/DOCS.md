@@ -655,6 +655,7 @@ import "color" as color
 Mathematical constants are library values, not implicit globals. Use `math.PI`
 and `math.E`, or import them explicitly with `import {PI, E} from "math"`.
 The `jnum` package exports its own `PI` and `E` alongside its numerical API.
+The special float values `inf` and `nan` remain immutable core constants.
 
 JGUI and JNUM are installable mixed packages, not hardcoded interpreter modules. Add
 them as dependencies before importing them.

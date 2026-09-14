@@ -54,6 +54,15 @@ mod tests {
     }
 
     #[test]
+    fn special_float_constants_are_immutable() {
+        assert!(run("assert(inf > 1000000)\nassert(nan != nan)").is_ok());
+        for source in ["inf = 3", "nan = 2"] {
+            let error = run(source).unwrap_err();
+            assert!(error.contains("constant"), "{source}: {error}");
+        }
+    }
+
+    #[test]
     fn assignment_through_a_constant_binding_is_rejected() {
         for source in [
             "const values = [1]\nvalues[0] = 2",
