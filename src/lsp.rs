@@ -25,40 +25,6 @@ const KEYWORDS: &[&str] = &[
     "to",
 ];
 
-const BUILTINS: &[&str] = &[
-    "type_of",
-    "to_int",
-    "to_float",
-    "to_string",
-    "to_bool",
-    "len",
-    "range",
-    "push",
-    "pop",
-    "sum",
-    "contains",
-    "index_of",
-    "first",
-    "last",
-    "slice",
-    "sort",
-    "reverse",
-    "unique",
-    "map",
-    "filter",
-    "reduce",
-    "abs",
-    "sqrt",
-    "pow",
-    "min",
-    "max",
-    "print",
-    "input",
-    "read_file",
-    "write_file",
-    "file_exists",
-];
-
 struct Backend {
     client: Client,
     documents: RwLock<HashMap<Url, String>>,
@@ -388,7 +354,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let indexes = self.indexes.read().await;
-        let description = if BUILTINS.contains(&word.as_str()) {
+        let description = if crate::stdlib::is_corlib_function(&word) {
             format!(
                 "```ject\n{}\n```\n\nJect built-in function",
                 builtin_signature(&word)
@@ -1237,13 +1203,16 @@ fn infer_expression_type(
 
 fn builtin_return_type(name: &str) -> Option<&'static str> {
     Some(match name {
-        "type_of" | "to_string" | "input" | "read_file" => "string",
-        "to_int" | "len" | "index_of" => "integer",
-        "to_float" | "sqrt" => "float",
-        "to_bool" | "contains" | "file_exists" => "boolean",
-        "range" | "push" | "pop" | "sort" | "reverse" | "unique" | "map" | "filter" => "array",
+        "type_of" | "to_string" | "input" | "read_file" | "upper" | "lower" | "trim" | "join"
+        | "replace" | "char_at" | "substring" | "repeat" => "string",
+        "to_int" | "len" | "index_of" | "floor" | "ceil" | "round" | "random_int" => "integer",
+        "to_float" | "sqrt" | "sin" | "cos" | "tan" | "random" => "float",
+        "to_bool" | "contains" | "file_exists" | "is_file" | "is_dir" | "has_key" => "boolean",
+        "range" | "push" | "sort" | "reverse" | "unique" | "map" | "filter" | "split"
+        | "read_lines" | "list_dir" | "keys" | "values" => "array",
+        "delete" => "dictionary",
         "sum" | "pow" | "min" | "max" | "abs" => "number",
-        "write_file" | "print" => "nil",
+        "write_file" | "append_file" | "print" | "mkdir" | "remove_file" | "assert" => "nil",
         _ => return None,
     })
 }
@@ -1271,14 +1240,46 @@ fn builtin_signature(name: &str) -> &'static str {
         "map" => "map(array, function) -> array",
         "filter" => "filter(array, predicate) -> array",
         "reduce" => "reduce(array, function, initial) -> any",
+        "abs" => "abs(number) -> number",
         "sqrt" => "sqrt(number) -> float",
         "pow" => "pow(base, exponent) -> number",
+        "sin" => "sin(number) -> float",
+        "cos" => "cos(number) -> float",
+        "tan" => "tan(number) -> float",
+        "floor" => "floor(number) -> integer",
+        "ceil" => "ceil(number) -> integer",
+        "round" => "round(number) -> integer",
+        "min" => "min(...numbers) -> number",
+        "max" => "max(...numbers) -> number",
+        "random" => "random() -> float",
+        "random_int" => "random_int(min, max) -> integer",
+        "upper" => "upper(string) -> string",
+        "lower" => "lower(string) -> string",
+        "trim" => "trim(string) -> string",
+        "split" => "split(string, delimiter) -> array",
+        "join" => "join(array, delimiter) -> string",
+        "replace" => "replace(string, pattern, replacement) -> string",
+        "char_at" => "char_at(string, index) -> string",
+        "substring" => "substring(string, start, end?) -> string",
+        "repeat" => "repeat(string, count) -> string",
         "print" => "print(...values)",
         "input" => "input(prompt?) -> string",
         "read_file" => "read_file(path) -> string",
         "write_file" => "write_file(path, content) -> nil",
+        "append_file" => "append_file(path, content) -> nil",
+        "read_lines" => "read_lines(path) -> array",
         "file_exists" => "file_exists(path) -> boolean",
-        _ => "builtin(...)",
+        "is_file" => "is_file(path) -> boolean",
+        "is_dir" => "is_dir(path) -> boolean",
+        "list_dir" => "list_dir(path) -> array",
+        "mkdir" => "mkdir(path) -> nil",
+        "remove_file" => "remove_file(path) -> nil",
+        "assert" => "assert(condition, message?) -> nil",
+        "has_key" => "has_key(dictionary, key) -> boolean",
+        "delete" => "delete(dictionary, key) -> any",
+        "keys" => "keys(dictionary) -> array",
+        "values" => "values(dictionary) -> array",
+        _ => "builtin(...) -> unknown",
     }
 }
 
@@ -1714,7 +1715,7 @@ fn signature_help_at(
 ) -> Option<SignatureHelp> {
     let source = documents.get(uri)?;
     let (callee, callee_position, active_parameter) = call_context(source, position)?;
-    let label = if !callee.contains('.') && BUILTINS.contains(&callee.as_str()) {
+    let label = if !callee.contains('.') && crate::stdlib::is_corlib_function(&callee) {
         builtin_signature(&callee).to_owned()
     } else {
         let identity = symbol_identity_at(indexes, documents, uri, callee_position)?;
@@ -1972,16 +1973,17 @@ fn completion_items(
         return exported_completion_items(indexes, uri, module);
     }
 
+    let builtins = crate::stdlib::corlib_function_names();
     let mut items = Vec::with_capacity(
-        KEYWORDS.len() + BUILTINS.len() + crate::stdlib::CORE_CONSTANT_NAMES.len(),
+        KEYWORDS.len() + builtins.len() + crate::stdlib::CORE_CONSTANT_NAMES.len(),
     );
     items.extend(KEYWORDS.iter().map(|name| CompletionItem {
         label: (*name).into(),
         kind: Some(CompletionItemKind::KEYWORD),
         ..CompletionItem::default()
     }));
-    items.extend(BUILTINS.iter().map(|name| CompletionItem {
-        label: (*name).into(),
+    items.extend(builtins.iter().map(|name| CompletionItem {
+        label: name.clone(),
         kind: Some(CompletionItemKind::FUNCTION),
         detail: Some(builtin_signature(name).into()),
         ..CompletionItem::default()
@@ -2393,6 +2395,26 @@ mod tests {
             .unwrap();
         assert_eq!(answer.kind, Some(CompletionItemKind::CONSTANT));
         assert_eq!(answer.detail.as_deref(), Some("const answer: integer"));
+    }
+
+    #[test]
+    fn completion_uses_the_runtime_corlib_catalog() {
+        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let source = "";
+        let indexes = HashMap::from([(uri.clone(), index_document(source))]);
+        let documents = HashMap::from([(uri.clone(), source.into())]);
+        let completions = completion_items(&indexes, &documents, &uri, Position::new(0, 0));
+        let function_names = completions
+            .iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::FUNCTION))
+            .map(|item| item.label.as_str())
+            .collect::<HashSet<_>>();
+
+        for name in crate::stdlib::corlib_function_names() {
+            assert!(function_names.contains(name.as_str()), "missing {name}");
+            assert_ne!(builtin_signature(&name), "builtin(...) -> unknown");
+        }
+        assert!(!function_names.contains("gcd"));
     }
 
     #[test]

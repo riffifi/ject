@@ -283,7 +283,7 @@ impl Linter {
     }
 
     pub fn new() -> Self {
-        let mut linter = Linter {
+        Linter {
             scopes: vec![HashMap::new()], // Global scope
             warnings: Vec::new(),
             errors: Vec::new(),
@@ -297,252 +297,26 @@ impl Linter {
             source_path: std::env::current_dir().unwrap_or_default(),
             module_interfaces: RefCell::new(HashMap::new()),
             source_overrides: HashMap::new(),
-        };
-
-        // Add built-in functions to the functions set
-        linter.add_builtin_functions();
-        linter
+        }
     }
 
     fn add_builtin_functions(&mut self) {
-        // ========== CorLib Functions (always available) ==========
+        self.functions
+            .extend(crate::stdlib::corlib_function_names());
 
-        // Type inspection & conversion
-        self.functions.insert("type_of".to_string());
-        self.functions.insert("to_int".to_string());
-        self.functions.insert("to_float".to_string());
-        self.functions.insert("to_string".to_string());
-        self.functions.insert("to_bool".to_string());
-
-        // Collection primitives
-        self.functions.insert("len".to_string());
-        self.functions.insert("range".to_string());
-        self.functions.insert("push".to_string());
-        self.functions.insert("pop".to_string());
-
-        // Array primitives
-        self.functions.insert("sum".to_string());
-        self.functions.insert("contains".to_string());
-        self.functions.insert("index_of".to_string());
-        self.functions.insert("first".to_string());
-        self.functions.insert("last".to_string());
-        self.functions.insert("sort".to_string());
-        self.functions.insert("reverse".to_string());
-        self.functions.insert("unique".to_string());
-
-        // Higher-order functions
-        self.functions.insert("map".to_string());
-        self.functions.insert("filter".to_string());
-        self.functions.insert("reduce".to_string());
-
-        // Math primitives
-        self.functions.insert("abs".to_string());
-        self.functions.insert("sqrt".to_string());
-        self.functions.insert("pow".to_string());
-        self.functions.insert("sin".to_string());
-        self.functions.insert("cos".to_string());
-        self.functions.insert("tan".to_string());
-        self.functions.insert("floor".to_string());
-        self.functions.insert("ceil".to_string());
-        self.functions.insert("round".to_string());
-        self.functions.insert("min".to_string());
-        self.functions.insert("max".to_string());
-        self.functions.insert("random".to_string());
-
-        // String primitives
-        self.functions.insert("upper".to_string());
-        self.functions.insert("lower".to_string());
-        self.functions.insert("trim".to_string());
-        self.functions.insert("split".to_string());
-        self.functions.insert("join".to_string());
-        self.functions.insert("replace".to_string());
-        self.functions.insert("char_at".to_string());
-        self.functions.insert("substring".to_string());
-        self.functions.insert("repeat".to_string());
-
-        // I/O primitives
-        self.functions.insert("input".to_string());
-        self.functions.insert("print".to_string());
-        self.functions.insert("read_file".to_string());
-        self.functions.insert("write_file".to_string());
-        self.functions.insert("append_file".to_string());
-        self.functions.insert("read_lines".to_string());
-
-        // Testing
-        self.functions.insert("assert".to_string());
-        self.functions.insert("has_key".to_string());
-        self.functions.insert("delete".to_string());
-        self.functions.insert("keys".to_string());
-        self.functions.insert("values".to_string());
+        if let Some(module_stem) = self.source_path.file_stem().and_then(|stem| stem.to_str()) {
+            self.functions.extend(
+                crate::stdlib::inject_module_file_builtins(module_stem)
+                    .into_iter()
+                    .filter_map(|(name, value)| {
+                        matches!(value, crate::value::Value::BuiltinFunction(_)).then_some(name)
+                    }),
+            );
+        }
 
         for name in crate::stdlib::CORE_CONSTANT_NAMES {
             self.declare_constant((*name).to_string());
         }
-
-        // ========== Module Functions (available via import) ==========
-
-        // Math module (import "math")
-        self.functions.insert("log".to_string());
-        self.functions.insert("log10".to_string());
-        self.functions.insert("exp".to_string());
-        self.functions.insert("log2".to_string());
-        self.functions.insert("ln".to_string());
-        self.functions.insert("degrees".to_string());
-        self.functions.insert("radians".to_string());
-        self.functions.insert("deg_to_rad".to_string());
-        self.functions.insert("rad_to_deg".to_string());
-        self.functions.insert("clamp".to_string());
-        self.functions.insert("sign".to_string());
-        self.functions.insert("gcd".to_string());
-        self.functions.insert("lcm".to_string());
-        self.functions.insert("asin".to_string());
-        self.functions.insert("acos".to_string());
-        self.functions.insert("atan".to_string());
-        self.functions.insert("atan2".to_string());
-        self.functions.insert("sinh".to_string());
-        self.functions.insert("cosh".to_string());
-        self.functions.insert("tanh".to_string());
-        self.functions.insert("round_to".to_string());
-
-        // String module (import "string")
-        self.functions.insert("capitalize".to_string());
-        self.functions.insert("title_case".to_string());
-        self.functions.insert("trim_left".to_string());
-        self.functions.insert("trim_right".to_string());
-        self.functions.insert("pad_left".to_string());
-        self.functions.insert("pad_right".to_string());
-        self.functions.insert("pad_center".to_string());
-        self.functions.insert("starts_with".to_string());
-        self.functions.insert("ends_with".to_string());
-        self.functions.insert("contains_str".to_string());
-        self.functions.insert("count".to_string());
-        self.functions.insert("find".to_string());
-        self.functions.insert("replace_all".to_string());
-        self.functions.insert("replace_first".to_string());
-        self.functions.insert("remove".to_string());
-        self.functions.insert("repeat".to_string());
-        self.functions.insert("reverse_str".to_string());
-        self.functions.insert("left".to_string());
-        self.functions.insert("right".to_string());
-        self.functions.insert("truncate".to_string());
-        self.functions.insert("is_empty".to_string());
-        self.functions.insert("is_numeric".to_string());
-        self.functions.insert("is_alpha".to_string());
-        self.functions.insert("is_alphanumeric".to_string());
-        self.functions.insert("word_count".to_string());
-        self.functions.insert("sentence_count".to_string());
-        self.functions.insert("paragraph_count".to_string());
-        self.functions.insert("lines".to_string());
-        self.functions.insert("extract_numbers".to_string());
-        self.functions.insert("to_char_codes".to_string());
-        self.functions.insert("from_char_codes".to_string());
-        self.functions.insert("format".to_string());
-        self.functions.insert("escape".to_string());
-        self.functions.insert("unescape".to_string());
-        self.functions.insert("wrap_text".to_string());
-
-        // Array module (import "array")
-        self.functions.insert("any".to_string());
-        self.functions.insert("all".to_string());
-        self.functions.insert("average".to_string());
-        self.functions.insert("median".to_string());
-        self.functions.insert("slice".to_string());
-        self.functions.insert("take".to_string());
-        self.functions.insert("drop".to_string());
-        self.functions.insert("initial".to_string());
-        self.functions.insert("rest".to_string());
-        self.functions.insert("concat".to_string());
-        self.functions.insert("zip".to_string());
-        self.functions.insert("union".to_string());
-        self.functions.insert("intersection".to_string());
-        self.functions.insert("difference".to_string());
-        self.functions.insert("flatten".to_string());
-        self.functions.insert("chunk".to_string());
-        self.functions.insert("group_by".to_string());
-        self.functions.insert("partition".to_string());
-        self.functions.insert("shuffle".to_string());
-        self.functions.insert("rotate_left".to_string());
-        self.functions.insert("rotate_right".to_string());
-        self.functions.insert("insert_at".to_string());
-        self.functions.insert("remove_at".to_string());
-        self.functions.insert("without".to_string());
-        self.functions.insert("compact".to_string());
-        self.functions.insert("compact_unique".to_string());
-        self.functions.insert("enumerate".to_string());
-        self.functions.insert("fill".to_string());
-        self.functions.insert("range_arr".to_string());
-        self.functions.insert("sample".to_string());
-        self.functions.insert("sort_by".to_string());
-        self.functions.insert("to_uarray".to_string());
-        self.functions.insert("to_array".to_string());
-
-        // IO module (import "io")
-        // read_file, write_file already in CorLib
-
-        // JSON module (import "json")
-        self.functions.insert("parse_json".to_string());
-        self.functions.insert("to_json".to_string());
-
-        // System module (import "system")
-        self.functions.insert("env".to_string());
-        self.functions.insert("exit".to_string());
-        self.functions.insert("args".to_string());
-        self.functions.insert("cwd".to_string());
-        self.functions.insert("_change_dir".to_string());
-        self.functions.insert("_run_process".to_string());
-        for name in [
-            "_file_exists",
-            "_is_file",
-            "_is_dir",
-            "_list_dir",
-            "_mkdir",
-            "_remove_file",
-            "_read_bytes",
-            "_write_bytes",
-            "_request",
-            "_args",
-            "_to_json_pretty",
-        ] {
-            self.functions.insert(name.to_string());
-        }
-        self.functions.insert("now".to_string());
-        self.functions.insert("timestamp".to_string());
-        self.functions.insert("sleep".to_string());
-
-        // Base module (import "base")
-        self.functions.insert("to_binary".to_string());
-        self.functions.insert("to_octal".to_string());
-        self.functions.insert("to_hex".to_string());
-        self.functions.insert("from_binary".to_string());
-        self.functions.insert("from_octal".to_string());
-        self.functions.insert("from_hex".to_string());
-        self.functions.insert("base_repr".to_string());
-        self.functions.insert("from_base".to_string());
-
-        // Additional utility functions
-        self.functions.insert("random_int".to_string());
-        self.functions.insert("random_float".to_string());
-        self.functions.insert("println".to_string());
-
-        // System utilities
-        self.functions.insert("exec".to_string());
-        self.functions.insert("file_exists".to_string());
-        self.functions.insert("is_file".to_string());
-        self.functions.insert("is_dir".to_string());
-        self.functions.insert("list_dir".to_string());
-        self.functions.insert("mkdir".to_string());
-        self.functions.insert("remove_file".to_string());
-
-        // Collection functions
-        self.functions.insert("collection".to_string());
-        self.functions.insert("add_to".to_string());
-        self.functions.insert("remove_from".to_string());
-        self.functions.insert("has".to_string());
-        self.functions.insert("intersect".to_string());
-        self.functions.insert("size".to_string());
-        self.functions.insert("is_subset".to_string());
-        self.functions.insert("is_superset".to_string());
-        self.functions.insert("clear_collection".to_string());
     }
 
     pub fn with_tokens_and_source(

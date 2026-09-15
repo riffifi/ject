@@ -638,6 +638,10 @@ print  input  assert
 read_file  write_file  append_file
 ```
 
+This is a runtime-defined namespace, and the checker and language server consume
+that same catalog. A function from a module is not an implicit global: for example,
+use `math.gcd(12, 8)` after importing `math`, rather than calling `gcd` directly.
+
 Larger groups live in source modules:
 
 ```ject

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The checker and language server now derive CorLib names from the runtime
+  catalog. Module-only functions are no longer accepted without an import, and
+  completion, hover, and signature help cover every actual CorLib function.
 - JGUI now exposes headless document validation through its public facade and
   ABI v2 plugin, including callback, widget ID, count, and layout-depth checks.
   The packaged demo is documented as its opt-in display-backed smoke test.

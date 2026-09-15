@@ -401,6 +401,29 @@ pub fn create_corlib() -> HashMap<String, Value> {
     corlib
 }
 
+/// Stable, sorted catalog used by the checker, language server, and introspection.
+pub fn corlib_names() -> Vec<String> {
+    let mut names: Vec<_> = create_corlib().into_keys().collect();
+    names.sort();
+    names
+}
+
+/// Stable, sorted catalog of the callable names available without an import.
+pub fn corlib_function_names() -> Vec<String> {
+    let mut names: Vec<_> = create_corlib()
+        .into_iter()
+        .filter_map(|(name, value)| matches!(value, Value::BuiltinFunction(_)).then_some(name))
+        .collect();
+    names.sort();
+    names
+}
+
+pub fn is_corlib_function(name: &str) -> bool {
+    create_corlib()
+        .get(name)
+        .is_some_and(|value| matches!(value, Value::BuiltinFunction(_)))
+}
+
 /// Get math module functions (import "math")
 /// Advanced math functions NOT in CorLib - written in Ject
 pub fn get_math_module() -> HashMap<String, Value> {
@@ -1047,8 +1070,7 @@ pub fn embedded_stdlib_module_source(name: &str) -> Option<&'static str> {
 
 /// JSON-friendly introspection for editors and CI drift checks.
 pub fn introspect_native_kernel_json() -> String {
-    let mut corlib_names: Vec<String> = create_corlib().keys().cloned().collect();
-    corlib_names.sort();
+    let corlib_names = corlib_names();
 
     let native_modules = vec!["base"];
     let inject_module_stems = vec![

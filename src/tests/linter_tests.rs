@@ -6,6 +6,10 @@ mod tests {
     use std::fs;
 
     fn lint(input: &str) -> (Vec<String>, Vec<String>) {
+        lint_at(input, None)
+    }
+
+    fn lint_at(input: &str, source_path: Option<&std::path::Path>) -> (Vec<String>, Vec<String>) {
         let mut lexer = Lexer::new(input);
         let located_tokens = lexer.tokenize_with_positions();
         let tokens: Vec<_> = located_tokens.into_iter().map(|lt| lt.token).collect();
@@ -13,6 +17,9 @@ mod tests {
         let statements = parser.parse().unwrap();
 
         let mut linter = Linter::new();
+        if let Some(path) = source_path {
+            linter = linter.with_source_path(path);
+        }
         let (diagnostics, _) = linter.lint(&statements);
 
         let errors: Vec<String> = diagnostics
@@ -132,6 +139,23 @@ mod tests {
         );
         assert!(errors.is_empty(), "unexpected errors: {errors:?}");
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    }
+
+    #[test]
+    fn module_functions_are_not_implicit_globals() {
+        let (errors, _) = lint("gcd(6, 3)");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("undefined variable `gcd`")),
+            "unexpected errors: {errors:?}"
+        );
+
+        let (errors, _) = lint("print sin(0)");
+        assert!(
+            errors.is_empty(),
+            "CorLib function was rejected: {errors:?}"
+        );
     }
 
     // ========== Unused Variable Tests ==========
@@ -391,7 +415,8 @@ end
 
     #[test]
     fn math_stdlib_has_no_unused_bindings() {
-        let (errors, warnings) = lint(include_str!("../../stdlib/math.ject"));
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("stdlib/math.ject");
+        let (errors, warnings) = lint_at(include_str!("../../stdlib/math.ject"), Some(&path));
         assert!(errors.is_empty(), "{errors:?}");
         assert!(warnings.is_empty(), "{warnings:?}");
     }
