@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- JSON serialization now detects cyclic arrays and dictionaries and rejects
+  excessive nesting instead of risking a stack overflow.
 - `io.list_dir` now reports non-UTF-8 filenames instead of returning lossy
   names that cannot be used to reopen the files.
 - HTTP calls now accept a per-request response-byte budget up to the existing

@@ -742,7 +742,10 @@ Text files still use `read_file` and `write_file`.
 `json.parse_json(text)` turns JSON objects into Ject dictionaries, including nested
 objects. `json.is_valid_json(text)` returns true for every valid JSON value (including
 `null`) and false for malformed input. `json.to_json_pretty(value, indent=2)`
-formats with 0 to 16 spaces per level.
+formats with 0 to 16 spaces per level. JSON conversion rejects cyclic arrays and
+dictionaries and values nested more than 128 levels deep with a runtime error.
+Sharing the same array or dictionary in separate branches is allowed when it does
+not form a cycle.
 
 The blocking HTTP module covers ordinary HTTP(S) requests:
 

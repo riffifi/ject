@@ -992,6 +992,45 @@ assert(string.contains_str(pretty, "\n        \"item\": 1"), "nested indent shou
         assert!(invalid.unwrap_err().contains("indent must be from 0 to 16"));
     }
 
+    #[test]
+    fn json_conversion_rejects_cycles_and_excessive_depth() {
+        for (source, expected) in [
+            (
+                "let value = {}\nvalue.self = value\njson.to_json(value)",
+                "cyclic dictionary",
+            ),
+            (
+                "let value = [nil]\nvalue[0] = value\njson.to_json_pretty(value)",
+                "cyclic array",
+            ),
+        ] {
+            let result = run(&format!("import \"json\" as json\n{source}"));
+            let error = result.unwrap_err();
+            assert!(error.contains(expected), "{error}");
+        }
+
+        let result = run(r#"
+import "json" as json
+let shared = {value: 1}
+let encoded = json.to_json({left: shared, right: shared})
+let decoded = json.parse_json(encoded)
+assert(decoded.left.value == 1 and decoded.right.value == 1, "shared values are not cycles")
+"#);
+        assert!(result.is_ok(), "{result:?}");
+
+        let result = run(r#"
+import "json" as json
+let root = {}
+let current = root
+for _ in 0..140 do
+    current.next = {}
+    current = current.next
+end
+json.to_json(root)
+"#);
+        assert!(result.unwrap_err().contains("maximum depth"));
+    }
+
     fn serve_http_once(status: &str, body: &[u8]) -> (String, std::thread::JoinHandle<Vec<u8>>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

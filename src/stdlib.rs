@@ -2,7 +2,7 @@ use crate::interpreter::RuntimeError;
 use crate::value::Value;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -3661,6 +3661,21 @@ fn json_to_ject_value(json_value: serde_json::Value) -> Value {
 
 // Helper function to convert Ject Value to serde_json::Value
 fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeError> {
+    ject_value_to_json_inner(ject_value, 0, &mut HashSet::new())
+}
+
+const MAX_JSON_DEPTH: usize = 128;
+
+fn ject_value_to_json_inner(
+    ject_value: &Value,
+    depth: usize,
+    active_containers: &mut HashSet<(u8, usize)>,
+) -> Result<serde_json::Value, RuntimeError> {
+    if depth > MAX_JSON_DEPTH {
+        return Err(RuntimeError {
+            message: format!("JSON conversion exceeds the maximum depth of {MAX_JSON_DEPTH}"),
+        });
+    }
     match ject_value {
         Value::StructInstance {
             struct_name,
@@ -3673,7 +3688,10 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
                 serde_json::Value::String(struct_name.clone()),
             );
             for (key, value) in fields {
-                json_obj.insert(key.clone(), ject_value_to_json(value)?);
+                json_obj.insert(
+                    key.clone(),
+                    ject_value_to_json_inner(value, depth + 1, active_containers)?,
+                );
             }
             Ok(serde_json::Value::Object(json_obj))
         }
@@ -3706,8 +3724,18 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
         }
         Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         Value::Array(arr) => {
-            let json_array: Result<Vec<serde_json::Value>, RuntimeError> =
-                arr.borrow().iter().map(ject_value_to_json).collect();
+            let identity = (0, std::rc::Rc::as_ptr(arr) as usize);
+            if !active_containers.insert(identity) {
+                return Err(RuntimeError {
+                    message: "Cannot convert cyclic array to JSON".to_string(),
+                });
+            }
+            let json_array: Result<Vec<serde_json::Value>, RuntimeError> = arr
+                .borrow()
+                .iter()
+                .map(|value| ject_value_to_json_inner(value, depth + 1, active_containers))
+                .collect();
+            active_containers.remove(&identity);
             match json_array {
                 Ok(json_arr) => Ok(serde_json::Value::Array(json_arr)),
                 Err(e) => Err(e),
@@ -3715,19 +3743,35 @@ fn ject_value_to_json(ject_value: &Value) -> Result<serde_json::Value, RuntimeEr
         }
         Value::UniqueArray(arr) => {
             // UniqueArray converts to regular JSON array
-            let json_array: Result<Vec<serde_json::Value>, RuntimeError> =
-                arr.iter().map(ject_value_to_json).collect();
+            let json_array: Result<Vec<serde_json::Value>, RuntimeError> = arr
+                .iter()
+                .map(|value| ject_value_to_json_inner(value, depth + 1, active_containers))
+                .collect();
             match json_array {
                 Ok(json_arr) => Ok(serde_json::Value::Array(json_arr)),
                 Err(e) => Err(e),
             }
         }
         Value::Dictionary(dict) => {
+            let identity = (1, std::rc::Rc::as_ptr(dict) as usize);
+            if !active_containers.insert(identity) {
+                return Err(RuntimeError {
+                    message: "Cannot convert cyclic dictionary to JSON".to_string(),
+                });
+            }
             let mut json_obj = serde_json::Map::new();
             for (key, value) in dict.borrow().iter() {
-                let json_value = ject_value_to_json(value)?;
+                let json_value = match ject_value_to_json_inner(value, depth + 1, active_containers)
+                {
+                    Ok(value) => value,
+                    Err(error) => {
+                        active_containers.remove(&identity);
+                        return Err(error);
+                    }
+                };
                 json_obj.insert(key.clone(), json_value);
             }
+            active_containers.remove(&identity);
             Ok(serde_json::Value::Object(json_obj))
         }
         Value::Collection(set) => {
