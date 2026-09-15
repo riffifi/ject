@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- JGUI now exposes headless document validation through its public facade and
+  ABI v2 plugin, including callback, widget ID, count, and layout-depth checks.
+  The packaged demo is documented as its opt-in display-backed smoke test.
 - Native ABI wire-tag keys are now reserved in ordinary dictionaries, preventing
   forged resource and callback handles. JNUM bounds array allocations and rejects
   non-finite or non-advancing ranges, including output allocations from linear

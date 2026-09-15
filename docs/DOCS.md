@@ -98,7 +98,7 @@ The core runtime type names are:
 | Function | `fn(value) -> value` | `"function"` |
 
 Struct instances and native resources have their own runtime names. For example,
-JNUM exposes `ndarray` and JGUI exposes `jgui_window`.
+JNUM arrays report `ndarray`; other packages can define their own resource names.
 
 Integers and floats are intentionally distinct:
 
@@ -671,6 +671,9 @@ JGUI and JNUM are installable mixed packages, not hardcoded interpreter modules.
 them as dependencies before importing them.
 JNUM limits an array to 16,777,216 elements so malformed shapes and ranges fail
 with a native error instead of attempting an unbounded allocation.
+JGUI exposes `validate(document)` for headless checks of a declarative UI before
+opening a window. Validation includes themes, duplicate and missing widget IDs,
+callback values, a 10,000-widget limit, and a maximum layout depth of 64.
 
 For external commands, prefer `system.run_process(program, arguments=[], directory=nil,
 timeout_ms=nil, max_output_bytes=16777216)`:

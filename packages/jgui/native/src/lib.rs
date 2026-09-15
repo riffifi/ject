@@ -100,10 +100,15 @@ fn children(widget: &Value) -> &[Value] {
 }
 
 fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
+    const MAX_WIDGETS: usize = 10_000;
+    const MAX_LAYOUT_DEPTH: usize = 64;
+
     fn validate_widgets(
         widgets: &[Value],
         path: &str,
         ids: &mut HashSet<String>,
+        widget_count: &mut usize,
+        depth: usize,
     ) -> Result<(), String> {
         const KINDS: [&str; 28] = [
             "row",
@@ -135,7 +140,18 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
             "radio",
             "button",
         ];
+        if depth > MAX_LAYOUT_DEPTH {
+            return Err(format!(
+                "{path} exceeds the maximum layout depth of {MAX_LAYOUT_DEPTH}"
+            ));
+        }
         for (index, widget) in widgets.iter().enumerate() {
+            *widget_count = widget_count
+                .checked_add(1)
+                .ok_or("document contains too many widgets")?;
+            if *widget_count > MAX_WIDGETS {
+                return Err(format!("document contains more than {MAX_WIDGETS} widgets"));
+            }
             let location = format!("{path}[{index}]");
             let kind = widget
                 .get("kind")
@@ -143,6 +159,24 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
                 .ok_or_else(|| format!("{location}.kind must be a string"))?;
             if !KINDS.contains(&kind) {
                 return Err(format!("{location} has unknown widget kind '{kind}'"));
+            }
+            let requires_id = matches!(
+                kind,
+                "meter"
+                    | "value_text"
+                    | "text_input"
+                    | "password"
+                    | "multiline"
+                    | "checkbox"
+                    | "toggle"
+                    | "slider"
+                    | "number_input"
+                    | "select"
+                    | "radio"
+                    | "button"
+            );
+            if requires_id && widget.get("id").is_none() {
+                return Err(format!("{location}.id must be a non-empty string"));
             }
             if let Some(id) = widget.get("id") {
                 let id = id
@@ -153,11 +187,26 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
                     return Err(format!("{location}.id duplicates '{id}'"));
                 }
             }
+            for callback_key in ["on_change", "on_click"] {
+                if let Some(value) = widget.get(callback_key) {
+                    if !value.is_null() && ject_native::callback_id(value).is_none() {
+                        return Err(format!(
+                            "{location}.{callback_key} must be a callback or nil"
+                        ));
+                    }
+                }
+            }
             if let Some(children) = widget.get("children") {
                 let children = children
                     .as_array()
                     .ok_or_else(|| format!("{location}.children must be an array"))?;
-                validate_widgets(children, &format!("{location}.children"), ids)?;
+                validate_widgets(
+                    children,
+                    &format!("{location}.children"),
+                    ids,
+                    widget_count,
+                    depth + 1,
+                )?;
             }
         }
         Ok(())
@@ -167,6 +216,12 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
         .get("widgets")
         .and_then(Value::as_array)
         .ok_or("document.widgets must be an array")?;
+    if document
+        .get("title")
+        .is_some_and(|title| !title.is_string())
+    {
+        return Err("document.title must be a string".into());
+    }
     for key in ["width", "height"] {
         let value = document.get(key).and_then(Value::as_f64).unwrap_or(1.0);
         if !value.is_finite() || value <= 0.0 {
@@ -185,7 +240,14 @@ fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
             .and_then(Value::as_str)
             .unwrap_or("linen"),
     )?;
-    validate_widgets(widgets, "document.widgets", &mut HashSet::new())
+    let mut widget_count = 0;
+    validate_widgets(
+        widgets,
+        "document.widgets",
+        &mut HashSet::new(),
+        &mut widget_count,
+        0,
+    )
 }
 
 fn render_widgets(
@@ -530,6 +592,14 @@ fn call(
     if function == "themes" {
         return Ok(json!(theme::NAMES));
     }
+    if function == "validate" {
+        let document = args
+            .first()
+            .and_then(Value::as_object)
+            .ok_or("validate expects a document")?;
+        validate_document(document)?;
+        return Ok(Value::Bool(true));
+    }
     if function != "run" {
         return Err(format!("unknown function '{function}'"));
     }
@@ -598,7 +668,7 @@ fn call(
     Ok(json!({ "values": output.values, "clicked": output.clicked }))
 }
 
-ject_native::ject_plugin_v2!("jgui", ["run", "themes"], call);
+ject_native::ject_plugin_v2!("jgui", ["run", "themes", "validate"], call);
 
 #[cfg(test)]
 mod tests {
@@ -639,5 +709,14 @@ mod tests {
             validate_document(duplicate.as_object().unwrap()).unwrap_err(),
             "document.widgets[1].id duplicates 'save'"
         );
+
+        let mut nested = json!({"kind":"label"});
+        for _ in 0..66 {
+            nested = json!({"kind":"column","children":[nested]});
+        }
+        let deep = json!({"widgets":[nested]});
+        assert!(validate_document(deep.as_object().unwrap())
+            .unwrap_err()
+            .contains("maximum layout depth"));
     }
 }

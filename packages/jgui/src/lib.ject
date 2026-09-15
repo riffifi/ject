@@ -147,6 +147,11 @@ export fn show(document)
     return native.run(document)
 end
 
+export fn validate(document)
+    assert(type_of(document) == "dictionary", "validate expects a JGUI document")
+    return native.validate(document)
+end
+
 export fn message(title, text)
     return run(title, [heading(title), label(text), spacer(), button("ok", "OK", true)], 440, 220)
 end

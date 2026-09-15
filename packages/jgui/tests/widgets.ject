@@ -38,6 +38,7 @@ assert(document.width == 900 and document.height == 640, "document dimensions")
 assert(document.state.bpm == 120, "document initial state")
 assert(document.theme == "midnight", "document theme")
 assert(len(gui.THEMES) == 4, "published theme list")
+assert(gui.validate(document), "headless native validation")
 
 assert(gui.code("x").kind == "code", "code constructor")
 assert(gui.link("site", "https://example.com").url == "https://example.com", "link constructor")
@@ -51,3 +52,12 @@ assert(gui.radio("mode", "Mode", ["a", "b"], "a").value == "a", "radio construct
 let decorated = gui.visible(gui.enabled(gui.with_tooltip(gui.button("go", "Go"), "Continue"), false), true)
 assert(decorated.tooltip == "Continue", "tooltip modifier")
 assert(decorated.enabled == false and decorated.visible == true, "visibility modifiers")
+
+let invalid_rejected = false
+try
+    gui.validate({title: "Broken", widgets: [gui.button("save", "One"), gui.button("save", "Two")]})
+catch err
+    assert(type_of(err) == "string", "native validation errors cross the ABI")
+    invalid_rejected = true
+end
+assert(invalid_rejected, "headless validation must reject duplicate IDs")

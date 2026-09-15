@@ -57,12 +57,12 @@ ject run
 
 ### `jgui_demo`
 
-A small application using the separately packaged JGUI facade and native renderer. Build
-the JGUI dependency before running when it has not already been installed:
+A small application using the separately packaged JGUI facade and native renderer.
+`ject run` builds the native dependency when needed. It is also the opt-in visual
+smoke test: a window should open with a text field and Close button.
 
 ```sh
 cd examples/jgui_demo
-ject install
 ject run
 ```
 
