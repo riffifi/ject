@@ -669,6 +669,8 @@ can exceed Ject's 64-bit integer range.
 
 JGUI and JNUM are installable mixed packages, not hardcoded interpreter modules. Add
 them as dependencies before importing them.
+JNUM limits an array to 16,777,216 elements so malformed shapes and ranges fail
+with a native error instead of attempting an unbounded allocation.
 
 For external commands, prefer `system.run_process(program, arguments=[], directory=nil,
 timeout_ms=nil, max_output_bytes=16777216)`:

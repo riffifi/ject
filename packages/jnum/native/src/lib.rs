@@ -5,6 +5,20 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 const TYPE_NAME: &str = "ndarray";
+const MAX_ARRAY_ELEMENTS: usize = 16 * 1024 * 1024;
+
+fn element_count(shape: &[usize]) -> Result<usize, String> {
+    let size = shape
+        .iter()
+        .try_fold(1usize, |size, value| size.checked_mul(*value))
+        .ok_or("array shape is too large")?;
+    if size > MAX_ARRAY_ELEMENTS {
+        return Err(format!(
+            "array requires {size} elements; the limit is {MAX_ARRAY_ELEMENTS}"
+        ));
+    }
+    Ok(size)
+}
 
 #[derive(Clone, Debug)]
 struct Array {
@@ -14,10 +28,7 @@ struct Array {
 
 impl Array {
     fn new(shape: Vec<usize>, data: Vec<f64>) -> Result<Self, String> {
-        let expected = shape
-            .iter()
-            .try_fold(1usize, |size, value| size.checked_mul(*value))
-            .ok_or("array shape is too large")?;
+        let expected = element_count(&shape)?;
         if expected != data.len() {
             return Err(format!(
                 "shape {shape:?} requires {expected} values, got {}",
@@ -230,7 +241,7 @@ fn create(function: &str, args: &[Value]) -> Result<Value, String> {
         "array" => put(array_arg(argument(args, 0, "data")?)?),
         "zeros" | "ones" => {
             let shape = shape(argument(args, 0, "shape")?)?;
-            let size = shape.iter().product();
+            let size = element_count(&shape)?;
             put(Array::new(
                 shape,
                 vec![if function == "ones" { 1.0 } else { 0.0 }; size],
@@ -240,14 +251,26 @@ fn create(function: &str, args: &[Value]) -> Result<Value, String> {
             let start = number(argument(args, 0, "start")?, "start")?;
             let stop = number(argument(args, 1, "stop")?, "stop")?;
             let step = number(argument(args, 2, "step")?, "step")?;
+            if !start.is_finite() || !stop.is_finite() || !step.is_finite() {
+                return Err("start, stop, and step must be finite".into());
+            }
             if step == 0.0 {
                 return Err("step must not be zero".into());
             }
             let mut data = Vec::new();
             let mut value = start;
             while (step > 0.0 && value < stop) || (step < 0.0 && value > stop) {
+                if data.len() == MAX_ARRAY_ELEMENTS {
+                    return Err(format!(
+                        "arange exceeds the {MAX_ARRAY_ELEMENTS} element limit"
+                    ));
+                }
                 data.push(value);
-                value += step;
+                let next = value + step;
+                if next == value {
+                    return Err("arange step is too small to advance at this magnitude".into());
+                }
+                value = next;
             }
             put(Array::vector(data))
         }
@@ -255,6 +278,11 @@ fn create(function: &str, args: &[Value]) -> Result<Value, String> {
             let start = number(argument(args, 0, "start")?, "start")?;
             let stop = number(argument(args, 1, "stop")?, "stop")?;
             let count = integer(argument(args, 2, "count")?, "count")?;
+            if count > MAX_ARRAY_ELEMENTS {
+                return Err(format!(
+                    "linspace exceeds the {MAX_ARRAY_ELEMENTS} element limit"
+                ));
+            }
             let data = (0..count)
                 .map(|index| {
                     if count <= 1 {
@@ -269,7 +297,9 @@ fn create(function: &str, args: &[Value]) -> Result<Value, String> {
         "eye" => {
             let rows = integer(argument(args, 0, "rows")?, "rows")?;
             let columns = integer(argument(args, 1, "columns")?, "columns")?;
-            let mut data = vec![0.0; rows * columns];
+            let dimensions = [rows, columns];
+            let size = element_count(&dimensions)?;
+            let mut data = vec![0.0; size];
             for index in 0..rows.min(columns) {
                 data[index * columns + index] = 1.0;
             }
@@ -317,7 +347,12 @@ fn manipulate(function: &str, args: &[Value]) -> Result<Value, String> {
                     return Err("array shapes are incompatible for concatenation".into());
                 }
                 let mut shape = arrays[0].shape.clone();
-                shape[0] = arrays.iter().map(|array| array.shape[0]).sum();
+                shape[0] = arrays.iter().try_fold(0usize, |total, array| {
+                    total
+                        .checked_add(array.shape[0])
+                        .ok_or("array shape is too large")
+                })?;
+                element_count(&shape)?;
                 put(Array::new(
                     shape,
                     arrays.into_iter().flat_map(|array| array.data).collect(),
@@ -328,6 +363,7 @@ fn manipulate(function: &str, args: &[Value]) -> Result<Value, String> {
                 }
                 let mut shape = vec![arrays.len()];
                 shape.extend(arrays[0].shape.clone());
+                element_count(&shape)?;
                 put(Array::new(
                     shape,
                     arrays.into_iter().flat_map(|array| array.data).collect(),
@@ -355,12 +391,14 @@ fn linear(function: &str, args: &[Value]) -> Result<Value, String> {
         }
         "outer" => {
             let right = array_arg(argument(args, 1, "right")?)?;
+            let shape = vec![left.data.len(), right.data.len()];
+            element_count(&shape)?;
             let data = left
                 .data
                 .iter()
                 .flat_map(|a| right.data.iter().map(move |b| a * b))
                 .collect();
-            put(Array::new(vec![left.data.len(), right.data.len()], data)?)
+            put(Array::new(shape, data)?)
         }
         "matmul" => {
             let right = array_arg(argument(args, 1, "right")?)?;
@@ -368,7 +406,9 @@ fn linear(function: &str, args: &[Value]) -> Result<Value, String> {
                 return Err("matmul requires compatible 2D arrays".into());
             }
             let (rows, inner, columns) = (left.shape[0], left.shape[1], right.shape[1]);
-            let mut data = vec![0.0; rows * columns];
+            let shape = vec![rows, columns];
+            let size = element_count(&shape)?;
+            let mut data = vec![0.0; size];
             for row in 0..rows {
                 for column in 0..columns {
                     for index in 0..inner {
@@ -377,7 +417,7 @@ fn linear(function: &str, args: &[Value]) -> Result<Value, String> {
                     }
                 }
             }
-            put(Array::new(vec![rows, columns], data)?)
+            put(Array::new(shape, data)?)
         }
         "trace" => {
             if left.shape.len() != 2 {
@@ -390,11 +430,13 @@ fn linear(function: &str, args: &[Value]) -> Result<Value, String> {
         "diag" => {
             if left.shape.len() == 1 {
                 let size = left.data.len();
-                let mut data = vec![0.0; size * size];
+                let shape = vec![size, size];
+                let output_size = element_count(&shape)?;
+                let mut data = vec![0.0; output_size];
                 for index in 0..size {
                     data[index * size + index] = left.data[index];
                 }
-                put(Array::new(vec![size, size], data)?)
+                put(Array::new(shape, data)?)
             } else if left.shape.len() == 2 {
                 let data = (0..left.shape[0].min(left.shape[1]))
                     .map(|i| left.data[i * left.shape[1] + i])
@@ -524,6 +566,11 @@ fn call(function: &str, args: Vec<Value>) -> Result<Value, String> {
                 return Err("low must be smaller than high".into());
             }
             let size = integer(argument(&args, 2, "size")?, "size")?;
+            if size > MAX_ARRAY_ELEMENTS {
+                return Err(format!(
+                    "randint exceeds the {MAX_ARRAY_ELEMENTS} element limit"
+                ));
+            }
             let mut rng = rand::thread_rng();
             put(Array::vector(
                 (0..size).map(|_| rng.gen_range(low..high) as f64).collect(),
@@ -607,3 +654,19 @@ ject_native::ject_plugin!(
     ],
     call
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropping_a_resource_invalidates_its_handle() {
+        let resource = call("array", vec![json!([1, 2, 3])]).unwrap();
+        let id = resource_id(&resource).unwrap();
+        assert_eq!(get(&resource).unwrap().data, vec![1.0, 2.0, 3.0]);
+
+        call("__drop_resource", vec![json!(id)]).unwrap();
+        let error = get(&resource).unwrap_err();
+        assert!(error.contains("no longer valid"), "{error}");
+    }
+}

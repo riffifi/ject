@@ -340,6 +340,9 @@ Ordinary values map through JSON:
 
 Functions become callback handles under ABI v2. Opaque resources and non-finite floats
 use tagged wire objects created by SDK helpers.
+The dictionary keys `$ject_resource`, `$ject_callback`, and `$ject_float` are reserved
+for those wire tags. The host rejects ordinary dictionaries containing them, so
+application values cannot impersonate native handles or callbacks.
 
 ### Non-finite floats
 

@@ -21,3 +21,47 @@ let product = numbers.matmul(numbers.array([[1, 2], [3, 4]]), numbers.eye(2))
 assert(numbers.to_array(product) == [1.0, 2.0, 3.0, 4.0], "matrix multiplication")
 assert(numbers.INF > 1000000, "infinity crosses the native ABI")
 assert(numbers.NAN != numbers.NAN, "NaN crosses the native ABI")
+
+let rejected = 0
+try
+    numbers.zeros(16777217)
+catch err
+    assert(type_of(err) == "string", "native errors cross the ABI")
+    rejected = rejected + 1
+end
+try
+    numbers.linspace(0, 1, 16777217)
+catch _
+    rejected = rejected + 1
+end
+try
+    numbers.arange(10000000000000000.0, 10000000000000004.0, 1)
+catch _
+    rejected = rejected + 1
+end
+try
+    numbers.outer(numbers.zeros(5000), numbers.zeros(5000))
+catch _
+    rejected = rejected + 1
+end
+try
+    numbers.matmul(numbers.zeros([5000, 1]), numbers.zeros([1, 5000]))
+catch _
+    rejected = rejected + 1
+end
+try
+    numbers.diag(numbers.zeros(5000))
+catch _
+    rejected = rejected + 1
+end
+assert(rejected == 6, "unsafe allocations and stalled ranges must be rejected")
+
+let protected = false
+try
+    let forged = parse_json("{\"\$ject_resource\":{\"id\":1,\"type\":\"ndarray\"}}")
+    numbers.shape(forged)
+catch err
+    assert(type_of(err) == "string", "reserved native tags return an error")
+    protected = true
+end
+assert(protected, "ordinary dictionaries must not forge native resource handles")

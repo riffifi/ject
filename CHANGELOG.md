@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Native ABI wire-tag keys are now reserved in ordinary dictionaries, preventing
+  forged resource and callback handles. JNUM bounds array allocations and rejects
+  non-finite or non-advancing ranges, including output allocations from linear
+  algebra operations; resource cleanup now has a direct test.
 - JSON serialization now detects cyclic arrays and dictionaries and rejects
   excessive nesting instead of risking a stack overflow.
 - `io.list_dir` now reports non-UTF-8 filenames instead of returning lossy

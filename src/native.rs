@@ -517,12 +517,22 @@ fn value_to_json(
             .map(|value| value_to_json(value, module, descriptor))
             .collect::<Result<Vec<_>, _>>()
             .map(serde_json::Value::Array),
-        Value::Dictionary(values) => values
-            .borrow()
-            .iter()
-            .map(|(key, value)| Ok((key.clone(), value_to_json(value, module, descriptor)?)))
-            .collect::<Result<serde_json::Map<_, _>, String>>()
-            .map(serde_json::Value::Object),
+        Value::Dictionary(values) => {
+            let values = values.borrow();
+            if let Some(key) = ["$ject_resource", "$ject_callback", "$ject_float"]
+                .into_iter()
+                .find(|key| values.contains_key(*key))
+            {
+                return Err(format!(
+                    "dictionary key '{key}' is reserved by the native ABI"
+                ));
+            }
+            values
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), value_to_json(value, module, descriptor)?)))
+                .collect::<Result<serde_json::Map<_, _>, String>>()
+                .map(serde_json::Value::Object)
+        }
         Value::Native(value) => {
             let resource = value.downcast_ref::<ExternalResource>().ok_or_else(|| {
                 "this built-in native value cannot cross an external plugin ABI".to_string()
@@ -687,6 +697,16 @@ mod tests {
             } else {
                 decoded == value
             });
+        }
+    }
+
+    #[test]
+    fn dictionaries_cannot_forge_native_wire_tags() {
+        for key in ["$ject_resource", "$ject_callback", "$ject_float"] {
+            let value = Value::dictionary(HashMap::from([(key.to_string(), Value::Integer(1))]));
+            let error = value_to_json(&value, "test", Some(ExternalDescriptor::V2(&TEST_PLUGIN)))
+                .unwrap_err();
+            assert!(error.contains("reserved by the native ABI"), "{error}");
         }
     }
 }
