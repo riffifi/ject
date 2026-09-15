@@ -169,6 +169,46 @@ mod tests {
     }
 
     #[test]
+    fn binding_warnings_point_to_the_declaration_that_caused_them() {
+        let source = "let value = 1\nif true then\n    let value = 2\nend\n";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect::<Vec<_>>();
+        let statements = Parser::new(tokens.clone()).parse().unwrap();
+        let (diagnostics, _) = Linter::new()
+            .with_tokens_and_source(tokens, source.into())
+            .lint(&statements);
+        let mut lines = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message == "unused variable `value`")
+            .map(|diagnostic| diagnostic.line.unwrap())
+            .collect::<Vec<_>>();
+        lines.sort_unstable();
+        assert_eq!(lines, vec![1, 3]);
+
+        let source = "let value = 1\nlet value = 2\n";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer
+            .tokenize_with_positions()
+            .into_iter()
+            .map(|token| (token.token, token.position))
+            .collect::<Vec<_>>();
+        let statements = Parser::new(tokens.clone()).parse().unwrap();
+        let (diagnostics, _) = Linter::new()
+            .with_tokens_and_source(tokens, source.into())
+            .lint(&statements);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.message.contains("already declared") && diagnostic.line == Some(2)
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.message == "unused variable `value`" && diagnostic.line == Some(2)
+        }));
+    }
+
+    #[test]
     fn test_exported_api_is_not_reported_unused() {
         let (errors, warnings) = lint(
             r#"

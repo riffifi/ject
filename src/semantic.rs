@@ -7,7 +7,7 @@ use std::collections::HashMap;
 pub type ScopeId = usize;
 pub type SymbolId = usize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolKind {
     Variable,
     Constant,
@@ -137,16 +137,27 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
     let mut previous: Option<&Token> = None;
     let mut import_may_be_selective = false;
     let mut selective_import = false;
+    let mut expression_function_braces: Vec<usize> = Vec::new();
 
     for (position, located) in tokens.iter().enumerate() {
         match &located.token {
             Token::End => pop_scope(&mut index, &mut scope_stack, &located.position),
+            Token::Newline if expression_function_braces.last() == Some(&0) => {
+                while expression_function_braces.last() == Some(&0) {
+                    pop_scope(&mut index, &mut scope_stack, &located.position);
+                    expression_function_braces.pop();
+                }
+            }
             Token::Let => pending = Some(SymbolKind::Variable),
             Token::Const => pending = Some(SymbolKind::Constant),
             Token::Export => pending = Some(SymbolKind::Variable),
             Token::Import => import_may_be_selective = true,
             Token::Fn => {
                 pending = Some(SymbolKind::Function);
+                pending_function_scope = true;
+            }
+            Token::Lambda => {
+                pending = None;
                 pending_function_scope = true;
             }
             Token::Struct => pending = Some(SymbolKind::Struct),
@@ -172,6 +183,17 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
             Token::LeftBrace if import_may_be_selective => {
                 import_may_be_selective = false;
                 selective_import = true;
+            }
+            Token::LeftBrace if !expression_function_braces.is_empty() => {
+                *expression_function_braces.last_mut().unwrap() += 1;
+            }
+            Token::RightBrace if !expression_function_braces.is_empty() => {
+                let depth = expression_function_braces.last_mut().unwrap();
+                *depth = (*depth).saturating_sub(1);
+                if *depth == 0 {
+                    pop_scope(&mut index, &mut scope_stack, &located.position);
+                    expression_function_braces.pop();
+                }
             }
             Token::RightBrace if selective_import => selective_import = false,
             Token::String(_) if import_may_be_selective => import_may_be_selective = false,
@@ -204,7 +226,7 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
             Token::Arrow if parameter_depth.is_none() && scope_stack.len() > 1 => {
                 // Expression-bodied functions do not have a matching `end`.
                 if matches!(previous, Some(Token::RightParen)) {
-                    pop_scope(&mut index, &mut scope_stack, &located.position);
+                    expression_function_braces.push(0);
                 }
             }
             Token::Identifier(name) => {
@@ -251,6 +273,16 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
         }
         if !matches!(located.token, Token::Newline) {
             previous = Some(&located.token);
+        }
+    }
+    if !expression_function_braces.is_empty() {
+        let position = tokens
+            .last()
+            .map(|token| &token.position)
+            .cloned()
+            .unwrap_or_else(|| crate::lexer::SourcePosition::new(1, 1, 0));
+        for _ in expression_function_braces {
+            pop_scope(&mut index, &mut scope_stack, &position);
         }
     }
     index
@@ -385,6 +417,60 @@ mod tests {
             .references
             .iter()
             .any(|reference| reference.name == "name" && reference.resolved == Some(name.id)));
+    }
+
+    #[test]
+    fn lambda_parameters_have_exact_spans_and_resolve_in_body() {
+        let index = analyze("let double = lambda(value) -> value * 2\nprint value");
+        let value = index
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "value")
+            .unwrap();
+        assert_eq!(value.kind, SymbolKind::Parameter);
+        assert_eq!(value.span, SourceSpan::new(1, 21, 5));
+        assert_eq!(
+            index
+                .references
+                .iter()
+                .filter(|reference| reference.name == "value")
+                .map(|reference| reference.resolved)
+                .collect::<Vec<_>>(),
+            vec![Some(value.id), None]
+        );
+    }
+
+    #[test]
+    fn nested_lambda_scopes_close_together_at_expression_end() {
+        let index = analyze("let nested = lambda(x) -> lambda(y) -> x + y\nprint x, y");
+        let x = index
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "x")
+            .unwrap();
+        let y = index
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "y")
+            .unwrap();
+        assert_eq!(
+            index
+                .references
+                .iter()
+                .filter(|reference| reference.name == "x")
+                .map(|reference| reference.resolved)
+                .collect::<Vec<_>>(),
+            vec![Some(x.id), None]
+        );
+        assert_eq!(
+            index
+                .references
+                .iter()
+                .filter(|reference| reference.name == "y")
+                .map(|reference| reference.resolved)
+                .collect::<Vec<_>>(),
+            vec![Some(y.id), None]
+        );
     }
 
     #[test]

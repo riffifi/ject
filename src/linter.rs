@@ -1,14 +1,16 @@
 use crate::ast::{Argument, Expr, Parameter, Stmt};
 use crate::diagnostic::Diagnostic;
 use crate::module_interface::{ExportKind, ModuleInterface};
+use crate::semantic::SymbolKind;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone)]
 struct Variable {
     name: String,
     used: bool,
     mutable: bool,
+    declaration: Option<crate::lexer::SourcePosition>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +46,7 @@ pub struct Linter {
     source_path: std::path::PathBuf,
     module_interfaces: RefCell<HashMap<String, Result<ModuleInterface, String>>>,
     source_overrides: HashMap<std::path::PathBuf, String>,
+    declaration_positions: HashMap<(String, SymbolKind), VecDeque<crate::lexer::SourcePosition>>,
 }
 
 impl Default for Linter {
@@ -93,193 +96,7 @@ impl Linter {
     }
 
     fn should_skip_unused_warning(name: &str) -> bool {
-        if name.starts_with('_') || crate::stdlib::CORE_CONSTANT_NAMES.contains(&name) {
-            return true;
-        }
-        matches!(
-            name,
-            "type_of"
-                | "to_int"
-                | "to_float"
-                | "to_string"
-                | "to_bool"
-                | "len"
-                | "range"
-                | "push"
-                | "pop"
-                | "sum"
-                | "contains"
-                | "index_of"
-                | "first"
-                | "last"
-                | "sort"
-                | "reverse"
-                | "unique"
-                | "map"
-                | "filter"
-                | "reduce"
-                | "abs"
-                | "sqrt"
-                | "pow"
-                | "sin"
-                | "cos"
-                | "tan"
-                | "floor"
-                | "ceil"
-                | "round"
-                | "min"
-                | "max"
-                | "random"
-                | "upper"
-                | "lower"
-                | "trim"
-                | "split"
-                | "join"
-                | "replace"
-                | "char_at"
-                | "substring"
-                | "input"
-                | "print"
-                | "read_file"
-                | "write_file"
-                | "assert"
-                | "log"
-                | "log10"
-                | "exp"
-                | "log2"
-                | "ln"
-                | "degrees"
-                | "radians"
-                | "deg_to_rad"
-                | "rad_to_deg"
-                | "clamp"
-                | "sign"
-                | "gcd"
-                | "lcm"
-                | "asin"
-                | "acos"
-                | "atan"
-                | "atan2"
-                | "sinh"
-                | "cosh"
-                | "tanh"
-                | "round_to"
-                | "capitalize"
-                | "title_case"
-                | "trim_left"
-                | "trim_right"
-                | "pad_left"
-                | "pad_right"
-                | "pad_center"
-                | "starts_with"
-                | "ends_with"
-                | "contains_str"
-                | "count"
-                | "find"
-                | "replace_all"
-                | "replace_first"
-                | "remove"
-                | "repeat"
-                | "reverse_str"
-                | "left"
-                | "right"
-                | "truncate"
-                | "is_empty"
-                | "is_numeric"
-                | "is_alpha"
-                | "is_alphanumeric"
-                | "word_count"
-                | "sentence_count"
-                | "paragraph_count"
-                | "lines"
-                | "extract_numbers"
-                | "to_char_codes"
-                | "from_char_codes"
-                | "format"
-                | "escape"
-                | "unescape"
-                | "wrap_text"
-                | "any"
-                | "all"
-                | "average"
-                | "median"
-                | "slice"
-                | "take"
-                | "drop"
-                | "initial"
-                | "rest"
-                | "concat"
-                | "zip"
-                | "union"
-                | "intersection"
-                | "difference"
-                | "flatten"
-                | "chunk"
-                | "group_by"
-                | "partition"
-                | "shuffle"
-                | "rotate_left"
-                | "rotate_right"
-                | "insert_at"
-                | "remove_at"
-                | "without"
-                | "compact"
-                | "compact_unique"
-                | "enumerate"
-                | "fill"
-                | "range_arr"
-                | "sample"
-                | "sort_by"
-                | "to_uarray"
-                | "to_array"
-                | "parse_json"
-                | "to_json"
-                | "env"
-                | "exit"
-                | "now"
-                | "timestamp"
-                | "sleep"
-                | "to_binary"
-                | "to_octal"
-                | "to_hex"
-                | "from_binary"
-                | "from_octal"
-                | "from_hex"
-                | "base_repr"
-                | "from_base"
-                | "random_int"
-                | "random_float"
-                | "println"
-                | "exec"
-                | "_change_dir"
-                | "_run_process"
-                | "_file_exists"
-                | "_is_file"
-                | "_is_dir"
-                | "_list_dir"
-                | "_mkdir"
-                | "_remove_file"
-                | "_read_bytes"
-                | "_write_bytes"
-                | "_request"
-                | "_args"
-                | "_to_json_pretty"
-                | "file_exists"
-                | "is_file"
-                | "is_dir"
-                | "list_dir"
-                | "mkdir"
-                | "remove_file"
-                | "collection"
-                | "add_to"
-                | "remove_from"
-                | "has"
-                | "intersect"
-                | "size"
-                | "is_subset"
-                | "is_superset"
-                | "clear_collection"
-        )
+        name.starts_with('_') || crate::stdlib::CORE_CONSTANT_NAMES.contains(&name)
     }
 
     pub fn new() -> Self {
@@ -297,6 +114,7 @@ impl Linter {
             source_path: std::env::current_dir().unwrap_or_default(),
             module_interfaces: RefCell::new(HashMap::new()),
             source_overrides: HashMap::new(),
+            declaration_positions: HashMap::new(),
         }
     }
 
@@ -315,7 +133,7 @@ impl Linter {
         }
 
         for name in crate::stdlib::CORE_CONSTANT_NAMES {
-            self.declare_constant((*name).to_string());
+            self.declare_external_constant((*name).to_string());
         }
     }
 
@@ -329,6 +147,20 @@ impl Linter {
         self
     }
 
+    fn reset_declaration_positions(&mut self) {
+        self.declaration_positions.clear();
+        for symbol in crate::semantic::analyze(&self.source).symbols {
+            self.declaration_positions
+                .entry((symbol.name, symbol.kind))
+                .or_default()
+                .push_back(crate::lexer::SourcePosition::new(
+                    symbol.span.line,
+                    symbol.span.column,
+                    0,
+                ));
+        }
+    }
+
     pub fn with_source_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.source_path = path.into();
         self
@@ -340,6 +172,7 @@ impl Linter {
     }
 
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
+        self.reset_declaration_positions();
         self.next_return_token = 0;
         self.scopes.clear();
         self.scopes.push(HashMap::new()); // Global scope
@@ -368,7 +201,7 @@ impl Linter {
                 if !var.used && !Self::should_skip_unused_warning(&var.name) {
                     self.warnings.push(LintWarning {
                         message: format!("unused variable `{}`", var.name),
-                        position: self.find_identifier_position(&var.name),
+                        position: var.declaration.clone(),
                     });
                 }
             }
@@ -415,6 +248,7 @@ impl Linter {
 
     // REPL-specific linting that maintains state between statements
     pub fn lint_repl(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
+        self.reset_declaration_positions();
         self.next_return_token = 0;
         // Only clear warnings and errors, keep global scope variables and functions
         self.warnings.clear();
@@ -490,7 +324,7 @@ impl Linter {
                     if !var.used && !Self::should_skip_unused_warning(&var.name) {
                         self.warnings.push(LintWarning {
                             message: format!("unused variable `{}`", var.name),
-                            position: self.find_identifier_position(&var.name),
+                            position: var.declaration.clone(),
                         });
                     }
                 }
@@ -500,26 +334,42 @@ impl Linter {
     }
 
     fn declare_variable(&mut self, name: String) {
-        self.declare_binding(name, true);
+        self.declare_binding(name, true, Some(SymbolKind::Variable));
     }
 
     fn declare_constant(&mut self, name: String) {
-        self.declare_binding(name, false);
+        self.declare_binding(name, false, Some(SymbolKind::Constant));
     }
 
-    fn declare_binding(&mut self, name: String, mutable: bool) {
+    fn declare_parameter(&mut self, name: String) {
+        self.declare_binding(name, true, Some(SymbolKind::Parameter));
+    }
+
+    fn declare_import(&mut self, name: String, kind: SymbolKind) {
+        self.declare_binding(name, false, Some(kind));
+    }
+
+    fn declare_external_constant(&mut self, name: String) {
+        self.declare_binding(name, false, None);
+    }
+
+    fn declare_binding(&mut self, name: String, mutable: bool, kind: Option<SymbolKind>) {
+        let declaration = kind.and_then(|kind| {
+            self.declaration_positions
+                .get_mut(&(name.clone(), kind))
+                .and_then(VecDeque::pop_front)
+        });
         let already_declared = self
             .scopes
             .last()
             .is_some_and(|scope| scope.contains_key(&name));
         if already_declared {
-            let position = self.find_identifier_position(&name);
             self.warnings.push(LintWarning {
                 message: format!(
                     "warning: variable `{}` is already declared in this scope",
                     name
                 ),
-                position,
+                position: declaration.clone(),
             });
         }
         if let Some(current_scope) = self.scopes.last_mut() {
@@ -529,6 +379,7 @@ impl Linter {
                     name,
                     used: false,
                     mutable,
+                    declaration,
                 },
             );
         }
@@ -747,7 +598,7 @@ impl Linter {
                     if let Some(default_expr) = &param.default_value {
                         self.analyze_expr(default_expr);
                     }
-                    self.declare_variable(param.name.clone());
+                    self.declare_parameter(param.name.clone());
                 }
 
                 // Analyze function body
@@ -870,7 +721,7 @@ impl Linter {
                 // Handle selective imports
                 if let Some(item_list) = items {
                     for item in item_list {
-                        self.declare_constant(item.clone());
+                        self.declare_import(item.clone(), SymbolKind::Import);
                         let mut valid_export = false;
                         if let Some(export) = module_api
                             .as_ref()
@@ -904,7 +755,7 @@ impl Linter {
                 } else if alias.is_none() {
                     if let Some(interface) = &module_api {
                         for export in &interface.exports {
-                            self.declare_constant(export.name.clone());
+                            self.declare_external_constant(export.name.clone());
                             if let ExportKind::Function { parameters } = &export.kind {
                                 self.function_signatures.insert(
                                     export.name.clone(),
@@ -918,7 +769,7 @@ impl Linter {
                 }
 
                 if let Some(alias_name) = alias {
-                    self.declare_constant(alias_name.clone());
+                    self.declare_import(alias_name.clone(), SymbolKind::Module);
                     if module_api.is_none() {
                         self.use_variable(alias_name);
                     }
@@ -969,7 +820,7 @@ impl Linter {
                     },
                 );
 
-                self.declare_variable(name.clone());
+                self.declare_binding(name.clone(), true, Some(SymbolKind::Function));
                 // Public functions are API surface even when this module does
                 // not call them internally.
                 self.use_variable(name);
@@ -983,7 +834,7 @@ impl Linter {
                     if let Some(default_expr) = &param.default_value {
                         self.analyze_expr(default_expr);
                     }
-                    self.declare_variable(param.name.clone());
+                    self.declare_parameter(param.name.clone());
                 }
 
                 for stmt in body {
@@ -997,7 +848,7 @@ impl Linter {
                 // Struct definitions are type definitions, not variables
                 // They should be tracked separately, but for now just declare them
                 // so they don't trigger "undeclared" errors
-                self.declare_variable(name.clone());
+                self.declare_binding(name.clone(), true, Some(SymbolKind::Struct));
                 // Mark as used immediately so it doesn't show as unused
                 if let Some(scope) = self.scopes.last_mut() {
                     if let Some(var) = scope.get_mut(name) {
@@ -1184,7 +1035,7 @@ impl Linter {
                 self.push_scope();
                 // Declare parameters
                 for param in params {
-                    self.declare_variable(param.clone());
+                    self.declare_parameter(param.clone());
                 }
 
                 match body {

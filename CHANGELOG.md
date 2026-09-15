@@ -5,6 +5,10 @@
 - The checker and language server now derive CorLib names from the runtime
   catalog. Module-only functions are no longer accepted without an import, and
   completion, hover, and signature help cover every actual CorLib function.
+- Unused-binding and redeclaration warnings now point to the exact declaration,
+  including shadowed names. Lambda parameters are scoped correctly by the
+  semantic index, and ordinary user bindings no longer inherit built-in warning
+  exemptions merely because they share a name.
 - JGUI now exposes headless document validation through its public facade and
   ABI v2 plugin, including callback, widget ID, count, and layout-depth checks.
   The packaged demo is documented as its opt-in display-backed smoke test.
