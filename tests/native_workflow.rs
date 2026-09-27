@@ -78,7 +78,7 @@ fn check_does_not_build_native_but_test_and_run_do() {
     .unwrap();
     fs::write(
         app.join("Ject.toml"),
-        "[package]\nname = \"probe_app\"\nversion = \"0.1.0\"\nedition = \"2026\"\nentry = \"src/main.ject\"\n\n[dependencies]\nprobe_native = { path = \"../probe_native\" }\n",
+        "[package]\nname = \"probe_app\"\nversion = \"0.1.0\"\nedition = \"2026\"\nentry = \"src/main.ject\"\n\n[security]\ntrusted-native = []\n\n[dependencies]\nprobe_native = { path = \"../probe_native\" }\n",
     )
     .unwrap();
     fs::write(
@@ -113,6 +113,17 @@ fn check_does_not_build_native_but_test_and_run_do() {
     fs::write(
         app.join("src/main.ject"),
         "import \"probe_native\" as probe\nassert(probe.echo(43) == 44, \"stale native dependency was loaded\")\n",
+    )
+    .unwrap();
+    let untrusted = run_ject(&app, "run");
+    assert!(!untrusted.status.success());
+    assert!(String::from_utf8_lossy(&untrusted.stderr)
+        .contains("native dependency 'probe_native' not trusted"));
+    let app_manifest = app.join("Ject.toml");
+    let manifest = fs::read_to_string(&app_manifest).unwrap();
+    fs::write(
+        &app_manifest,
+        manifest.replace("trusted-native = []", "trusted-native = [\"probe_native\"]"),
     )
     .unwrap();
     assert_success(&run_ject(&app, "run"), "ject run");

@@ -23,6 +23,9 @@ pub struct Project {
     pub version: String,
     pub entry: PathBuf,
     pub native: Option<NativeConfig>,
+    /// When present, only dependency packages named here may build or load a
+    /// native plugin. The root package's own native implementation is trusted.
+    pub trusted_native: Option<HashSet<String>>,
     pub dependencies: HashMap<String, PathBuf>,
     pub registry_dependencies: HashMap<String, RegistryDependency>,
     pub git_dependencies: HashMap<String, GitDependency>,
@@ -126,6 +129,34 @@ pub fn load(root: &Path) -> Result<Project, String> {
         Some(_) => return Err("[native] must be a table".to_string()),
         None => None,
     };
+    let trusted_native = match manifest.get("security") {
+        Some(toml::Value::Table(table)) => {
+            if let Some(field) = table.keys().find(|key| key.as_str() != "trusted-native") {
+                return Err(format!("[security] has unsupported field `{field}`"));
+            }
+            match table.get("trusted-native") {
+                Some(toml::Value::Array(values)) => {
+                    let mut names = HashSet::new();
+                    for value in values {
+                        let name = value
+                            .as_str()
+                            .ok_or("[security].trusted-native must contain only package names")?;
+                        validate_package_name(name)?;
+                        if !names.insert(name.to_string()) {
+                            return Err(format!(
+                                "[security].trusted-native contains duplicate package '{name}'"
+                            ));
+                        }
+                    }
+                    Some(names)
+                }
+                Some(_) => return Err("[security].trusted-native must be an array".to_string()),
+                None => return Err("[security] is missing `trusted-native`".to_string()),
+            }
+        }
+        Some(_) => return Err("[security] must be a table".to_string()),
+        None => None,
+    };
     let mut dependencies = HashMap::new();
     let mut registry_dependencies = HashMap::new();
     let mut git_dependencies = HashMap::new();
@@ -155,6 +186,7 @@ pub fn load(root: &Path) -> Result<Project, String> {
         version,
         entry: root.join(entry),
         native,
+        trusted_native,
         dependencies,
         registry_dependencies,
         git_dependencies,
@@ -1432,8 +1464,10 @@ pub fn build_native(project: &Project, release: bool) -> Result<Option<PathBuf>,
 }
 
 pub fn build_native_graph(project: &Project, release: bool) -> Result<Vec<PathBuf>, String> {
+    let dependencies = dependency_projects(project)?;
+    validate_native_trust(project, &dependencies)?;
     let mut artifacts = Vec::new();
-    for dependency in dependency_projects(project)? {
+    for dependency in dependencies {
         if let Some(artifact) = build_native(&dependency, release)? {
             artifacts.push(artifact);
         }
@@ -1442,6 +1476,31 @@ pub fn build_native_graph(project: &Project, release: bool) -> Result<Vec<PathBu
         artifacts.push(artifact);
     }
     Ok(artifacts)
+}
+
+pub fn validate_native_trust(project: &Project, dependencies: &[Project]) -> Result<(), String> {
+    let Some(trusted) = &project.trusted_native else {
+        return Ok(());
+    };
+    let mut denied = dependencies
+        .iter()
+        .filter(|dependency| dependency.native.is_some() && !trusted.contains(&dependency.name))
+        .map(|dependency| dependency.name.as_str())
+        .collect::<Vec<_>>();
+    denied.sort_unstable();
+    if denied.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "native dependency {} not trusted by package '{}'; add {} to [security].trusted-native only after reviewing its Rust code",
+        denied
+            .iter()
+            .map(|name| format!("'{name}'"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        project.name,
+        if denied.len() == 1 { "it" } else { "them" }
+    ))
 }
 
 pub fn find_native_artifact(project: &Project) -> Result<Option<PathBuf>, String> {
@@ -1580,6 +1639,75 @@ mod tests {
         assert_eq!(native.library, "mixed_impl");
         assert_eq!(native.abi, "ject-native-1");
         assert_eq!(project.dependencies["helper"], root.join("../helper"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_dependency_trust_is_explicit_when_security_policy_is_present() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-native-trust-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let app = root.join("app");
+        let native = root.join("native_tools");
+        fs::create_dir_all(&app).unwrap();
+        fs::create_dir_all(&native).unwrap();
+        fs::write(
+            native.join(MANIFEST_FILE),
+            "[package]\nname = \"native_tools\"\n[native]\npath = \"native\"\n",
+        )
+        .unwrap();
+        fs::write(
+            app.join(MANIFEST_FILE),
+            "[package]\nname = \"app\"\n[security]\ntrusted-native = []\n[dependencies]\nnative_tools = { path = \"../native_tools\" }\n",
+        )
+        .unwrap();
+
+        let project = load(&app).unwrap();
+        let dependencies = dependency_projects(&project).unwrap();
+        let error = validate_native_trust(&project, &dependencies).unwrap_err();
+        assert!(error.contains("native dependency 'native_tools' not trusted"));
+        assert!(error.contains("reviewing its Rust code"));
+        let build_error = build_native_graph(&project, false).unwrap_err();
+        assert!(build_error.contains("native dependency 'native_tools' not trusted"));
+        assert!(!build_error.contains("Cargo manifest"));
+
+        fs::write(
+            app.join(MANIFEST_FILE),
+            "[package]\nname = \"app\"\n[security]\ntrusted-native = [\"native_tools\"]\n[dependencies]\nnative_tools = { path = \"../native_tools\" }\n",
+        )
+        .unwrap();
+        let project = load(&app).unwrap();
+        let dependencies = dependency_projects(&project).unwrap();
+        validate_native_trust(&project, &dependencies).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_native_trust_policies() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-native-policy-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        for (policy, expected) in [
+            ("trusted-native = \"jgui\"", "must be an array"),
+            ("trusted-native = [\"jgui\", 2]", "only package names"),
+            ("trusted-native = [\"jgui\", \"jgui\"]", "duplicate package"),
+            ("allow-native = true", "unsupported field"),
+        ] {
+            fs::write(
+                root.join(MANIFEST_FILE),
+                format!("[package]\nname = \"app\"\n[security]\n{policy}\n"),
+            )
+            .unwrap();
+            let error = load(&root).unwrap_err();
+            assert!(error.contains(expected), "{policy}: {error}");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 

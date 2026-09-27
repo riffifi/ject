@@ -53,13 +53,8 @@ fn main() {
                         }
                     }
                     Err(error) => {
-                        emit_cli_error(
-                            "E4101",
-                            error,
-                            Some(
-                                "fix the native build error shown above and run `ject build` again",
-                            ),
-                        );
+                        let help = native_build_help(&error, "build");
+                        emit_cli_error("E4101", error, Some(help));
                         std::process::exit(1);
                     }
                 }
@@ -176,6 +171,18 @@ fn emit_cli_error(code: &str, message: impl Into<String>, help: Option<&str>) {
     DiagnosticRenderer::new().render(&diagnostic, None, None);
 }
 
+fn native_build_help(error: &str, command: &str) -> &'static str {
+    if error.contains("not trusted by package") {
+        "review the plugin, then add its package name to `[security].trusted-native`"
+    } else if command == "run" {
+        "fix the native build error before running the package"
+    } else if command == "install" {
+        "fix the native build error and run `ject install` again"
+    } else {
+        "fix the native build error shown above and run `ject build` again"
+    }
+}
+
 fn render_runtime(
     renderer: &DiagnosticRenderer,
     message: &str,
@@ -253,11 +260,8 @@ fn install_project(locked: bool) {
                     }
                 }
                 Err(error) => {
-                    emit_cli_error(
-                        "E4101",
-                        error,
-                        Some("fix the native build error and run `ject install` again"),
-                    );
+                    let help = native_build_help(&error, "install");
+                    emit_cli_error("E4101", error, Some(help));
                     std::process::exit(1);
                 }
             }
@@ -409,11 +413,12 @@ fn update_dependencies(args: &[String]) {
             }
         }
         Err(error) => {
-            emit_cli_error(
-                "E4106",
-                error,
-                Some("check the package name, version requirement, and registry index"),
-            );
+            let help = if error.contains("not trusted by package") {
+                native_build_help(&error, "install")
+            } else {
+                "check the package name, version requirement, and registry index"
+            };
+            emit_cli_error("E4106", error, Some(help));
             std::process::exit(1);
         }
     }
@@ -825,11 +830,8 @@ fn prepare_native_for_execution(path: &Path) {
         return;
     };
     if let Err(error) = package::build_native_graph(&project, false) {
-        emit_cli_error(
-            "E4101",
-            error,
-            Some("fix the native build error before running the package"),
-        );
+        let help = native_build_help(&error, "run");
+        emit_cli_error("E4101", error, Some(help));
         std::process::exit(1);
     }
     let mut projects = match package::dependency_projects(&project) {

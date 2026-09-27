@@ -96,6 +96,24 @@ library = "audio_engine"
 replaces package-name hyphens with underscores. Use ABI v1 for ordinary calls and opaque
 resources. Use ABI v2 only when Rust must invoke a Ject callback during a native call.
 
+Applications that consume native dependencies can pin their trust boundary:
+
+```toml
+[security]
+trusted-native = ["jgui", "audio_engine"]
+```
+
+When `[security]` is present, `ject build`, `install`, `run`, and `test` refuse to
+build or load a native dependency unless its declared package name appears in
+`trusted-native`. An empty array permits source-only dependencies and denies every
+native dependency. The root package's own `[native]` implementation is always
+trusted because its code is part of that package. Names cover transitive dependencies
+as well as direct ones.
+
+Omitting `[security]` preserves the permissive pre-0.12 behavior. New applications
+that may consume third-party packages should add the section deliberately; review a
+package's Rust code and dependency lockfile before adding its name.
+
 ## 4. Source libraries
 
 The entry file defines the public API explicitly:
@@ -436,9 +454,14 @@ The publisher excludes transient build and repository output such as `target/` a
 - Registry archives are immutable and verified before use.
 - Native builds from non-path sources use Cargo's lockfile.
 - Native plugins run in-process with the permissions of `ject`.
+- `[security].trusted-native` is an enforceable allowlist for which dependency
+  plugins may build or load; it does not reduce the permissions of an allowed plugin.
 
 Checksums provide integrity, not isolation. Only install native packages you trust.
-Ject does not yet provide capability restrictions or a WebAssembly sandbox.
+Rust dynamic libraries cannot be safely constrained by a manifest capability list.
+Ject therefore does not describe an allowed native plugin as sandboxed. Fine-grained
+capabilities require a future isolated provider such as WebAssembly or a separate
+process.
 
 ## 14. Package design checklist
 

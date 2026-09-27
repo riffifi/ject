@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Applications can enforce a transitive native-plugin trust boundary with
+  `[security].trusted-native`. Unlisted Rust plugins are rejected before Cargo
+  runs or a dynamic library loads; documentation distinguishes this allowlist
+  from sandboxing and rejects unenforceable per-capability claims for `cdylib`s.
 - Core constants are now discovered from the same runtime CorLib catalog as
   functions. Immutability, linting, hover inference, and completion no longer
   depend on a second hardcoded name list or assume every constant is a float.

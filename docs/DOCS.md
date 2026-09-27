@@ -839,6 +839,19 @@ ject install
 entries, writes `Ject.lock`, verifies cached content, and builds native components.
 `ject install --locked` refuses dependency drift and is the correct CI command.
 
+For an application with third-party native dependencies, declare the exact packages
+whose Rust code you trust:
+
+```toml
+[security]
+trusted-native = ["jgui", "jnum"]
+```
+
+Once this section exists, unlisted native dependencies are rejected before Cargo is
+started or a dynamic library is loaded. `trusted-native = []` denies all dependency
+plugins. This is a trust allowlist, not a sandbox: an allowed Rust plugin has the same
+operating-system permissions as the Ject process.
+
 See [Packages and native libraries](PACKAGES.md) for manifests, lockfiles, publishing,
 mixed packages, native values, resources, callbacks, and ABI rules.
 
