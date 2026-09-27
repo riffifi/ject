@@ -972,7 +972,9 @@ are the recommended house style. The one-line conditional expression requires `t
 
 ## 21. Current boundaries
 
-Ject is pre-1.0. It has local, Git, and registry dependencies; integrity-checked caches
-and lockfiles; publishing; native resources; and synchronous native-to-Ject callbacks.
-It does not sandbox native libraries. Capability controls, a WebAssembly provider, and
-long-term 1.0 compatibility guarantees remain future work.
+Ject is pre-1.0. Minor releases may make documented breaking changes; patch releases
+remain compatible within their minor line. The full promises and release checklist are
+in [COMPATIBILITY.md](COMPATIBILITY.md). Ject has local, Git, and registry dependencies;
+integrity-checked caches and lockfiles; publishing; native resources; and synchronous
+native-to-Ject callbacks. It does not sandbox native libraries. Capability controls, a
+WebAssembly provider, and long-term 1.0 compatibility guarantees remain future work.

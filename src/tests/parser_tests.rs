@@ -1337,4 +1337,22 @@ if true then 1 else 2 end";
             );
         }
     }
+
+    #[test]
+    fn release_documents_name_the_package_version() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let version = env!("CARGO_PKG_VERSION");
+        for relative in ["README.md", "docs/DOCS.md", "docs/PACKAGES.md"] {
+            let document = std::fs::read_to_string(root.join(relative)).unwrap();
+            assert!(
+                document.contains(version),
+                "{relative} does not name current version {version}"
+            );
+        }
+        let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
+        assert!(
+            changelog.contains(&format!("## {version}")),
+            "CHANGELOG.md has no release heading for {version}"
+        );
+    }
 }

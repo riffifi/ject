@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a pre-1.0 compatibility and release policy covering minor versus patch
+  changes, deprecations, native ABI identifiers, supported CI environments, and
+  the release checklist. Tests now prevent version drift in primary docs.
 - CI now separates format/Clippy checks from stable Linux, macOS, and Windows
   test-and-install lanes, with an additional non-blocking Rust beta lane.
 - The checker and language server now derive CorLib names from the runtime

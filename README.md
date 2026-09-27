@@ -250,14 +250,17 @@ Run `ject --help` for the command summary.
 
 - [The Ject guide and language reference](docs/DOCS.md)
 - [Packages and native libraries](docs/PACKAGES.md)
+- [Compatibility and release policy](docs/COMPATIBILITY.md)
 - [Runnable examples](examples/README.md)
 - [Release history](CHANGELOG.md)
 
 ## Project status
 
-Ject is usable but still pre-1.0. Language and package behavior may evolve between minor
-versions. Registry archives and lockfiles are integrity-checked; native plugins execute
-with the permissions of the Ject process and must be treated as trusted code.
+Ject is usable but still pre-1.0. Minor releases may include documented breaking
+changes; patch releases remain compatible within their minor line. See the
+[compatibility policy](docs/COMPATIBILITY.md). Registry archives and lockfiles are
+integrity-checked; native plugins execute with the permissions of the Ject process and
+must be treated as trusted code.
 
 ## License
 
