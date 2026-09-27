@@ -51,6 +51,13 @@ fn run_process_with_limits(
     timeout: Option<Duration>,
     max_output_bytes: Option<usize>,
 ) -> Result<Output, RuntimeError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Give each invocation its own process group so an aborted shell cannot
+        // leave background jobs running after Ject has returned an error.
+        command.process_group(0);
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -88,7 +95,7 @@ fn run_process_with_limits(
     let mut exit_status = None;
     let status = loop {
         if exceeded.load(Ordering::Relaxed) {
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             break child.wait();
         }
         if exit_status.is_none() {
@@ -96,7 +103,7 @@ fn run_process_with_limits(
                 Ok(Some(status)) => exit_status = Some(status),
                 Ok(None) => {}
                 Err(error) => {
-                    let _ = child.kill();
+                    terminate_process_tree(&mut child);
                     break Err(error);
                 }
             }
@@ -109,7 +116,7 @@ fn run_process_with_limits(
         if timeout.is_some_and(|limit| started.elapsed() >= limit) {
             timed_out = true;
             cancelled.store(true, Ordering::Relaxed);
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             break child.wait();
         }
         std::thread::sleep(Duration::from_millis(5));
@@ -163,6 +170,17 @@ fn run_process_with_limits(
         stdout,
         stderr,
     })
+}
+
+fn terminate_process_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        // The child is the leader of the group created above. A negative PID
+        // addresses that group and includes any descendants it spawned.
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
+    // This is also the non-Unix fallback and covers a failed group signal.
+    let _ = child.kill();
 }
 
 /// Set the application arguments visible to `system.args()` on this interpreter thread.

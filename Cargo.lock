@@ -528,6 +528,7 @@ dependencies = [
  "ctrlc",
  "flate2",
  "ject-native",
+ "libc",
  "libloading",
  "rustc-hash",
  "rustyline",

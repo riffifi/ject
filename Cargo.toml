@@ -30,5 +30,6 @@ ureq = "2.12"
 colored = "2.0"
 ject-native = { path = "crates/ject-native" }
 libloading = "0.8"
+libc = "0.2"
 tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread", "sync"] }
 tower-lsp = "0.20"

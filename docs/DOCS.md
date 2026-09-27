@@ -697,11 +697,12 @@ has `stdout`, `stderr`, `success`, and `status` fields. Output is decoded as UTF
 replacement characters for invalid bytes; `status` is `nil` when the process ended
 without an exit code. A failure to start the program throws a runtime error, while a
 nonzero exit is returned in the result. `directory` sets only that child's working
-directory. `timeout_ms` is an optional positive integer; a timeout kills the direct
-child and throws an error. Each output stream is limited to 16 MiB by default; exceeding
-the limit kills the child and throws an error. Pass a nonnegative byte limit to change it,
-or `nil` to remove it. A child that launches other processes may leave those descendants
-running after a timeout; Ject does not yet terminate a whole process tree.
+directory. `timeout_ms` is an optional positive integer; a timeout kills the command and
+throws an error. Each output stream is limited to 16 MiB by default; exceeding the limit
+also aborts the command. Pass a nonnegative byte limit to change it, or `nil` to remove it.
+On Unix, Ject places each command in a separate process group and terminates that whole
+group, including descendants. Other platforms currently guarantee termination of the
+direct child only.
 `system.change_dir(path)` changes the current Ject process's directory;
 `system.get_cwd()` and `system.cwd()` read it. `system.exec(command)` remains for
 compatibility, but invokes a shell and returns only trimmed stdout.

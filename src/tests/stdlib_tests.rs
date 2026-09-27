@@ -1309,6 +1309,25 @@ assert(literal.success == true, "successful exit should be success")
     }
 
     #[test]
+    #[cfg(unix)]
+    fn run_process_timeout_terminates_descendants() {
+        let marker =
+            std::env::temp_dir().join(format!("ject-process-descendant-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let script = format!(
+            "import \"system\" as system\nsystem.run_process(\"sh\", [\"-c\", \"(sleep 0.2; touch {}) & wait\"], timeout_ms=40)",
+            marker.display()
+        );
+        let result = run(&script);
+        assert!(result.unwrap_err().contains("timed out"));
+        std::thread::sleep(std::time::Duration::from_millis(350));
+        assert!(
+            !marker.exists(),
+            "a descendant survived the process timeout"
+        );
+    }
+
+    #[test]
     fn test_system_host_primitives_are_private() {
         let result = run("import \"system\" as system\nsystem._run_process");
         assert!(result.unwrap_err().contains("not found in module"));

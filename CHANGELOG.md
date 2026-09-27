@@ -24,7 +24,8 @@
   16 MiB ceiling; stalled response bodies have timeout regression coverage.
 - `system.run_process` now supports an optional timeout and a configurable
   per-stream output limit (16 MiB by default), with bounded memory and prompt
-  errors for runaway children.
+  errors for runaway children. On Unix, aborting a command now terminates its
+  entire process group instead of leaving descendants behind.
 - Fixed standard-library inverse trig outside the Taylor-series convergence range,
   median indexing in `math` and `array`, and real odd roots of negative numbers.
   Integer-domain math helpers now reject fractional and overflowing inputs
