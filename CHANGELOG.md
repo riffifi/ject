@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI now separates format/Clippy checks from stable Linux, macOS, and Windows
+  test-and-install lanes, with an additional non-blocking Rust beta lane.
 - The checker and language server now derive CorLib names from the runtime
   catalog. Module-only functions are no longer accepted without an import, and
   completion, hover, and signature help cover every actual CorLib function.

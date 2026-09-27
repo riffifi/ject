@@ -2,42 +2,73 @@ name: Ject
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [master]
   pull_request:
-    branches: [ "master" ]
+    branches: [master]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  quality:
+    name: Format and Clippy
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Check formatting
-      run: cargo fmt --all --check
-    - name: Lint
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-    - name: Run tests
-      run: cargo test --workspace --locked
-    - name: Install the CLI
-      run: cargo install --path . --force --locked --target-dir target
-    - name: Smoke-test the installed CLI
-      run: |
-        ject --version
-        cd examples/webvault
-        ject check
-        ject test
-        ject run
-    - name: Smoke-test a native package
-      working-directory: packages/jnum
-      run: |
-        ject check
-        ject test
-    - name: Smoke-test locked native dependencies
-      working-directory: examples/native_double_demo
-      run: |
-        ject install
-        ject install --locked
-        ject run
-        ject build --release
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: ${{ matrix.os }} / Rust ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rust: stable
+            experimental: false
+          - os: macos-latest
+            rust: stable
+            experimental: false
+          - os: windows-latest
+            rust: stable
+            experimental: false
+          - os: ubuntu-latest
+            rust: beta
+            experimental: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Run tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Install the CLI
+        run: cargo install --path . --force --locked --target-dir target
+      - name: Check the installed CLI
+        run: ject --version
+      - name: Smoke-test a source package
+        working-directory: examples/webvault
+        run: |
+          ject check
+          ject test
+          ject run
+      - name: Smoke-test a native package
+        working-directory: packages/jnum
+        run: |
+          ject check
+          ject test
+      - name: Smoke-test locked native dependencies
+        working-directory: examples/native_double_demo
+        run: |
+          ject install
+          ject install --locked
+          ject run
+          ject build --release
