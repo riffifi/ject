@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added bounded, streaming `http.download` with atomic no-clobber publication,
+  exact response metadata, and cleanup of partial files after transport, I/O, or
+  size-limit failures.
 - Added a pre-1.0 compatibility and release policy covering minor versus patch
   changes, deprecations, native ABI identifiers, supported CI environments, and
   the release checklist. Tests now prevent version drift in primary docs.

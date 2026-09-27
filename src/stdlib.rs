@@ -1022,10 +1022,16 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
             }
             h
         }
-        "http" => HashMap::from([(
-            "_request".to_string(),
-            Value::BuiltinFunction("http_request".to_string()),
-        )]),
+        "http" => HashMap::from([
+            (
+                "_request".to_string(),
+                Value::BuiltinFunction("http_request".to_string()),
+            ),
+            (
+                "_download".to_string(),
+                Value::BuiltinFunction("http_download".to_string()),
+            ),
+        ]),
         "json" => get_json_module(),
         "system" => {
             let mut h = get_system_module();
@@ -1139,6 +1145,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
     std::env::set_var("RUST_BACKTRACE", "full");
     match name {
         "http_request" => crate::http::request(args),
+        "http_download" => crate::http::download(args),
         // Enhanced array functions
         "sort" => {
             if args.len() != 1 {

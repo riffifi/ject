@@ -786,9 +786,27 @@ needed. The result has `status`, `reason`, `success` (2xx), final `url`, lowerca
 including their bodies; invalid requests and transport failures raise errors.
 Responses are read into memory. The per-request `max_response_bytes` budget can
 be reduced to any value from 0 to 16 MiB; the 16 MiB maximum cannot be raised
-without a future streaming API. The timeout also applies while reading the body.
-Invalid UTF-8 in
-`text` is replaced; use `bytes` when exact data matters.
+for an in-memory response. The timeout also applies while reading the body.
+Invalid UTF-8 in `text` is replaced; use `bytes` when exact data matters.
+
+For a larger response, stream it to disk instead:
+
+```ject
+let result = http.download(
+    "https://example.com/archive.tar",
+    "downloads/archive.tar",
+    max_bytes=2147483648
+)
+print result.bytes_written
+```
+
+`http.download(url, path, headers={}, timeout_ms=30000,
+max_bytes=1073741824)` keeps memory bounded while it writes the response. It
+returns `status`, `reason`, `success`, final `url`, lowercase `headers`, `path`,
+and `bytes_written`; non-2xx bodies are downloaded and reported normally. A
+completed file is published atomically in its destination directory. The call
+refuses to overwrite an existing path, removes partial data after any error, and
+defaults to a 1 GiB limit. The destination directory must already exist.
 
 ## 16. Packages and projects
 

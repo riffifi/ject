@@ -1072,6 +1072,19 @@ json.to_json(root)
         (url, server)
     }
 
+    fn http_download_directory(label: &str) -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("ject-http-{label}-{}-{unique}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        directory
+    }
+
     #[test]
     fn test_http_returns_non_success_responses() {
         let (url, server) = serve_http_once("404 Not Found", b"missing");
@@ -1203,6 +1216,117 @@ assert(response.bytes[0] == 0 and response.bytes[1] == 255 and response.bytes[2]
             "{elapsed:?}"
         );
         server.join().unwrap();
+    }
+
+    #[test]
+    fn http_download_streams_exact_bytes_and_metadata() {
+        let directory = http_download_directory("success");
+        let destination = directory.join("response.bin");
+        let ject_path = destination.to_string_lossy().replace('\\', "/");
+        let (url, server) = serve_http_once("206 Partial Content", &[0, 1, 127, 255]);
+        let result = run(&format!(
+            r#"
+import "http" as http
+let response = http.download("{url}", "{ject_path}", max_bytes=4)
+assert(response.status == 206 and response.success, "download status missing")
+assert(response.bytes_written == 4, "download byte count missing")
+assert(response.path == "{ject_path}", "download path changed")
+assert(response.headers["x-reply"] == "ready", "download headers missing")
+"#
+        ));
+        assert!(result.is_ok(), "{result:?}");
+        server.join().unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), [0, 1, 127, 255]);
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn http_download_removes_partial_files_over_the_limit() {
+        let directory = http_download_directory("limit");
+        let destination = directory.join("response.bin");
+        let ject_path = destination.to_string_lossy().replace('\\', "/");
+        let (url, server) = serve_http_once("200 OK", b"too large");
+        let result = run(&format!(
+            "import \"http\" as http\nhttp.download(\"{url}\", \"{ject_path}\", max_bytes=4)"
+        ));
+        let error = result.unwrap_err();
+        assert!(error.contains("exceeds the 4 byte limit"), "{error}");
+        server.join().unwrap();
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn http_download_removes_partial_files_after_a_body_timeout() {
+        use std::io::{Read, Write};
+
+        let directory = http_download_directory("timeout");
+        let destination = directory.join("response.bin");
+        let ject_path = destination.to_string_lossy().replace('\\', "/");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/slow", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let count = stream.read(&mut request).unwrap();
+            assert!(request[..count].starts_with(b"GET /slow HTTP/1.1"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nh")
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        });
+        let result = run(&format!(
+            "import \"http\" as http\nhttp.download(\"{url}\", \"{ject_path}\", timeout_ms=75)"
+        ));
+        let error = result.unwrap_err();
+        assert!(error.contains("failed to read"), "{error}");
+        server.join().unwrap();
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn http_download_never_overwrites_an_existing_path() {
+        let directory = http_download_directory("existing");
+        let destination = directory.join("response.bin");
+        std::fs::write(&destination, b"keep me").unwrap();
+        let ject_path = destination.to_string_lossy().replace('\\', "/");
+        let result = run(&format!(
+            "import \"http\" as http\nhttp.download(\"http://127.0.0.1:1\", \"{ject_path}\")"
+        ));
+        let error = result.unwrap_err();
+        assert!(error.contains("will not overwrite"), "{error}");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"keep me");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn http_download_rejects_invalid_arguments_before_transport() {
+        for (source, expected) in [
+            (
+                "http.download(\"file:///tmp/data\", \"out.bin\")",
+                "URL must start",
+            ),
+            (
+                "http.download(\"http://localhost\", \"out.bin\", timeout_ms=0)",
+                "positive integer",
+            ),
+            (
+                "http.download(\"http://localhost\", \"out.bin\", max_bytes=-1)",
+                "zero or greater",
+            ),
+            (
+                "http.download(\"http://localhost\", \"out.bin\", {\"X-Test\": 42})",
+                "string value",
+            ),
+        ] {
+            let result = run(&format!("import \"http\" as http\n{source}"));
+            let error = result.unwrap_err();
+            assert!(error.contains(expected), "{source}: {error}");
+        }
     }
 
     #[test]
