@@ -161,7 +161,7 @@ impl Interpreter {
         // Load CorLib (core library - always available)
         let corlib = crate::stdlib::create_corlib();
         for (name, value) in corlib {
-            if crate::stdlib::CORE_CONSTANT_NAMES.contains(&name.as_str()) {
+            if crate::stdlib::is_corlib_constant(&name) {
                 environment.define_const(name, value);
             } else {
                 environment.define(name, value);
@@ -1908,7 +1908,7 @@ impl Interpreter {
         // Load standard library into module environment
         let stdlib = crate::stdlib::create_stdlib();
         for (name, value) in stdlib {
-            if crate::stdlib::CORE_CONSTANT_NAMES.contains(&name.as_str()) {
+            if crate::stdlib::is_corlib_constant(&name) {
                 module_env.define_const(name, value);
             } else {
                 module_env.define(name, value);

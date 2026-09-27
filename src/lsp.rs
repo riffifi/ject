@@ -1136,8 +1136,8 @@ fn infer_expression_type(
             {
                 return types.get(&id).cloned().unwrap_or_else(|| "unknown".into());
             }
-            if crate::stdlib::CORE_CONSTANT_NAMES.contains(&name.as_str()) {
-                return "float".into();
+            if let Some(kind) = crate::stdlib::corlib_constant_type(name) {
+                return kind;
             }
         }
     }
@@ -1974,9 +1974,8 @@ fn completion_items(
     }
 
     let builtins = crate::stdlib::corlib_function_names();
-    let mut items = Vec::with_capacity(
-        KEYWORDS.len() + builtins.len() + crate::stdlib::CORE_CONSTANT_NAMES.len(),
-    );
+    let constants = crate::stdlib::corlib_constant_names();
+    let mut items = Vec::with_capacity(KEYWORDS.len() + builtins.len() + constants.len());
     items.extend(KEYWORDS.iter().map(|name| CompletionItem {
         label: (*name).into(),
         kind: Some(CompletionItemKind::KEYWORD),
@@ -1988,16 +1987,13 @@ fn completion_items(
         detail: Some(builtin_signature(name).into()),
         ..CompletionItem::default()
     }));
-    items.extend(
-        crate::stdlib::CORE_CONSTANT_NAMES
-            .iter()
-            .map(|name| CompletionItem {
-                label: (*name).into(),
-                kind: Some(CompletionItemKind::CONSTANT),
-                detail: Some("core constant: float".into()),
-                ..CompletionItem::default()
-            }),
-    );
+    items.extend(constants.into_iter().map(|name| CompletionItem {
+        detail:
+            crate::stdlib::corlib_constant_type(&name).map(|kind| format!("core constant: {kind}")),
+        label: name,
+        kind: Some(CompletionItemKind::CONSTANT),
+        ..CompletionItem::default()
+    }));
     let Some(index) = indexes.get(uri) else {
         return items;
     };

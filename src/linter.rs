@@ -10,6 +10,7 @@ struct Variable {
     name: String,
     used: bool,
     mutable: bool,
+    warn_if_unused: bool,
     declaration: Option<crate::lexer::SourcePosition>,
 }
 
@@ -95,8 +96,8 @@ impl Linter {
         }
     }
 
-    fn should_skip_unused_warning(name: &str) -> bool {
-        name.starts_with('_') || crate::stdlib::CORE_CONSTANT_NAMES.contains(&name)
+    fn should_skip_unused_warning(variable: &Variable) -> bool {
+        !variable.warn_if_unused || variable.name.starts_with('_')
     }
 
     pub fn new() -> Self {
@@ -132,8 +133,8 @@ impl Linter {
             );
         }
 
-        for name in crate::stdlib::CORE_CONSTANT_NAMES {
-            self.declare_external_constant((*name).to_string());
+        for name in crate::stdlib::corlib_constant_names() {
+            self.declare_external_constant(name);
         }
     }
 
@@ -198,7 +199,7 @@ impl Linter {
         for scope in &self.scopes {
             for var in scope.values() {
                 // Skip warnings for stdlib constants and underscore-prefixed variables
-                if !var.used && !Self::should_skip_unused_warning(&var.name) {
+                if !var.used && !Self::should_skip_unused_warning(var) {
                     self.warnings.push(LintWarning {
                         message: format!("unused variable `{}`", var.name),
                         position: var.declaration.clone(),
@@ -321,7 +322,7 @@ impl Linter {
             // Before popping, check for unused variables in this scope
             if let Some(scope) = self.scopes.last() {
                 for var in scope.values() {
-                    if !var.used && !Self::should_skip_unused_warning(&var.name) {
+                    if !var.used && !Self::should_skip_unused_warning(var) {
                         self.warnings.push(LintWarning {
                             message: format!("unused variable `{}`", var.name),
                             position: var.declaration.clone(),
@@ -350,10 +351,20 @@ impl Linter {
     }
 
     fn declare_external_constant(&mut self, name: String) {
-        self.declare_binding(name, false, None);
+        self.declare_binding_with_unused_warning(name, false, None, false);
     }
 
     fn declare_binding(&mut self, name: String, mutable: bool, kind: Option<SymbolKind>) {
+        self.declare_binding_with_unused_warning(name, mutable, kind, true);
+    }
+
+    fn declare_binding_with_unused_warning(
+        &mut self,
+        name: String,
+        mutable: bool,
+        kind: Option<SymbolKind>,
+        warn_if_unused: bool,
+    ) {
         let declaration = kind.and_then(|kind| {
             self.declaration_positions
                 .get_mut(&(name.clone(), kind))
@@ -379,6 +390,7 @@ impl Linter {
                     name,
                     used: false,
                     mutable,
+                    warn_if_unused,
                     declaration,
                 },
             );

@@ -11,9 +11,6 @@ use std::time::{Duration, Instant};
 
 static SEED: AtomicU64 = AtomicU64::new(0);
 
-/// Special floating-point values available without importing a math library.
-pub const CORE_CONSTANT_NAMES: &[&str] = &["inf", "nan"];
-
 thread_local! {
     static SCRIPT_ARGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
@@ -434,6 +431,26 @@ pub fn corlib_function_names() -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+/// Stable, sorted catalog of immutable values available without an import.
+pub fn corlib_constant_names() -> Vec<String> {
+    let mut names: Vec<_> = create_corlib()
+        .into_iter()
+        .filter_map(|(name, value)| (!matches!(value, Value::BuiltinFunction(_))).then_some(name))
+        .collect();
+    names.sort();
+    names
+}
+
+pub fn corlib_constant_type(name: &str) -> Option<String> {
+    create_corlib().get(name).and_then(|value| {
+        (!matches!(value, Value::BuiltinFunction(_))).then(|| value.type_name().to_string())
+    })
+}
+
+pub fn is_corlib_constant(name: &str) -> bool {
+    corlib_constant_type(name).is_some()
 }
 
 pub fn is_corlib_function(name: &str) -> bool {

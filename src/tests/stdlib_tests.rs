@@ -695,6 +695,32 @@ assert(math.E > 2.71 and math.E < 2.72, "E should be approximately 2.71")
     }
 
     #[test]
+    fn corlib_catalog_derives_functions_and_constants_from_runtime_values() {
+        use std::collections::HashSet;
+
+        let all = crate::stdlib::corlib_names()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let functions = crate::stdlib::corlib_function_names()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let constants = crate::stdlib::corlib_constant_names()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        assert!(functions.is_disjoint(&constants));
+        assert_eq!(
+            functions.union(&constants).cloned().collect::<HashSet<_>>(),
+            all
+        );
+        assert_eq!(constants, HashSet::from(["inf".into(), "nan".into()]));
+        assert_eq!(
+            crate::stdlib::corlib_constant_type("inf").as_deref(),
+            Some("float")
+        );
+        assert_eq!(crate::stdlib::corlib_constant_type("len"), None);
+    }
+
+    #[test]
     fn math_functions_see_their_module_constants() {
         let result = run(r#"
 import "math" as math

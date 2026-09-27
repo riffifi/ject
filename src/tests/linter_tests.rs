@@ -653,6 +653,18 @@ print PHI
     }
 
     #[test]
+    fn unaliased_import_does_not_warn_for_every_available_export() {
+        let (errors, warnings) = lint(
+            r#"
+import "math"
+print PI
+"#,
+        );
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    }
+
+    #[test]
     fn imported_names_cannot_be_reassigned() {
         for source in [
             "import \"math\" as math\nmath = 1",

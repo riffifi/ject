@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Core constants are now discovered from the same runtime CorLib catalog as
+  functions. Immutability, linting, hover inference, and completion no longer
+  depend on a second hardcoded name list or assume every constant is a float.
+  Unaliased imports also no longer emit unused warnings for every export made
+  available by the module.
 - JGUI can now dispatch `change` and `click` events headlessly, exercising real
   Ject callbacks through ABI v2 in package tests and cross-platform CI. Headless
   JGUI errors no longer receive an unrelated graphical-display hint.
