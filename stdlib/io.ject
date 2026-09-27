@@ -11,6 +11,8 @@ export fn is_dir(path) return _is_dir(path) end
 export fn list_dir(path) return _list_dir(path) end
 export fn mkdir(path) return _mkdir(path) end
 export fn remove_file(path) return _remove_file(path) end
+export fn copy_file(source, destination) return _copy_file(source, destination) end
+export fn remove_dir(path, recursive=false) return _remove_dir(path, recursive) end
 export fn read_bytes(path) return _read_bytes(path) end
 export fn write_bytes(path, bytes) return _write_bytes(path, bytes) end
 export fn parse_json(text) return _parse_json(text) end

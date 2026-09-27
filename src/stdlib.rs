@@ -887,6 +887,8 @@ pub fn get_io_module() -> HashMap<String, Value> {
         "list_dir",
         "mkdir",
         "remove_file",
+        "copy_file",
+        "remove_dir",
         "read_bytes",
         "write_bytes",
     ] {
@@ -3089,6 +3091,81 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             };
             std::fs::remove_file(path).map_err(|error| RuntimeError {
                 message: format!("remove_file() failed for '{path}': {error}"),
+            })?;
+            Ok(Value::Nil)
+        }
+        "copy_file" => {
+            let [Value::String(source), Value::String(destination)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "copy_file() requires string source and destination paths".to_string(),
+                });
+            };
+            let mut input = std::fs::File::open(source).map_err(|error| RuntimeError {
+                message: format!("copy_file() failed to open '{source}': {error}"),
+            })?;
+            let permissions = input
+                .metadata()
+                .map_err(|error| RuntimeError {
+                    message: format!("copy_file() failed to inspect '{source}': {error}"),
+                })?
+                .permissions();
+            let mut output = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(destination)
+                .map_err(|error| RuntimeError {
+                    message: format!(
+                        "copy_file() failed to create '{destination}' without overwriting it: {error}"
+                    ),
+                })?;
+            match std::io::copy(&mut input, &mut output) {
+                Ok(bytes) => {
+                    drop(output);
+                    if let Err(error) = std::fs::set_permissions(destination, permissions) {
+                        let _ = std::fs::remove_file(destination);
+                        return Err(RuntimeError {
+                            message: format!(
+                                "copy_file() failed to preserve permissions on '{destination}': {error}"
+                            ),
+                        });
+                    }
+                    let bytes = match i64::try_from(bytes) {
+                        Ok(bytes) => bytes,
+                        Err(_) => {
+                            let _ = std::fs::remove_file(destination);
+                            return Err(RuntimeError {
+                                message: "copy_file() copied more bytes than Ject can represent"
+                                    .to_string(),
+                            });
+                        }
+                    };
+                    Ok(Value::Integer(bytes))
+                }
+                Err(error) => {
+                    drop(output);
+                    let _ = std::fs::remove_file(destination);
+                    Err(RuntimeError {
+                        message: format!(
+                            "copy_file() failed from '{source}' to '{destination}': {error}"
+                        ),
+                    })
+                }
+            }
+        }
+        "remove_dir" => {
+            let [Value::String(path), Value::Bool(recursive)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "remove_dir() requires a string path and boolean recursive flag"
+                        .to_string(),
+                });
+            };
+            let result = if *recursive {
+                std::fs::remove_dir_all(path)
+            } else {
+                std::fs::remove_dir(path)
+            };
+            result.map_err(|error| RuntimeError {
+                message: format!("remove_dir() failed for '{path}': {error}"),
             })?;
             Ok(Value::Nil)
         }

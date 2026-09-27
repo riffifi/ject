@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `io.copy_file` now provides no-clobber file copying, and `io.remove_dir`
+  supports safe empty-directory removal plus explicit recursive cleanup.
 - Applications can enforce a transitive native-plugin trust boundary with
   `[security].trusted-native`. Unlisted Rust plugins are rejected before Cargo
   runs or a dynamic library loads; documentation distinguishes this allowlist

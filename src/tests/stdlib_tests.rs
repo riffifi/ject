@@ -913,6 +913,53 @@ assert(not file_exists("{path}/b.txt"), "remove_file should remove only the name
     }
 
     #[test]
+    fn io_copies_without_clobbering_and_removes_directories_explicitly() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("ject-fs-lifecycle-{}-{unique}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.to_string_lossy().replace('\\', "/");
+        let script = format!(
+            r#"
+import "io" as io
+import "string" as string
+io.write_file("{path}/source.txt", "hello")
+let copied = io.copy_file("{path}/source.txt", "{path}/copy.txt")
+assert(copied == 5, "copy_file should return its byte count")
+assert(io.read_file("{path}/copy.txt") == "hello", "copy_file changed the data")
+
+try
+    io.copy_file("{path}/source.txt", "{path}/copy.txt")
+    assert(false, "copy_file must not overwrite an existing destination")
+catch error
+    assert(string.contains_str(error, "without overwriting"), "copy_file should explain no-clobber behavior")
+end
+assert(io.read_file("{path}/copy.txt") == "hello", "failed copy clobbered the destination")
+
+io.mkdir("{path}/empty")
+io.remove_dir("{path}/empty")
+assert(not io.file_exists("{path}/empty"), "remove_dir should remove an empty directory")
+io.mkdir("{path}/tree/nested")
+io.write_file("{path}/tree/nested/item.txt", "data")
+try
+    io.remove_dir("{path}/tree")
+    assert(false, "non-recursive remove_dir must reject a non-empty directory")
+catch error
+    assert(string.contains_str(error, "remove_dir() failed"), "remove_dir should preserve the OS error")
+end
+io.remove_dir("{path}/tree", true)
+assert(not io.file_exists("{path}/tree"), "recursive remove_dir should remove the tree")
+"#
+        );
+        let result = run(&script);
+        std::fs::remove_dir_all(&directory).unwrap();
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
     #[cfg(unix)]
     fn list_dir_rejects_names_that_cannot_be_reopened_from_ject() {
         use std::os::unix::ffi::OsStrExt;

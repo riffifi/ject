@@ -745,6 +745,11 @@ removes one file or symlink, never a directory tree. The same `list_dir`, `mkdir
 `remove_file`, `is_file`, and `is_dir` primitives are available in CorLib. Failures
 from the three directory operations include the path and operating-system cause.
 
+`io.copy_file(source, destination)` copies one file, returns the number of bytes
+written, and refuses to overwrite an existing destination. `io.remove_dir(path)`
+removes only an empty directory. Recursive deletion must be requested explicitly as
+`io.remove_dir(path, true)`; it removes the complete directory tree.
+
 Use `io.read_bytes(path)` and `io.write_bytes(path, bytes)` for binary files:
 
 ```ject
