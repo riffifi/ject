@@ -11,9 +11,13 @@ impl Drop for TempTree {
 }
 
 fn run_ject(directory: &Path, command: &str) -> Output {
+    run_ject_args(directory, &[command])
+}
+
+fn run_ject_args(directory: &Path, arguments: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ject"))
         .current_dir(directory)
-        .arg(command)
+        .args(arguments)
         .output()
         .expect("ject should start")
 }
@@ -119,13 +123,13 @@ fn check_does_not_build_native_but_test_and_run_do() {
     assert!(!untrusted.status.success());
     assert!(String::from_utf8_lossy(&untrusted.stderr)
         .contains("native dependency 'probe_native' not trusted"));
-    let app_manifest = app.join("Ject.toml");
-    let manifest = fs::read_to_string(&app_manifest).unwrap();
-    fs::write(
-        &app_manifest,
-        manifest.replace("trusted-native = []", "trusted-native = [\"probe_native\"]"),
-    )
-    .unwrap();
+    assert_success(
+        &run_ject_args(&app, &["native", "trust", "probe_native"]),
+        "ject native trust probe_native",
+    );
+    assert!(fs::read_to_string(app.join("Ject.toml"))
+        .unwrap()
+        .contains("trusted-native = [\"probe_native\"]"));
     assert_success(&run_ject(&app, "run"), "ject run");
 
     let manifest_path = library.join("Ject.toml");
@@ -162,4 +166,16 @@ fn check_does_not_build_native_but_test_and_run_do() {
         .output()
         .unwrap();
     assert_success(&locked, "ject install --locked");
+
+    let listed = run_ject_args(&app, &["native", "list"]);
+    assert_success(&listed, "ject native list");
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("probe_native: trusted"));
+    assert_success(
+        &run_ject_args(&app, &["native", "untrust", "probe_native"]),
+        "ject native untrust probe_native",
+    );
+    let denied_again = run_ject(&app, "run");
+    assert!(!denied_again.status.success());
+    assert!(String::from_utf8_lossy(&denied_again.stderr)
+        .contains("native dependency 'probe_native' not trusted"));
 }

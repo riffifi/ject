@@ -236,6 +236,7 @@ See [Packages and native libraries](docs/PACKAGES.md) for the complete authoring
 | `ject check` | Parse and lint every package source |
 | `ject test` | Run `tests/*.ject` |
 | `ject build [--release]` | Check source and build native components |
+| `ject native list`, `trust`, `untrust` | Manage the native dependency allowlist |
 | `ject add`, `remove`, `update` | Edit and resolve dependencies |
 | `ject install [--locked]` | Resolve, lock, and build the graph |
 | `ject publish --registry URL` | Publish an immutable package version |

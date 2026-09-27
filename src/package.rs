@@ -619,6 +619,64 @@ fn update_dependency_value(
         .map_err(|e| format!("failed to replace {}: {e}", manifest.display()))
 }
 
+pub fn set_native_dependency_trust(
+    project: &Project,
+    name: &str,
+    trusted: bool,
+) -> Result<Project, String> {
+    validate_package_name(name)?;
+    let dependencies = dependency_projects(project)?;
+    let dependency = dependencies
+        .iter()
+        .find(|dependency| dependency.name == name)
+        .ok_or_else(|| format!("package '{name}' is not in the dependency graph"))?;
+    if dependency.native.is_none() {
+        return Err(format!("dependency '{name}' has no native plugin"));
+    }
+
+    let mut names = match &project.trusted_native {
+        Some(names) => names.clone(),
+        None if trusted => HashSet::new(),
+        None => dependencies
+            .iter()
+            .filter(|dependency| dependency.native.is_some())
+            .map(|dependency| dependency.name.clone())
+            .collect(),
+    };
+    if trusted {
+        names.insert(name.to_string());
+    } else {
+        names.remove(name);
+    }
+    let mut sorted = names.into_iter().collect::<Vec<_>>();
+    sorted.sort();
+
+    let manifest = project.root.join(MANIFEST_FILE);
+    let source = fs::read_to_string(&manifest)
+        .map_err(|error| format!("failed to read {}: {error}", manifest.display()))?;
+    let mut document = source
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|error| format!("invalid {}: {error}", manifest.display()))?;
+    if !document.contains_key("security") {
+        document["security"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let security = document["security"]
+        .as_table_mut()
+        .ok_or_else(|| format!("[security] in {} must be a table", manifest.display()))?;
+    let mut array = toml_edit::Array::new();
+    for name in sorted {
+        array.push(name);
+    }
+    security["trusted-native"] = toml_edit::value(array);
+
+    let temporary = manifest.with_extension("toml.tmp");
+    fs::write(&temporary, document.to_string())
+        .map_err(|error| format!("failed to write {}: {error}", temporary.display()))?;
+    fs::rename(&temporary, &manifest)
+        .map_err(|error| format!("failed to replace {}: {error}", manifest.display()))?;
+    load(&project.root)
+}
+
 fn dependency_line(path: &Path) -> String {
     let escaped = path
         .to_string_lossy()
@@ -1661,7 +1719,7 @@ mod tests {
         .unwrap();
         fs::write(
             app.join(MANIFEST_FILE),
-            "[package]\nname = \"app\"\n[security]\ntrusted-native = []\n[dependencies]\nnative_tools = { path = \"../native_tools\" }\n",
+            "# keep this comment\n[package]\nname = \"app\"\n[security]\ntrusted-native = []\n[dependencies]\nnative_tools = { path = \"../native_tools\" }\n",
         )
         .unwrap();
 
@@ -1674,14 +1732,16 @@ mod tests {
         assert!(build_error.contains("native dependency 'native_tools' not trusted"));
         assert!(!build_error.contains("Cargo manifest"));
 
-        fs::write(
-            app.join(MANIFEST_FILE),
-            "[package]\nname = \"app\"\n[security]\ntrusted-native = [\"native_tools\"]\n[dependencies]\nnative_tools = { path = \"../native_tools\" }\n",
-        )
-        .unwrap();
-        let project = load(&app).unwrap();
+        let project = set_native_dependency_trust(&project, "native_tools", true).unwrap();
+        let updated_manifest = fs::read_to_string(app.join(MANIFEST_FILE)).unwrap();
+        assert!(updated_manifest.contains("# keep this comment"));
+        assert!(updated_manifest.contains("trusted-native = [\"native_tools\"]"));
         let dependencies = dependency_projects(&project).unwrap();
         validate_native_trust(&project, &dependencies).unwrap();
+
+        let project = set_native_dependency_trust(&project, "native_tools", false).unwrap();
+        let dependencies = dependency_projects(&project).unwrap();
+        assert!(validate_native_trust(&project, &dependencies).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -114,6 +114,19 @@ Omitting `[security]` preserves the permissive pre-0.12 behavior. New applicatio
 that may consume third-party packages should add the section deliberately; review a
 package's Rust code and dependency lockfile before adding its name.
 
+The CLI edits the policy without disturbing surrounding manifest comments:
+
+```sh
+ject native list
+ject native trust jgui
+ject native untrust jgui
+```
+
+Starting an allowlist with `trust` denies every other native dependency until it is
+trusted explicitly. Starting with `untrust` preserves the currently implicit trust of
+other native dependencies and denies only the named package. Both mutation commands
+refresh `Ject.lock`.
+
 ## 4. Source libraries
 
 The entry file defines the public API explicitly:

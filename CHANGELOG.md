@@ -6,6 +6,7 @@
   `[security].trusted-native`. Unlisted Rust plugins are rejected before Cargo
   runs or a dynamic library loads; documentation distinguishes this allowlist
   from sandboxing and rejects unenforceable per-capability claims for `cdylib`s.
+  `ject native list`, `trust`, and `untrust` manage the policy and lockfile.
 - Core constants are now discovered from the same runtime CorLib catalog as
   functions. Immutability, linting, hover inference, and completion no longer
   depend on a second hardcoded name list or assume every constant is a float.

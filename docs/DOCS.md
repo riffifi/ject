@@ -851,6 +851,8 @@ Once this section exists, unlisted native dependencies are rejected before Cargo
 started or a dynamic library is loaded. `trusted-native = []` denies all dependency
 plugins. This is a trust allowlist, not a sandbox: an allowed Rust plugin has the same
 operating-system permissions as the Ject process.
+Use `ject native list` to inspect the resolved graph, then `ject native trust NAME`
+or `ject native untrust NAME` to update the manifest and lockfile safely.
 
 See [Packages and native libraries](PACKAGES.md) for manifests, lockfiles, publishing,
 mixed packages, native values, resources, callbacks, and ABI rules.
@@ -902,6 +904,9 @@ completion from the same parser and semantic index as the CLI.
 | `ject check` | Parse and lint all package sources |
 | `ject test` | Run every `tests/*.ject` script |
 | `ject build [--release]` | Check source and build native artifacts |
+| `ject native list` | Show native dependencies and trust state |
+| `ject native trust NAME` | Allow one dependency's native plugin |
+| `ject native untrust NAME` | Deny one dependency's native plugin |
 | `ject add ...` | Add and resolve a dependency |
 | `ject remove NAME` | Remove a dependency |
 | `ject update [NAME]` | Refresh allowed dependency versions or revisions |

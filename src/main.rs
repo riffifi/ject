@@ -86,6 +86,7 @@ fn main() {
         }
         "test" => run_project_tests(),
         "install" => install_project(args.iter().any(|arg| arg == "--locked")),
+        "native" => manage_native_trust(&args[1..]),
         "add" => add_dependency(&args[1..]),
         "remove" => remove_dependency(&args[1..]),
         "update" => update_dependencies(&args[1..]),
@@ -213,6 +214,9 @@ USAGE:
     ject check                Check the current package
     ject test                 Run tests/*.ject in the current package
     ject install [--locked]   Resolve, lock, and build dependencies
+    ject native list          Show native dependencies and their trust state
+    ject native trust NAME    Allow one dependency's native plugin
+    ject native untrust NAME  Deny one dependency's native plugin
     ject add <name> --path <path>  Add a local source or mixed library
     ject add <name> --version <version> [--registry <url>]
     ject add <name> --git <url> [--rev <commit> | --branch <name> | --tag <tag>]
@@ -273,6 +277,72 @@ fn install_project(locked: bool) {
                 Some("check dependency names and paths in Ject.toml"),
             );
             std::process::exit(1);
+        }
+    }
+}
+
+fn manage_native_trust(args: &[String]) {
+    let project = current_project_or_exit();
+    let dependencies = package::dependency_projects(&project).unwrap_or_else(|error| {
+        emit_cli_error(
+            "E4102",
+            error,
+            Some("run `ject install` first if dependency sources are not available locally"),
+        );
+        std::process::exit(1);
+    });
+    let mut native_names = dependencies
+        .iter()
+        .filter(|dependency| dependency.native.is_some())
+        .map(|dependency| dependency.name.clone())
+        .collect::<Vec<_>>();
+    native_names.sort();
+
+    match args {
+        [command] if command == "list" => {
+            if project.native.is_some() {
+                println!("{} (root, trusted)", project.name);
+            }
+            if native_names.is_empty() {
+                println!("No native dependencies");
+                return;
+            }
+            for name in native_names {
+                let state = match &project.trusted_native {
+                    None => "trusted (permissive policy)",
+                    Some(trusted) if trusted.contains(&name) => "trusted",
+                    Some(_) => "denied",
+                };
+                println!("{name}: {state}");
+            }
+            if project.trusted_native.is_none() {
+                println!("No explicit policy; use `ject native trust NAME` to start an allowlist");
+            }
+        }
+        [command, name] if command == "trust" || command == "untrust" => {
+            let trusted = command == "trust";
+            let updated = package::set_native_dependency_trust(&project, name, trusted)
+                .and_then(|updated| package::install(&updated).map(|_| updated));
+            match updated {
+                Ok(_) if trusted => println!("Trusted native dependency '{name}'"),
+                Ok(_) => println!("Denied native dependency '{name}'"),
+                Err(error) => {
+                    emit_cli_error(
+                        "E4107",
+                        error,
+                        Some("choose a native package shown by `ject native list`"),
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => {
+            emit_cli_error(
+                "E4002",
+                "native requires `list`, `trust NAME`, or `untrust NAME`",
+                Some("run `ject native list` to inspect the current dependency policy"),
+            );
+            std::process::exit(2);
         }
     }
 }
