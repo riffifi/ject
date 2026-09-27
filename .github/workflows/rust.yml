@@ -65,6 +65,11 @@ jobs:
         run: |
           ject check
           ject test
+      - name: Smoke-test native callbacks
+        working-directory: packages/jgui
+        run: |
+          ject check
+          ject test
       - name: Smoke-test locked native dependencies
         working-directory: examples/native_double_demo
         run: |

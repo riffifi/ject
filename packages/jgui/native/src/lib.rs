@@ -99,6 +99,18 @@ fn children(widget: &Value) -> &[Value] {
         .unwrap_or_default()
 }
 
+fn find_widget<'a>(widgets: &'a [Value], id: &str) -> Option<&'a Value> {
+    for widget in widgets {
+        if widget.get("id").and_then(Value::as_str) == Some(id) {
+            return Some(widget);
+        }
+        if let Some(found) = find_widget(children(widget), id) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 fn validate_document(document: &Map<String, Value>) -> Result<(), String> {
     const MAX_WIDGETS: usize = 10_000;
     const MAX_LAYOUT_DEPTH: usize = 64;
@@ -600,6 +612,35 @@ fn call(
         validate_document(document)?;
         return Ok(Value::Bool(true));
     }
+    if function == "dispatch" {
+        let [Value::Object(document), Value::String(id), Value::String(kind), value] =
+            args.as_slice()
+        else {
+            return Err("dispatch expects a document, widget ID, event kind, and value".into());
+        };
+        validate_document(document)?;
+        let widgets = document
+            .get("widgets")
+            .and_then(Value::as_array)
+            .ok_or("document.widgets must be an array")?;
+        let widget = find_widget(widgets, id)
+            .ok_or_else(|| format!("document has no widget with ID '{id}'"))?;
+        let callback_key = match kind.as_str() {
+            "change" => "on_change",
+            "click" => "on_click",
+            _ => return Err("event kind must be 'change' or 'click'".into()),
+        };
+        let callback = callback(widget, callback_key);
+        let mut values = document
+            .get("state")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        if kind == "change" {
+            values.insert(id.clone(), value.clone());
+        }
+        return emit_event(host, callback, kind, id, value.clone(), &values);
+    }
     if function != "run" {
         return Err(format!("unknown function '{function}'"));
     }
@@ -668,7 +709,7 @@ fn call(
     Ok(json!({ "values": output.values, "clicked": output.clicked }))
 }
 
-ject_native::ject_plugin_v2!("jgui", ["run", "themes", "validate"], call);
+ject_native::ject_plugin_v2!("jgui", ["run", "themes", "validate", "dispatch"], call);
 
 #[cfg(test)]
 mod tests {

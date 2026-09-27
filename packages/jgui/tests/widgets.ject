@@ -32,13 +32,32 @@ assert(layout.children[1].columns == 2, "grid columns")
 assert(gui.value_text("status", "Status: ").kind == "value_text", "bound text constructor")
 assert(gui.meter("level", "Level").kind == "meter", "bound meter constructor")
 
-let document = gui.document("Studio", [layout], 900, 640, {bpm: 120}, "midnight")
+let document = gui.document("Studio", [layout, range, button], 900, 640, {bpm: 120}, "midnight")
 assert(document.title == "Studio", "document title")
 assert(document.width == 900 and document.height == 640, "document dimensions")
 assert(document.state.bpm == 120, "document initial state")
 assert(document.theme == "midnight", "document theme")
 assert(len(gui.THEMES) == 4, "published theme list")
 assert(gui.validate(document), "headless native validation")
+assert(gui.dispatch(document, "priority", "change", 4) == 4, "change callbacks cross the native ABI")
+
+let callback_document = gui.document("Callbacks", [
+    gui.button("save", "Save", false, fn(event) -> {set: {last_id: event.id}, close: event.kind == "click"}),
+    gui.slider("gain", "Gain", 0, 0, 10, fn(event) -> {set: {gain: event.values.gain}})
+], state={ready: true})
+let click_action = gui.dispatch(callback_document, "save", "click", true)
+assert(click_action.set.last_id == "save" and click_action.close, "click callback result must round-trip")
+let change_action = gui.dispatch(callback_document, "gain", "change", 7)
+assert(change_action.set.gain == 7, "change event state must contain the new value")
+
+let missing_rejected = false
+try
+    gui.dispatch(document, "missing", "click", true)
+catch err
+    assert(type_of(err) == "string", "dispatch errors cross the ABI")
+    missing_rejected = true
+end
+assert(missing_rejected, "dispatch must reject unknown widget IDs")
 
 assert(gui.code("x").kind == "code", "code constructor")
 assert(gui.link("site", "https://example.com").url == "https://example.com", "link constructor")

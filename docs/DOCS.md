@@ -684,6 +684,11 @@ with a native error instead of attempting an unbounded allocation.
 JGUI exposes `validate(document)` for headless checks of a declarative UI before
 opening a window. Validation includes themes, duplicate and missing widget IDs,
 callback values, a 10,000-widget limit, and a maximum layout depth of 64.
+`dispatch(document, id, kind, value=nil)` invokes a widget's `on_change` or
+`on_click` handler without opening a window. Use `"change"` or `"click"` as the
+kind; the callback receives the same event dictionary as it does in a rendered
+window, and its action is returned to the test. This makes callback behavior and
+native ABI round-trips testable in headless CI.
 
 For external commands, prefer `system.run_process(program, arguments=[], directory=nil,
 timeout_ms=nil, max_output_bytes=16777216)`:

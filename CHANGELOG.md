@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- JGUI can now dispatch `change` and `click` events headlessly, exercising real
+  Ject callbacks through ABI v2 in package tests and cross-platform CI. Headless
+  JGUI errors no longer receive an unrelated graphical-display hint.
 - Added bounded, streaming `http.download` with atomic no-clobber publication,
   exact response metadata, and cleanup of partial files after transport, I/O, or
   size-limit failures.

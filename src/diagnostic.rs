@@ -345,7 +345,7 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
             "E3002",
             Some("ensure the denominator is not zero before dividing"),
         )
-    } else if lower.contains("window failed") || lower.contains("jgui::") {
+    } else if lower.contains("jgui::run") && lower.contains("window failed") {
         (
             "E3202",
             Some("run JGUI in a graphical desktop session and verify DISPLAY or WAYLAND_DISPLAY is available"),
@@ -453,6 +453,14 @@ mod tests {
                 .code
                 .as_deref(),
             Some("E3202")
+        );
+        let headless_jgui_error =
+            runtime_diagnostic("jgui::dispatch: document has no widget with ID 'missing'");
+        assert_eq!(headless_jgui_error.code.as_deref(), Some("E3999"));
+        assert!(headless_jgui_error.help.is_none());
+        assert_eq!(
+            runtime_diagnostic("window failed to save").code.as_deref(),
+            Some("E3999")
         );
         assert_eq!(
             runtime_diagnostic(

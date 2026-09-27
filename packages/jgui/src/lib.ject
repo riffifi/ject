@@ -152,6 +152,15 @@ export fn validate(document)
     return native.validate(document)
 end
 
+# Invoke a widget callback without opening a window. This is intended for tests
+# and for keeping event logic independent of the renderer.
+export fn dispatch(document, id, kind, value = nil)
+    assert(type_of(document) == "dictionary", "dispatch expects a JGUI document")
+    assert(type_of(id) == "string", "dispatch widget ID must be a string")
+    assert(kind == "change" or kind == "click", "dispatch event kind must be change or click")
+    return native.dispatch(document, id, kind, value)
+end
+
 export fn message(title, text)
     return run(title, [heading(title), label(text), spacer(), button("ok", "OK", true)], 440, 220)
 end
