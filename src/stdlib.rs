@@ -997,7 +997,7 @@ pub fn get_base_module() -> HashMap<String, Value> {
 /// call private `_name` aliases without recursively calling themselves. Only
 /// explicit `export` declarations become part of a module's public API.
 pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> {
-    let mut builtins = match module_stem {
+    let builtins = match module_stem {
         "array" => {
             let m = get_array_module();
             ["to_uarray", "to_array"]
@@ -1034,8 +1034,11 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
             for k in ["append_file", "read_lines"] {
                 h.insert(k.to_string(), Value::BuiltinFunction(k.to_string()));
             }
-            for (k, v) in get_json_module() {
-                h.entry(k).or_insert(v);
+            let json = get_json_module();
+            for name in ["parse_json", "to_json"] {
+                if let Some(value) = json.get(name) {
+                    h.insert(name.to_string(), value.clone());
+                }
             }
             h
         }
@@ -1072,13 +1075,16 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
         .collect(),
         _ => HashMap::new(),
     };
-    let private_aliases = builtins
-        .iter()
-        .filter(|(name, _)| !name.starts_with('_'))
-        .map(|(name, value)| (format!("_{name}"), value.clone()))
-        .collect::<Vec<_>>();
-    builtins.extend(private_aliases);
     builtins
+        .into_iter()
+        .map(|(name, value)| {
+            if name.starts_with('_') {
+                (name, value)
+            } else {
+                (format!("_{name}"), value)
+            }
+        })
+        .collect()
 }
 
 /// Get a module by name (for import system)

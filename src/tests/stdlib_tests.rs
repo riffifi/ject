@@ -1356,11 +1356,11 @@ assert(response.headers["x-reply"] == "ready", "download headers missing")
     }
 
     #[test]
-    fn test_inject_system_module_includes_exec() {
+    fn test_inject_system_module_includes_private_exec_primitive() {
         let m = crate::stdlib::inject_module_file_builtins("system");
         assert!(
-            m.contains_key("exec"),
-            "missing exec: {:?}",
+            m.contains_key("_exec") && !m.contains_key("exec"),
+            "unexpected exec primitives: {:?}",
             m.keys().collect::<Vec<_>>()
         );
     }
@@ -1555,7 +1555,7 @@ assert(s.capitalize("hello") == "Hello", "capitalize from stdlib/string.ject")
     }
 
     #[test]
-    fn standard_module_host_exports_match_their_source_interfaces() {
+    fn standard_module_host_primitives_stay_private_behind_source_facades() {
         let mut mismatches = Vec::new();
         for stem in [
             "array",
@@ -1570,13 +1570,18 @@ assert(s.capitalize("hello") == "Hello", "capitalize from stdlib/string.ject")
         ] {
             let source = crate::stdlib::embedded_stdlib_module_source(stem).unwrap();
             let interface = crate::module_interface::ModuleInterface::parse(source).unwrap();
-            let mut missing = crate::stdlib::inject_module_file_builtins(stem)
+            let mut invalid = crate::stdlib::inject_module_file_builtins(stem)
                 .into_keys()
-                .filter(|name| !name.starts_with('_') && interface.export(name).is_none())
+                .filter(|name| {
+                    let Some(public_name) = name.strip_prefix('_') else {
+                        return true;
+                    };
+                    interface.export(public_name).is_none()
+                })
                 .collect::<Vec<_>>();
-            missing.sort();
-            if !missing.is_empty() {
-                mismatches.push(format!("{stem}: {missing:?}"));
+            invalid.sort();
+            if !invalid.is_empty() {
+                mismatches.push(format!("{stem}: {invalid:?}"));
             }
         }
         assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));

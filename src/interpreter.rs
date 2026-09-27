@@ -161,11 +161,7 @@ impl Interpreter {
         // Load CorLib (core library - always available)
         let corlib = crate::stdlib::create_corlib();
         for (name, value) in corlib {
-            if crate::stdlib::is_corlib_constant(&name) {
-                environment.define_const(name, value);
-            } else {
-                environment.define(name, value);
-            }
+            environment.define_const(name, value);
         }
 
         // Note: Standard library modules are now loaded via import statements
@@ -365,7 +361,7 @@ impl Interpreter {
                 };
                 if self.environment.is_mutable(root) == Some(false) {
                     return Err(RuntimeError {
-                        message: format!("Cannot assign through constant '{root}'"),
+                        message: format!("Cannot assign through immutable binding '{root}'"),
                     });
                 }
                 let val = self.evaluate_expression(value)?;
@@ -1908,11 +1904,7 @@ impl Interpreter {
         // Load standard library into module environment
         let stdlib = crate::stdlib::create_stdlib();
         for (name, value) in stdlib {
-            if crate::stdlib::is_corlib_constant(&name) {
-                module_env.define_const(name, value);
-            } else {
-                module_env.define(name, value);
-            }
+            module_env.define_const(name, value);
         }
 
         let module_file_stem = if module_file_path.starts_with("<embedded:") {
@@ -2509,7 +2501,7 @@ impl Interpreter {
             Expr::Identifier(name) => {
                 if self.environment.is_mutable(name) == Some(false) {
                     return Err(RuntimeError {
-                        message: format!("Cannot assign through constant '{name}'"),
+                        message: format!("Cannot assign through immutable binding '{name}'"),
                     });
                 }
                 let current = self.environment.get(name).ok_or_else(|| RuntimeError {

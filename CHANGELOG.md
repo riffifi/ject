@@ -6,7 +6,11 @@
   functions. Immutability, linting, hover inference, and completion no longer
   depend on a second hardcoded name list or assume every constant is a float.
   Unaliased imports also no longer emit unused warnings for every export made
-  available by the module.
+  available by the module. CorLib functions are immutable first-class bindings
+  at both check time and runtime, with a dedicated diagnostic and actionable
+  help instead of conflicting “undeclared” behavior. Injected standard-library
+  host primitives now exist only under private `_...` names behind their Ject
+  facades.
 - JGUI can now dispatch `change` and `click` events headlessly, exercising real
   Ject callbacks through ABI v2 in package tests and cross-platform CI. Headless
   JGUI errors no longer receive an unrelated graphical-display hint.

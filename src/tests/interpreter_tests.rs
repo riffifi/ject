@@ -42,7 +42,7 @@ mod tests {
         assert!(run("const answer = 42\nassert(answer == 42)").is_ok());
 
         let error = run("const answer = 42\nanswer = 43").unwrap_err();
-        assert!(error.contains("constant 'answer'"), "{error}");
+        assert!(error.contains("immutable binding 'answer'"), "{error}");
     }
 
     #[test]
@@ -58,8 +58,18 @@ mod tests {
         assert!(run("assert(inf > 1000000)\nassert(nan != nan)").is_ok());
         for source in ["inf = 3", "nan = 2"] {
             let error = run(source).unwrap_err();
-            assert!(error.contains("constant"), "{source}: {error}");
+            assert!(error.contains("immutable binding"), "{source}: {error}");
         }
+    }
+
+    #[test]
+    fn corlib_functions_are_immutable_without_a_declaration() {
+        let result = run("len = 3");
+        let error = result.unwrap_err();
+        assert!(error.contains("immutable binding 'len'"), "{error}");
+
+        let result = run("let measure = len\nassert(measure([1, 2]) == 2)");
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
@@ -71,7 +81,7 @@ mod tests {
             "const count = 1\ncount--",
         ] {
             let error = run(source).unwrap_err();
-            assert!(error.contains("constant"), "{source}: {error}");
+            assert!(error.contains("immutable binding"), "{source}: {error}");
         }
     }
 
@@ -1053,7 +1063,7 @@ assert(m.E > 2.71 and m.E < 2.72, "math.E")
             "import {PHI} from \"math\"\nPHI = 1",
         ] {
             let error = run(source).unwrap_err();
-            assert!(error.contains("constant"), "{source}: {error}");
+            assert!(error.contains("immutable binding"), "{source}: {error}");
         }
     }
 

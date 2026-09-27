@@ -345,6 +345,11 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
             "E3002",
             Some("ensure the denominator is not zero before dividing"),
         )
+    } else if lower.contains("immutable binding") {
+        (
+            "E3007",
+            Some("declare a mutable binding with `let` if this value must be reassigned"),
+        )
     } else if lower.contains("jgui::run") && lower.contains("window failed") {
         (
             "E3202",
@@ -448,6 +453,9 @@ mod tests {
             runtime_diagnostic("Division by zero").code.as_deref(),
             Some("E3002")
         );
+        let immutable = runtime_diagnostic("Cannot assign through immutable binding 'answer'");
+        assert_eq!(immutable.code.as_deref(), Some("E3007"));
+        assert!(immutable.help.is_some());
         assert_eq!(
             runtime_diagnostic("jgui::run: window failed in index.crates.io")
                 .code

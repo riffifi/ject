@@ -120,17 +120,22 @@ impl Linter {
     }
 
     fn add_builtin_functions(&mut self) {
-        self.functions
-            .extend(crate::stdlib::corlib_function_names());
+        for name in crate::stdlib::corlib_function_names() {
+            self.declare_external_constant(name.clone());
+            self.functions.insert(name);
+        }
 
         if let Some(module_stem) = self.source_path.file_stem().and_then(|stem| stem.to_str()) {
-            self.functions.extend(
-                crate::stdlib::inject_module_file_builtins(module_stem)
-                    .into_iter()
-                    .filter_map(|(name, value)| {
-                        matches!(value, crate::value::Value::BuiltinFunction(_)).then_some(name)
-                    }),
-            );
+            let injected = crate::stdlib::inject_module_file_builtins(module_stem)
+                .into_iter()
+                .filter_map(|(name, value)| {
+                    matches!(value, crate::value::Value::BuiltinFunction(_)).then_some(name)
+                })
+                .collect::<Vec<_>>();
+            for name in injected {
+                self.declare_external_constant(name.clone());
+                self.functions.insert(name);
+            }
         }
 
         for name in crate::stdlib::corlib_constant_names() {
@@ -219,6 +224,10 @@ impl Linter {
             if Self::error_code(&error.message) == "E3101" {
                 diagnostic = diagnostic.with_help(
                     "check the import path, package dependency, and exported name".into(),
+                );
+            } else if error.message.contains("immutable binding") {
+                diagnostic = diagnostic.with_help(
+                    "declare a mutable binding with `let` if this value must be reassigned".into(),
                 );
             }
             if let Some(pos) = &error.position {
@@ -365,6 +374,7 @@ impl Linter {
         kind: Option<SymbolKind>,
         warn_if_unused: bool,
     ) {
+        let is_function = kind == Some(SymbolKind::Function);
         let declaration = kind.and_then(|kind| {
             self.declaration_positions
                 .get_mut(&(name.clone(), kind))
@@ -374,7 +384,13 @@ impl Linter {
             .scopes
             .last()
             .is_some_and(|scope| scope.contains_key(&name));
-        if already_declared {
+        let replaces_external_function = is_function
+            && self.scopes.last().is_some_and(|scope| {
+                scope
+                    .get(&name)
+                    .is_some_and(|binding| !binding.warn_if_unused && binding.declaration.is_none())
+            });
+        if already_declared && !replaces_external_function {
             self.warnings.push(LintWarning {
                 message: format!(
                     "warning: variable `{}` is already declared in this scope",
@@ -526,7 +542,7 @@ impl Linter {
                 };
                 if self.binding_is_mutable(root) == Some(false) {
                     self.errors.push(LintError {
-                        message: format!("cannot assign through constant `{root}`"),
+                        message: format!("cannot assign through immutable binding `{root}`"),
                         position: self.find_identifier_position(root),
                     });
                 }
@@ -951,7 +967,7 @@ impl Linter {
                 if let Expr::Identifier(name) = target.as_ref() {
                     if self.binding_is_mutable(name) == Some(false) {
                         self.errors.push(LintError {
-                            message: format!("cannot assign through constant `{name}`"),
+                            message: format!("cannot assign through immutable binding `{name}`"),
                             position: self.find_identifier_position(name),
                         });
                     }

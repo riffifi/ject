@@ -252,7 +252,9 @@ print x
         ] {
             let (errors, _) = lint(source);
             assert!(
-                errors.iter().any(|error| error.contains("constant")),
+                errors
+                    .iter()
+                    .any(|error| error.contains("immutable binding")),
                 "{source}: {errors:?}"
             );
         }
@@ -267,7 +269,9 @@ print x
             .any(|warning| warning.contains("already declared")));
 
         let (errors, warnings) = lint("let value = 1\nconst value = 2\nvalue = 3");
-        assert!(errors.iter().any(|error| error.contains("constant")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("immutable binding")));
         assert!(warnings
             .iter()
             .any(|warning| warning.contains("already declared")));
@@ -596,6 +600,24 @@ print upper("hello")
     }
 
     #[test]
+    fn core_functions_are_known_immutable_bindings() {
+        let (errors, _) = lint("len = 3");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("immutable binding `len`")),
+            "unexpected errors: {errors:?}"
+        );
+        assert!(
+            !errors.iter().any(|error| error.contains("undeclared")),
+            "built-in should be a known binding: {errors:?}"
+        );
+
+        let (errors, _) = lint("let measure = len\nprint measure([1, 2])");
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
     fn math_constants_require_an_import() {
         let (missing, _) = lint("print PI\nprint E");
         assert!(missing.iter().any(|error| error.contains("PI")));
@@ -614,7 +636,9 @@ print E
     #[test]
     fn imported_math_constants_are_immutable() {
         let (errors, _) = lint("import {PI} from \"math\"\nPI = 3");
-        assert!(errors.iter().any(|error| error.contains("constant")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("immutable binding")));
     }
 
     #[test]
@@ -633,7 +657,9 @@ print E
         for source in ["inf = 3", "nan = 2"] {
             let (errors, _) = lint(source);
             assert!(
-                errors.iter().any(|error| error.contains("constant")),
+                errors
+                    .iter()
+                    .any(|error| error.contains("immutable binding")),
                 "{source}: {errors:?}"
             );
         }
@@ -672,7 +698,9 @@ print PI
         ] {
             let (errors, _) = lint(source);
             assert!(
-                errors.iter().any(|error| error.contains("constant")),
+                errors
+                    .iter()
+                    .any(|error| error.contains("immutable binding")),
                 "{source}: {errors:?}"
             );
         }
