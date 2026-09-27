@@ -883,14 +883,10 @@ pub fn get_io_module() -> HashMap<String, Value> {
 pub fn get_json_module() -> HashMap<String, Value> {
     let mut module = HashMap::new();
 
-    module.insert(
-        "parse_json".to_string(),
-        Value::BuiltinFunction("parse_json".to_string()),
-    );
-    module.insert(
-        "to_json".to_string(),
-        Value::BuiltinFunction("to_json".to_string()),
-    );
+    for name in ["parse_json", "to_json"] {
+        module.insert(name.to_string(), Value::BuiltinFunction(name.to_string()));
+        module.insert(format!("_{name}"), Value::BuiltinFunction(name.to_string()));
+    }
     module.insert(
         "_to_json_pretty".to_string(),
         Value::BuiltinFunction("to_json_pretty".to_string()),
@@ -980,10 +976,11 @@ pub fn get_base_module() -> HashMap<String, Value> {
 
 /// Pre-bind Rust builtins for `stdlib/<name>.ject` modules that would otherwise use
 /// `export fn foo() return foo() end`, which recursively calls itself and overflows the stack.
-/// Injected before export functions are registered so remaining Ject exports (e.g. `from_array`)
-/// resolve to these builtins. The same map is merged into the final module exports.
+/// Injected before export functions are registered so Ject facade functions can
+/// call private `_name` aliases without recursively calling themselves. Only
+/// explicit `export` declarations become part of a module's public API.
 pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> {
-    match module_stem {
+    let mut builtins = match module_stem {
         "array" => {
             let m = get_array_module();
             ["to_uarray", "to_array"]
@@ -1051,7 +1048,14 @@ pub fn inject_module_file_builtins(module_stem: &str) -> HashMap<String, Value> 
         .map(|k| (k.to_string(), Value::BuiltinFunction(k.to_string())))
         .collect(),
         _ => HashMap::new(),
-    }
+    };
+    let private_aliases = builtins
+        .iter()
+        .filter(|(name, _)| !name.starts_with('_'))
+        .map(|(name, value)| (format!("_{name}"), value.clone()))
+        .collect::<Vec<_>>();
+    builtins.extend(private_aliases);
+    builtins
 }
 
 /// Get a module by name (for import system)

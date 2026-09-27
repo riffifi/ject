@@ -1935,7 +1935,7 @@ impl Interpreter {
         // restored below either way, so a failing module (e.g. a bad `export` value)
         // can't leave the interpreter stuck in its module-local environment.
         let outcome = self
-            .run_module_body(&statements, &module_file_stem, module_file_path)
+            .run_module_body(&statements, module_file_path)
             .map_err(|error| error.with_source(Some(module_file_path)));
 
         self.environment = saved_env;
@@ -1945,7 +1945,6 @@ impl Interpreter {
     fn run_module_body(
         &mut self,
         statements: &[Stmt],
-        module_file_stem: &str,
         module_file_path: &str,
     ) -> RuntimeResult<HashMap<String, Value>> {
         // Functions are declarations, so make every local and exported function
@@ -2004,14 +2003,6 @@ impl Interpreter {
                 _ => {
                     self.execute_statement(statement)?;
                 }
-            }
-        }
-
-        for (k, v) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
-            // Underscore-prefixed host primitives are available to the source
-            // facade, but are not part of the imported module's public API.
-            if !k.starts_with('_') {
-                exports.entry(k).or_insert(v);
             }
         }
 

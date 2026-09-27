@@ -1219,7 +1219,7 @@ assert(response.bytes[0] == 0 and response.bytes[1] == 255 and response.bytes[2]
     fn test_import_system_alias_exposes_exec() {
         let result = run(r#"
 import "system" as s
-assert(type_of(s.exec) == "builtin", "module should export exec builtin")
+assert(type_of(s.exec) == "function", "system facade should export exec")
 "#);
         assert!(result.is_ok(), "{:?}", result);
     }
@@ -1359,12 +1359,32 @@ assert(literal.success == true, "successful exit should be success")
     }
 
     #[test]
-    fn test_math_module_log_builtin_from_injection() {
+    fn test_math_module_log_uses_its_source_facade() {
         let result = run(r#"
 import "math" as m
 assert(m.log(100.0, 10.0) == 2.0, "log base 10")
 "#);
         assert!(result.is_ok(), "{:?}", result);
+    }
+
+    #[test]
+    fn standard_module_facades_call_private_host_primitives() {
+        let result = run(r#"
+import "array" as arrays
+import "collections" as collections
+import "datetime" as datetime
+import "io" as io
+import "util" as util
+
+let unique = arrays.to_uarray([1, 1, 2])
+assert(arrays.to_array(unique) == [1, 2], "array conversion facade")
+let set = collections.collection([1, 2])
+assert(collections.has(set, 2), "collection facade")
+assert(type_of(datetime.now()) == "integer", "datetime facade")
+assert(io.parse_json("{\"value\":3}").value == 3, "I/O JSON facade")
+assert(util.to_int("4") == 4, "utility conversion facade")
+"#);
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
@@ -1382,5 +1402,33 @@ assert(s.capitalize("hello") == "Hello", "capitalize from stdlib/string.ject")
         assert!(j.contains("native_modules"));
         assert!(!j.contains("jnum"));
         assert!(j.contains("corlib"));
+    }
+
+    #[test]
+    fn standard_module_host_exports_match_their_source_interfaces() {
+        let mut mismatches = Vec::new();
+        for stem in [
+            "array",
+            "collections",
+            "datetime",
+            "io",
+            "http",
+            "json",
+            "math",
+            "system",
+            "util",
+        ] {
+            let source = crate::stdlib::embedded_stdlib_module_source(stem).unwrap();
+            let interface = crate::module_interface::ModuleInterface::parse(source).unwrap();
+            let mut missing = crate::stdlib::inject_module_file_builtins(stem)
+                .into_keys()
+                .filter(|name| !name.starts_with('_') && interface.export(name).is_none())
+                .collect::<Vec<_>>();
+            missing.sort();
+            if !missing.is_empty() {
+                mismatches.push(format!("{stem}: {missing:?}"));
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
     }
 }

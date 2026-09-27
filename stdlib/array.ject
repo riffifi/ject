@@ -309,7 +309,8 @@ export fn sample(arr)
     return arr[idx]
 end
 
-# to_uarray / to_array are Rust builtins injected by the interpreter (see inject_module_file_builtins).
+export fn to_uarray(arr) return _to_uarray(arr) end
+export fn to_array(arr) return _to_array(arr) end
 
 export fn sort_by(arr, key_func)
     let result = arr

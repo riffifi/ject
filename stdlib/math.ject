@@ -10,6 +10,12 @@ export const PHI = 1.618033988749895  # Golden ratio
 export const SQRT2 = 1.414213562373095
 export const SQRT3 = 1.732050807568877
 
+export fn log(value, base) return _log(value, base) end
+export fn log10(value) return _log10(value) end
+export fn exp(value) return _exp(value) end
+export fn degrees(radians_value) return _degrees(radians_value) end
+export fn radians(degrees_value) return _radians(degrees_value) end
+
 # Inverse trigonometric functions (NOT in CorLib)
 export fn asin(x)
     if x != x then

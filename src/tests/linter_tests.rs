@@ -462,6 +462,32 @@ end
     }
 
     #[test]
+    fn every_standard_module_passes_the_checker_as_its_real_file() {
+        for name in [
+            "math",
+            "array",
+            "string",
+            "io",
+            "http",
+            "json",
+            "system",
+            "datetime",
+            "util",
+            "collections",
+            "color",
+            "table",
+        ] {
+            let source = crate::stdlib::embedded_stdlib_module_source(name).unwrap();
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("stdlib")
+                .join(format!("{name}.ject"));
+            let (errors, warnings) = lint_at(source, Some(&path));
+            assert!(errors.is_empty(), "{name}: {errors:?}");
+            assert!(warnings.is_empty(), "{name}: {warnings:?}");
+        }
+    }
+
+    #[test]
     fn test_nested_scope_access() {
         let (errors, _) = lint(
             r#"

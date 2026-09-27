@@ -5,6 +5,18 @@ export fn args()
     return _args()
 end
 
+export fn env(name) return _env(name) end
+export fn exit(code=0) return _exit(code) end
+export fn input(prompt="") return _input(prompt) end
+export fn exec(command) return _exec(command) end
+export fn cwd() return _cwd() end
+export fn file_exists(path) return _file_exists(path) end
+export fn is_file(path) return _is_file(path) end
+export fn is_dir(path) return _is_dir(path) end
+export fn now() return _now() end
+export fn timestamp() return _timestamp() end
+export fn sleep(milliseconds) return _sleep(milliseconds) end
+
 export fn get_cwd()
     return cwd()
 end

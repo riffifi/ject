@@ -3,6 +3,14 @@
 # Note: type_of, random, random_int, to_int, to_float, to_string, to_bool are injected
 # from CorLib (see inject_module_file_builtins "util") so they are real builtins here.
 
+export fn type_of(value) return _type_of(value) end
+export fn random() return _random() end
+export fn random_int(min, max) return _random_int(min, max) end
+export fn to_int(value) return _to_int(value) end
+export fn to_float(value) return _to_float(value) end
+export fn to_string(value) return _to_string(value) end
+export fn to_bool(value) return _to_bool(value) end
+
 # Uniform float in [min_val, max_val)
 export fn random_float(min_val, max_val)
     return min_val + (max_val - min_val) * random()

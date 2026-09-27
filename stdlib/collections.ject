@@ -1,6 +1,19 @@
 # Collections Standard Library Module
 # Primitive collection ops are Rust builtins (injected before Ject exports resolve).
 
+export fn collection(values=[]) return _collection(values) end
+export fn add_to(coll, value) return _add_to(coll, value) end
+export fn remove_from(coll, value) return _remove_from(coll, value) end
+export fn has(coll, value) return _has(coll, value) end
+export fn union(left, right) return _union(left, right) end
+export fn intersect(left, right) return _intersect(left, right) end
+export fn difference(left, right) return _difference(left, right) end
+export fn size(coll) return _size(coll) end
+export fn is_subset(left, right) return _is_subset(left, right) end
+export fn is_superset(left, right) return _is_superset(left, right) end
+export fn clear_collection(coll) return _clear_collection(coll) end
+export fn to_array(coll) return _to_array(coll) end
+
 # Convert array to collection
 export fn from_array(arr)
     return collection(arr)

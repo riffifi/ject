@@ -1,6 +1,14 @@
 # JSON Standard Library Module
 # parse_json / to_json are Rust builtins (injected).
 
+export fn parse_json(text)
+    return _parse_json(text)
+end
+
+export fn to_json(value)
+    return _to_json(value)
+end
+
 export fn to_json_pretty(value, indent=2)
     return _to_json_pretty(value, indent)
 end

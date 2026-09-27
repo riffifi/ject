@@ -1,29 +1,6 @@
 # DateTime Standard Library Module
-# now(), timestamp(), and sleep() are Rust builtins (injected by the runtime).
+# Unix time and sleeping are host-backed because they require OS access.
 
-# Format timestamp as string (simple)
-export fn format_time(timestamp, format_str)
-    # For now, return timestamp as string
-    # Full date formatting would need more implementation
-    return to_string(timestamp)
-end
-
-# Get time components from timestamp
-export fn get_year(timestamp)
-    # Would need proper date library
-    return timestamp
-end
-
-export fn get_month(timestamp)
-    return timestamp
-end
-
-export fn get_day(timestamp)
-    return timestamp
-end
-
-# Create timestamp from components
-export fn create_timestamp(year, month, day, hour, minute, second)
-    # Would need proper date library
-    return timestamp()
-end
+export fn now() return _now() end
+export fn timestamp() return _timestamp() end
+export fn sleep(milliseconds) return _sleep(milliseconds) end

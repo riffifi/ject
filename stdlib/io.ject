@@ -1,6 +1,10 @@
 # I/O Standard Library Module
 # File primitives + JSON encode/decode are Rust builtins (see inject_module_file_builtins).
 
+export fn read_file(path) return _read_file(path) end
+export fn write_file(path, content) return _write_file(path, content) end
+export fn append_file(path, content) return _append_file(path, content) end
+export fn read_lines(path) return _read_lines(path) end
 export fn file_exists(path) return _file_exists(path) end
 export fn is_file(path) return _is_file(path) end
 export fn is_dir(path) return _is_dir(path) end
@@ -9,6 +13,8 @@ export fn mkdir(path) return _mkdir(path) end
 export fn remove_file(path) return _remove_file(path) end
 export fn read_bytes(path) return _read_bytes(path) end
 export fn write_bytes(path, bytes) return _write_bytes(path, bytes) end
+export fn parse_json(text) return _parse_json(text) end
+export fn to_json(value) return _to_json(value) end
 
 # Write lines to file
 export fn write_lines(path, lines_arr)

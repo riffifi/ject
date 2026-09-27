@@ -656,6 +656,12 @@ import "http" as http
 import "color" as color
 ```
 
+Every standard module's public API is declared with `export` in its `.ject`
+facade. Rust host hooks use private underscore-prefixed names, so runtime module
+members, checker interfaces, completion, and signature help cannot silently
+drift apart. `datetime` currently provides `now()`, `timestamp()`, and
+`sleep(milliseconds)`; calendar parsing and formatting are not yet part of its API.
+
 Mathematical constants are library values, not implicit globals. Use `math.PI`
 and `math.E`, or import them explicitly with `import {PI, E} from "math"`.
 The `jnum` package exports its own `PI` and `E` alongside its numerical API.

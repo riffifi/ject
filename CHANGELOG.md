@@ -9,6 +9,11 @@
   including shadowed names. Lambda parameters are scoped correctly by the
   semantic index, and ordinary user bindings no longer inherit built-in warning
   exemptions merely because they share a name.
+- Standard modules now publish host-backed functions through explicit Ject
+  facade exports and private `_...` primitives. Runtime module objects therefore
+  match checker/LSP interfaces; JSON parsing and encoding are real documented
+  exports. Removed the misleading placeholder date-format/component functions,
+  leaving `datetime.now`, `timestamp`, and `sleep` as the supported API.
 - JGUI now exposes headless document validation through its public facade and
   ABI v2 plugin, including callback, widget ID, count, and layout-depth checks.
   The packaged demo is documented as its opt-in display-backed smoke test.
