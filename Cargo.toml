@@ -1,6 +1,6 @@
 [package]
 name = "ject"
-version = "0.11.0"
+version = "1.0.0-rc.1"
 edition = "2021"
 description = "A general-purpose scripting language with readable syntax and a mixed Ject/Rust package system."
 license = "MIT"

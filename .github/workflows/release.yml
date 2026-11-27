@@ -91,5 +91,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+          set -euo pipefail
+          flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes "${flags[@]}" \
             install.sh install.ps1 dist/*
