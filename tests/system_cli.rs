@@ -9,6 +9,7 @@ fn changing_directory_affects_the_running_program_and_children() {
         std::thread::current().id()
     ));
     std::fs::create_dir(&directory).unwrap();
+    let canonical = directory.canonicalize().unwrap();
     let script = directory.join("main.ject");
     let source = format!(
         "import \"system\" as system\n\
@@ -20,7 +21,7 @@ fn changing_directory_affects_the_running_program_and_children() {
          assert(other.stdout.trim() == \"/\", \"child directory was ignored\")\n\
          assert(system.cwd() == \"{}\", \"child changed parent cwd\")\n",
         directory.display(),
-        directory.display()
+        canonical.display()
     );
     std::fs::write(&script, source).unwrap();
 

@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 #[test]
@@ -32,7 +33,9 @@ fn test_command_runs_all_files_and_summarizes_failures() {
 
     assert!(!output.status.success(), "one test should fail");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("tests/01_fail.ject"), "{stdout}");
-    assert!(stdout.contains("tests/02_pass.ject"), "{stdout}");
+    for name in ["01_fail.ject", "02_pass.ject"] {
+        let label = Path::new("tests").join(name);
+        assert!(stdout.contains(label.to_str().unwrap()), "{stdout}");
+    }
     assert!(stdout.contains("1 passed; 1 failed"), "{stdout}");
 }
