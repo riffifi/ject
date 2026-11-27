@@ -48,6 +48,10 @@ pub enum ModuleGraphError {
     Parse {
         chain: Vec<String>,
         message: String,
+        module: ModuleIdentity,
+        source: String,
+        line: Option<usize>,
+        column: Option<usize>,
     },
     Cycle {
         chain: Vec<String>,
@@ -58,8 +62,24 @@ pub enum ModuleGraphError {
 impl std::fmt::Display for ModuleGraphError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Load { chain, message, .. } | Self::Parse { chain, message } => {
+            Self::Load { chain, message, .. } => {
                 write!(formatter, "{message}")?;
+                if chain.len() > 1 {
+                    write!(formatter, "\nimport chain: {}", chain.join(" -> "))?;
+                }
+                Ok(())
+            }
+            Self::Parse {
+                chain,
+                message,
+                module,
+                ..
+            } => {
+                write!(
+                    formatter,
+                    "cannot parse module '{}': {message}",
+                    display_identity(module)
+                )?;
                 if chain.len() > 1 {
                     write!(formatter, "\nimport chain: {}", chain.join(" -> "))?;
                 }
@@ -165,9 +185,13 @@ impl ModuleGraph {
 
         active.push(module.identity.clone());
         let (statements, imports) =
-            parse_module(&module).map_err(|message| ModuleGraphError::Parse {
+            parse_module(&module).map_err(|error| ModuleGraphError::Parse {
                 chain: active.iter().map(display_identity).collect(),
-                message,
+                message: error.message,
+                module: module.identity.clone(),
+                source: module.source.clone(),
+                line: error.line,
+                column: error.column,
             })?;
         let interface = ModuleInterface::from_statements(&statements);
         let child_resolver = match &module.identity {
@@ -224,17 +248,16 @@ struct ParsedImport {
     column: usize,
 }
 
-fn parse_module(module: &ResolvedModule) -> Result<(Vec<Stmt>, Vec<ParsedImport>), String> {
+fn parse_module(
+    module: &ResolvedModule,
+) -> Result<(Vec<Stmt>, Vec<ParsedImport>), crate::parser::ParseError> {
     let located = Lexer::new(&module.source).tokenize_with_positions();
     let imports = collect_imports(&located);
-    let tokens = located.into_iter().map(|token| token.token).collect();
-    let statements = Parser::new_simple(tokens).parse().map_err(|error| {
-        format!(
-            "cannot parse module '{}': {}",
-            display_identity(&module.identity),
-            error.message
-        )
-    })?;
+    let tokens = located
+        .into_iter()
+        .map(|token| (token.token, token.position))
+        .collect();
+    let statements = Parser::new(tokens).parse()?;
     Ok((statements, imports))
 }
 
@@ -251,7 +274,7 @@ fn collect_imports(tokens: &[crate::lexer::LocatedToken]) -> Vec<ParsedImport> {
             .iter()
             .find(|token| matches!(token.token, crate::lexer::Token::String(_)))
         {
-            if !specifier.starts_with("@native/") {
+            if !crate::stdlib::is_native_only_module(specifier) {
                 imports.push(ParsedImport {
                     specifier: specifier.clone(),
                     line: position.line,

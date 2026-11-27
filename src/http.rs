@@ -7,7 +7,7 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 static DOWNLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -73,6 +73,7 @@ pub fn request(args: Vec<Value>) -> Result<Value, RuntimeError> {
             ));
         }
     };
+    let started = Instant::now();
     let mut request =
         ureq::request(&method.to_ascii_uppercase(), url).timeout(Duration::from_millis(timeout_ms));
     for (name, value) in headers.borrow().iter() {
@@ -116,10 +117,12 @@ pub fn request(args: Vec<Value>) -> Result<Value, RuntimeError> {
         )));
     }
     let text = String::from_utf8_lossy(&bytes).into_owned();
+    let elapsed_ms = started.elapsed().as_millis().min(i64::MAX as u128) as i64;
     Ok(Value::dictionary(HashMap::from([
         ("status".to_string(), Value::Integer(i64::from(status))),
         ("reason".to_string(), Value::String(reason)),
         ("url".to_string(), Value::String(final_url)),
+        ("elapsed_ms".to_string(), Value::Integer(elapsed_ms)),
         (
             "success".to_string(),
             Value::Bool((200..300).contains(&status)),

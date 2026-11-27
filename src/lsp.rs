@@ -20,9 +20,8 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 const KEYWORDS: &[&str] = &[
     "let", "const", "fn", "lambda", "if", "then", "elseif", "else", "while", "for", "in", "do",
-    "return", "true", "false", "nil", "end", "print", "import", "export", "from", "as", "and",
-    "or", "not", "match", "when", "struct", "new", "try", "catch", "throw", "break", "continue",
-    "to",
+    "return", "true", "false", "nil", "end", "import", "export", "from", "as", "and", "or", "not",
+    "match", "when", "struct", "new", "try", "catch", "throw", "break", "continue", "to",
 ];
 
 struct Backend {
@@ -1207,12 +1206,31 @@ fn builtin_return_type(name: &str) -> Option<&'static str> {
         | "replace" | "char_at" | "substring" | "repeat" => "string",
         "to_int" | "len" | "index_of" | "floor" | "ceil" | "round" | "random_int" => "integer",
         "to_float" | "sqrt" | "sin" | "cos" | "tan" | "random" => "float",
-        "to_bool" | "contains" | "file_exists" | "is_file" | "is_dir" | "has_key" => "boolean",
-        "range" | "push" | "sort" | "reverse" | "unique" | "map" | "filter" | "split"
-        | "read_lines" | "list_dir" | "keys" | "values" => "array",
-        "delete" => "dictionary",
+        "to_bool"
+        | "contains"
+        | "file_exists"
+        | "is_file"
+        | "is_dir"
+        | "has_key"
+        | "unicode_alphabetic"
+        | "unicode_alphanumeric" => "boolean",
+        "range"
+        | "push"
+        | "sort"
+        | "reverse"
+        | "unique"
+        | "map"
+        | "filter"
+        | "split"
+        | "read_lines"
+        | "list_dir"
+        | "keys"
+        | "values"
+        | "bootstrap_binding_names" => "array",
+        "delete" | "bootstrap_source" => "dictionary",
         "sum" | "pow" | "min" | "max" | "abs" => "number",
-        "write_file" | "append_file" | "print" | "mkdir" | "remove_file" | "assert" => "nil",
+        "write_file" | "append_file" | "print" | "mkdir" | "remove_file" | "assert"
+        | "bootstrap_warning" => "nil",
         _ => return None,
     })
 }
@@ -1262,7 +1280,7 @@ fn builtin_signature(name: &str) -> &'static str {
         "char_at" => "char_at(string, index) -> string",
         "substring" => "substring(string, start, end?) -> string",
         "repeat" => "repeat(string, count) -> string",
-        "print" => "print(...values)",
+        "print" => "print(...values, sep?, end?) -> nil",
         "input" => "input(prompt?) -> string",
         "read_file" => "read_file(path) -> string",
         "write_file" => "write_file(path, content) -> nil",
@@ -1279,6 +1297,11 @@ fn builtin_signature(name: &str) -> &'static str {
         "delete" => "delete(dictionary, key) -> any",
         "keys" => "keys(dictionary) -> array",
         "values" => "values(dictionary) -> array",
+        "unicode_alphabetic" => "unicode_alphabetic(text) -> boolean",
+        "unicode_alphanumeric" => "unicode_alphanumeric(text) -> boolean",
+        "bootstrap_source" => "bootstrap_source(path, import_name?, graph_manifest?) -> dictionary",
+        "bootstrap_binding_names" => "bootstrap_binding_names(filename) -> array",
+        "bootstrap_warning" => "bootstrap_warning(filename, line, column, message) -> nil",
         _ => "builtin(...) -> unknown",
     }
 }
@@ -2291,6 +2314,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn malformed_literals_and_comments_produce_editor_diagnostics() {
+        for (source, code, column) in [
+            ("\n  #* unfinished", "E1003", 2),
+            ("\nlet x = 1e+", "E1004", 8),
+            ("\nlet x = 9223372036854775808", "E1004", 8),
+        ] {
+            let diagnostics = analyze(source);
+            assert!(
+                diagnostics.iter().any(|diagnostic| diagnostic.code
+                    == Some(NumberOrString::String(code.into()))
+                    && diagnostic.range.start.line == 1
+                    && diagnostic.range.start.character == column),
+                "{diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
     fn reports_parser_and_linter_diagnostics() {
         assert!(analyze("let unused = 1")
             .iter()
@@ -2408,7 +2449,11 @@ mod tests {
 
         for name in crate::stdlib::corlib_function_names() {
             assert!(function_names.contains(name.as_str()), "missing {name}");
-            assert_ne!(builtin_signature(&name), "builtin(...) -> unknown");
+            assert_ne!(
+                builtin_signature(&name),
+                "builtin(...) -> unknown",
+                "missing signature for {name}"
+            );
         }
         assert!(!function_names.contains("gcd"));
     }

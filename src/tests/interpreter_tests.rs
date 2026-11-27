@@ -23,6 +23,65 @@ mod tests {
         Ok(output)
     }
 
+    #[test]
+    fn integer_overflow_is_a_catchable_error_and_does_not_mutate_bindings() {
+        for operation in [
+            "max + 1", "min - 1", "max * 2", "-min", "min % -1", "max++", "++max", "min--", "--min",
+        ] {
+            let source = format!(
+                r#"
+let max = 9223372036854775807
+let min = -9223372036854775807 - 1
+let caught = false
+try
+    let result = {operation}
+catch err
+    assert("Integer overflow" in err)
+    caught = true
+end
+assert(caught)
+assert(max == 9223372036854775807)
+assert(min == -9223372036854775807 - 1)
+"#
+            );
+            let result = run(&source);
+            assert!(result.is_ok(), "{operation}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn extreme_range_and_slice_steps_terminate_without_wrapping() {
+        let source = r#"
+let max = 9223372036854775807
+let min = -9223372036854775807 - 1
+let ascending = (max - 1)..max:2
+assert(len(ascending) == 1 and ascending[0] == max - 1)
+let descending = (min + 1)..min:-2
+assert(len(descending) == 1 and descending[0] == min + 1)
+let values = [1, 2, 3]
+assert(values[1::max] == [2])
+assert(values[2::min] == [3])
+assert("abc"[1::max] == "b")
+assert("abc"[2::min] == "c")
+"#;
+        let result = run(source);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn range_and_slice_steps_reject_nonfinite_or_unrepresentable_floats() {
+        for source in [
+            "let x = 0..inf",
+            "let x = nan..3",
+            "let x = 0..3:inf",
+            "let x = [1, 2][::nan]",
+            "let x = 0..9223372036854775808.0",
+        ] {
+            assert!(run(source).is_err(), "{source}");
+        }
+        assert!(run("assert((0.9..3.9:1.9) == [0, 1, 2])").is_ok());
+    }
+
     // ========== Variable Tests ==========
 
     #[test]
@@ -730,7 +789,11 @@ print arr
         let result = run(r#"
 let arr = [1, 2, 3]
 push(arr, 4)
-print arr
+assert(len(arr) == 4)
+assert(arr[3] == 4)
+let last = arr.pop()
+assert(last == 4)
+assert(len(arr) == 3)
 "#);
         assert!(result.is_ok());
     }

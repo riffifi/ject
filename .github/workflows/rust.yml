@@ -20,8 +20,25 @@ jobs:
           components: rustfmt, clippy
       - name: Check formatting
         run: cargo fmt --all --check
+      - name: Check native GUI formatting
+        run: cargo fmt --manifest-path packages/jgui/native/Cargo.toml --all --check
+      - name: Lint native GUI adapter
+        run: cargo clippy --manifest-path packages/jgui/native/Cargo.toml -p jgui --all-targets --locked -- -D warnings
       - name: Lint
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  release-test:
+    name: Optimized runtime tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test release behavior
+        run: cargo test --release --workspace --all-targets --locked
+      - name: Check CLI performance budgets
+        run: |
+          cargo build --release --bin ject --locked
+          node scripts/check-performance.mjs target/release/ject
 
   test:
     name: ${{ matrix.os }} / Rust ${{ matrix.rust }}
@@ -65,6 +82,8 @@ jobs:
         run: |
           ject check
           ject test
+      - name: Test native GUI adapter
+        run: cargo test --manifest-path packages/jgui/native/Cargo.toml -p jgui --locked
       - name: Smoke-test native callbacks
         working-directory: packages/jgui
         run: |

@@ -1,3 +1,4 @@
+mod bootstrap_cli;
 mod lsp;
 
 use diagnostic::{parse_diagnostic, runtime_diagnostic, DiagnosticRenderer};
@@ -30,6 +31,7 @@ fn main() {
         return;
     }
 
+    let bootstrap = bootstrap_cli::bundled_compiler();
     match args[0].as_str() {
         "--help" | "-h" => {
             print_help();
@@ -41,9 +43,33 @@ fn main() {
             println!("{}", stdlib::introspect_native_kernel_json());
         }
         "lsp" => lsp::run(),
+        "bootstrap" => bootstrap_cli::run(&args[1..]),
+        "run-artifact" => run_module_artifact(&args[1..]),
         "tree" => print_module_tree(&current_project_or_exit()),
         "run" | "check" | "build" => {
             let project = current_project_or_exit();
+            if args[0] == "build" && args.iter().any(|arg| arg == "--binary") {
+                let release = args.iter().any(|arg| arg == "--release");
+                let output = args
+                    .iter()
+                    .position(|arg| arg == "--output")
+                    .and_then(|index| args.get(index + 1))
+                    .map(std::path::PathBuf::from);
+                match ject::bundle::compile_project(ject::bundle::CompileOptions {
+                    project_dir: project.root.clone(),
+                    output,
+                    release,
+                }) {
+                    Ok(destination) => {
+                        println!("Built Ject binary {}", destination.display());
+                        return;
+                    }
+                    Err(error) => {
+                        emit_cli_error("E4101", error, Some("use source-only path dependencies and run `ject build --binary` again"));
+                        std::process::exit(1);
+                    }
+                }
+            }
             if args[0] == "build" {
                 let release = args.iter().any(|arg| arg == "--release");
                 match package::build_native_graph(&project, release) {
@@ -73,18 +99,27 @@ fn main() {
             }
             let entry = project.entry.to_string_lossy().into_owned();
             if args[0] == "run" {
+                if let Some(compiler) = bootstrap.as_deref() {
+                    bootstrap_cli::finish(bootstrap_cli::use_compiler(
+                        compiler,
+                        &project.entry,
+                        Some(script_arguments(&args[1..])),
+                        None,
+                    ));
+                    return;
+                }
                 prepare_native_for_execution(&project.root);
                 if !run_file(&entry, script_arguments(&args[1..])) {
                     std::process::exit(1);
                 }
             } else {
-                check_project_sources(&project);
+                check_project_sources(&project, bootstrap.as_deref());
                 if args[0] == "build" {
                     println!("Built package '{}' (source checked)", project.name);
                 }
             }
         }
-        "test" => run_project_tests(),
+        "test" => run_project_tests(bootstrap.is_some()),
         "install" => install_project(args.iter().any(|arg| arg == "--locked")),
         "native" => manage_native_trust(&args[1..]),
         "add" => add_dependency(&args[1..]),
@@ -126,7 +161,16 @@ fn main() {
                 std::process::exit(2);
             }
             for path in files {
-                check_file(path);
+                if let Some(compiler) = bootstrap.as_deref() {
+                    bootstrap_cli::finish(bootstrap_cli::use_compiler(
+                        compiler,
+                        Path::new(path),
+                        None,
+                        None,
+                    ));
+                } else {
+                    check_file(path);
+                }
             }
         }
         "--test" => {
@@ -140,6 +184,15 @@ fn main() {
                 std::process::exit(2);
             }
             for path in files {
+                if let Some(compiler) = bootstrap.as_deref() {
+                    bootstrap_cli::finish(bootstrap_cli::use_compiler(
+                        compiler,
+                        Path::new(path),
+                        Some(&[]),
+                        None,
+                    ));
+                    continue;
+                }
                 prepare_native_for_execution(Path::new(path));
                 if !run_file(path, &[]) {
                     std::process::exit(1);
@@ -155,6 +208,15 @@ fn main() {
             std::process::exit(2);
         }
         _ => {
+            if let Some(compiler) = bootstrap.as_deref() {
+                bootstrap_cli::finish(bootstrap_cli::use_compiler(
+                    compiler,
+                    Path::new(&args[0]),
+                    Some(script_arguments(&args[1..])),
+                    None,
+                ));
+                return;
+            }
             // Legacy: `ject script.ject`
             prepare_native_for_execution(Path::new(&args[0]));
             if !run_file(&args[0], script_arguments(&args[1..])) {
@@ -200,6 +262,90 @@ fn render_runtime(
     renderer.render(&diagnostic, fallback_filename, Some(fallback_source));
 }
 
+fn run_module_artifact(args: &[String]) {
+    let result = (|| -> Result<bool, String> {
+        let path = Path::new(
+            args.first()
+                .ok_or("usage: ject run-artifact FILE [ARGS...]")?,
+        );
+        let path = path.canonicalize().map_err(|error| error.to_string())?;
+        let file = fs::File::open(&path).map_err(|error| error.to_string())?;
+        let artifact = ject::module_artifact::decode(std::io::BufReader::new(file))?;
+        let mut script_args = &args[1..];
+        let native_project = if script_args
+            .first()
+            .is_some_and(|arg| arg == "--native-project")
+        {
+            let root = script_args
+                .get(1)
+                .ok_or("--native-project requires a directory")?;
+            script_args = &script_args[2..];
+            Some(Path::new(root))
+        } else {
+            None
+        };
+        execute_artifact(
+            artifact,
+            &path,
+            native_project,
+            script_arguments(script_args),
+        )
+    })();
+    match result {
+        Ok(true) => {}
+        Ok(false) => std::process::exit(1),
+        Err(error) => {
+            emit_cli_error("E4201", error, None);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn execute_artifact(
+    artifact: ject::module_artifact::Artifact,
+    path: &Path,
+    native_project: Option<&Path>,
+    script_args: &[String],
+) -> Result<bool, String> {
+    let mut interpreter = Interpreter::new();
+    if let Some(root) = native_project {
+        let ject::module_artifact::Artifact::Program(program) = &artifact else {
+            return Err("--native-project requires a linked artifact".into());
+        };
+        let root = root.canonicalize().map_err(|error| error.to_string())?;
+        let project = package::discover(&root)?;
+        let mut projects = package::dependency_projects(&project)?;
+        package::validate_native_trust(&project, &projects)?;
+        projects.push(project);
+        let checksums = projects
+            .iter()
+            .filter(|item| item.native.is_some())
+            .map(|item| Ok((item.name.clone(), package::package_checksum(item)?)))
+            .collect::<Result<_, String>>()?;
+        program.validate_native_bindings(&checksums)?;
+        prepare_native_for_execution(&root);
+        interpreter.set_compiled_native_checksums(checksums);
+    }
+    stdlib::set_script_args(script_args);
+    if let Some(parent) = path.parent() {
+        interpreter.set_script_dir(parent.to_path_buf());
+    }
+    let execution = match artifact {
+        ject::module_artifact::Artifact::Module(statements) => interpreter.interpret(&statements),
+        ject::module_artifact::Artifact::Program(program) => {
+            interpreter.interpret_compiled_program(program)
+        }
+    };
+    if let Err(error) = execution {
+        let diagnostic = runtime_diagnostic(&error.message);
+        let artifact_path = path.to_string_lossy();
+        let location = diagnostic.filename.as_deref().unwrap_or(&artifact_path);
+        DiagnosticRenderer::new().render(&diagnostic, Some(location), None);
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 fn print_help() {
     println!(
         "\
@@ -211,6 +357,8 @@ USAGE:
     ject new <name> [--lib|--native]  Create a package
     ject init [--lib|--native]        Create a package in the current directory
     ject run [-- args...]      Run the current package with application arguments
+    ject bootstrap --help      Install and use the Ject-written compiler
+    ject run-artifact FILE [--native-project DIR] [-- args...]  Run an experimental compiled AST artifact
     ject check                Check the current package
     ject test                 Run tests/*.ject in the current package
     ject install [--locked]   Resolve, lock, and build dependencies
@@ -224,6 +372,8 @@ USAGE:
     ject update [name]        Update dependencies within their version requirements
     ject publish --registry <url>  Publish the current package
     ject build                Validate the current source package
+    ject build --binary [--release] [--output PATH]
+                              Compile a source-only package into a native executable
     ject tree                 Show the resolved source-module dependency tree
     ject lsp                  Start the Language Server Protocol server over stdio
     ject --check <file> [...] Parse + lint only (no execution)
@@ -591,7 +741,7 @@ fn script_arguments(args: &[String]) -> &[String] {
     }
 }
 
-fn run_project_tests() {
+fn run_project_tests(bootstrap: bool) {
     let project = current_project_or_exit();
     let tests_dir = project.root.join("tests");
     let mut tests = fs::read_dir(&tests_dir)
@@ -608,13 +758,36 @@ fn run_project_tests() {
         println!("No tests found in {}", tests_dir.display());
         return;
     }
-    prepare_native_for_execution(&project.root);
+    let bootstrap_executable = if bootstrap {
+        Some(env::current_exe().unwrap_or_else(|error| {
+            emit_cli_error("E4201", error.to_string(), None);
+            std::process::exit(1);
+        }))
+    } else {
+        prepare_native_for_execution(&project.root);
+        None
+    };
     let mut passed = 0;
     let mut failed = 0;
     for test in tests {
         let label = test.strip_prefix(&project.root).unwrap_or(&test);
         println!("test {} ...", label.display());
-        if run_file(&test.to_string_lossy(), &[]) {
+        let success = if let Some(executable) = &bootstrap_executable {
+            match std::process::Command::new(executable).arg(&test).status() {
+                Ok(status) => status.success(),
+                Err(error) => {
+                    emit_cli_error(
+                        "E4201",
+                        format!("cannot run {}: {error}", test.display()),
+                        None,
+                    );
+                    false
+                }
+            }
+        } else {
+            run_file(&test.to_string_lossy(), &[])
+        };
+        if success {
             passed += 1;
             println!("ok");
         } else {
@@ -689,8 +862,17 @@ fn check_file(filename: &str) {
     }
 }
 
-fn check_project_sources(project: &package::Project) {
-    validate_module_graph_or_exit(&project.entry);
+fn check_project_sources(project: &package::Project, bootstrap: Option<&Path>) {
+    if let Some(compiler) = bootstrap {
+        bootstrap_cli::finish(bootstrap_cli::use_compiler(
+            compiler,
+            &project.entry,
+            None,
+            None,
+        ));
+    } else {
+        validate_module_graph_or_exit(&project.entry);
+    }
     let mut projects = package::dependency_projects(project).unwrap_or_else(|error| {
         emit_cli_error(
             "E4102",
@@ -711,6 +893,15 @@ fn check_project_sources(project: &package::Project) {
             std::process::exit(1);
         });
         for path in files {
+            if let Some(compiler) = bootstrap {
+                if path != project.entry {
+                    match bootstrap_cli::use_compiler(compiler, &path, None, None) {
+                        Ok(success) => valid &= success,
+                        Err(error) => bootstrap_cli::finish(Err(error)),
+                    }
+                }
+                continue;
+            }
             let filename = path.to_string_lossy().into_owned();
             let source = fs::read_to_string(&path).unwrap_or_else(|error| {
                 emit_cli_error(
@@ -743,6 +934,28 @@ fn module_graph_or_exit(entry: &Path) -> module_graph::ModuleGraph {
     match module_graph::ModuleGraph::build(entry) {
         Ok(graph) => graph,
         Err(error) => {
+            if let module_graph::ModuleGraphError::Parse {
+                chain,
+                message,
+                module,
+                source,
+                line,
+                column,
+            } = &error
+            {
+                let mut report = parse_diagnostic(message, *line, *column);
+                if chain.len() > 1 {
+                    report = report.with_note(format!("import chain: {}", chain.join(" -> ")));
+                }
+                let filename = match module {
+                    ject::module_resolver::ModuleIdentity::File(path) => {
+                        path.to_string_lossy().into_owned()
+                    }
+                    ject::module_resolver::ModuleIdentity::Embedded(name) => name.clone(),
+                };
+                DiagnosticRenderer::new().render(&report, Some(&filename), Some(source));
+                std::process::exit(1);
+            }
             let (code, help) = match &error {
                 module_graph::ModuleGraphError::Cycle { .. } => (
                     "E3102",
@@ -896,8 +1109,17 @@ fn prepare_native_for_execution(path: &Path) {
     } else {
         path.parent().unwrap_or(path)
     };
-    let Ok(project) = package::discover(start) else {
-        return;
+    let project = match package::discover_optional(start) {
+        Ok(Some(project)) => project,
+        Ok(None) => return,
+        Err(error) => {
+            emit_cli_error(
+                "E4102",
+                format!("package graph: {error}"),
+                Some("check each path dependency in Ject.toml"),
+            );
+            std::process::exit(1);
+        }
     };
     if let Err(error) = package::build_native_graph(&project, false) {
         let help = native_build_help(&error, "run");

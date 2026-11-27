@@ -2,6 +2,38 @@
 mod tests {
     use crate::lexer::{InterpolationPart, Lexer, Token};
 
+    #[test]
+    fn unterminated_comments_report_their_start_and_then_reach_eof() {
+        let mut lexer = Lexer::new("\n  #* unfinished\ncomment");
+        assert_eq!(lexer.next_token().token, Token::Newline);
+        let error = lexer.next_token();
+        assert_eq!(error.token, Token::UnterminatedComment);
+        assert_eq!((error.position.line, error.position.column), (2, 3));
+        assert_eq!(lexer.next_token().token, Token::Eof);
+    }
+
+    #[test]
+    fn invalid_numeric_literals_are_never_replaced_with_zero() {
+        for source in [
+            "9223372036854775808",
+            "99999999999999999999999",
+            "1e",
+            "1e+",
+            "1e-",
+            "1e9999",
+        ] {
+            let mut lexer = Lexer::new(source);
+            assert_eq!(
+                lexer.next_token().token,
+                Token::InvalidNumber(source.into())
+            );
+            assert_eq!(lexer.next_token().token, Token::Eof);
+        }
+        let mut lexer = Lexer::new("1e-3 9223372036854775807");
+        assert_eq!(lexer.next_token().token, Token::Float(0.001));
+        assert_eq!(lexer.next_token().token, Token::Integer(i64::MAX));
+    }
+
     // ========== Basic Token Tests ==========
 
     #[test]
@@ -187,7 +219,6 @@ mod tests {
             ("end", Token::End),
             ("do", Token::Do),
             ("then", Token::Then),
-            ("print", Token::Print),
             ("import", Token::Import),
             ("export", Token::Export),
             ("from", Token::From),

@@ -1,9 +1,11 @@
 pub mod ast;
+pub mod bundle;
 pub mod diagnostic;
 pub mod http;
 pub mod interpreter;
 pub mod lexer;
 pub mod linter;
+pub mod module_artifact;
 pub mod module_graph;
 pub mod module_interface;
 pub mod module_resolver;

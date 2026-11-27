@@ -59,6 +59,12 @@ pub struct RuntimeError {
 }
 
 impl RuntimeError {
+    pub(crate) fn integer_overflow(operation: &str) -> Self {
+        Self {
+            message: format!("Integer overflow in {operation}"),
+        }
+    }
+
     fn with_frame(mut self, name: &str) -> Self {
         self.message.push_str("\n  at ");
         self.message.push_str(name);
@@ -127,10 +133,13 @@ pub struct Interpreter {
     // current working directory -- otherwise a module's own internal imports break the
     // moment it's used from a different directory than the one it happened to be
     // authored/tested in, or is nested inside a subdirectory of a larger project.
-    module_dir_stack: Vec<std::path::PathBuf>,
+    module_dir_stack: Vec<(std::path::PathBuf, Option<String>)>,
     // Package import name -> dependency entry file, prepared from Ject.toml.
     package_modules: HashMap<String, std::path::PathBuf>,
     current_package: Option<String>,
+    compiled_program: Option<crate::module_artifact::Program>,
+    compiled_scope: Option<String>,
+    compiled_native_checksums: HashMap<String, String>,
     // Checked periodically inside loop bodies. A host (e.g. the REPL) can share this
     // with a Ctrl+C handler to interrupt a runaway script -- e.g. an infinite `while
     // true do ... end` -- without killing the whole process. Not set by anything
@@ -172,9 +181,12 @@ impl Interpreter {
             environment,
             import_stack: Vec::new(),
             module_cache: HashMap::new(),
-            module_dir_stack: vec![std::env::current_dir().unwrap_or_default()],
+            module_dir_stack: vec![(std::env::current_dir().unwrap_or_default(), None)],
             package_modules: HashMap::new(),
             current_package: None,
+            compiled_program: None,
+            compiled_scope: None,
+            compiled_native_checksums: HashMap::new(),
             interrupt_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -206,7 +218,7 @@ impl Interpreter {
     /// after `new()`, before `interpret`, so `import "./x"` in the entry file resolves
     /// relative to wherever that file lives rather than the process's CWD.
     pub fn set_script_dir(&mut self, dir: std::path::PathBuf) {
-        self.module_dir_stack[0] = dir.clone();
+        self.module_dir_stack[0].0 = dir.clone();
         if let Ok(project) = crate::package::discover(&dir) {
             self.current_package = Some(project.name.clone());
             for (alias, root) in &project.dependencies {
@@ -226,7 +238,18 @@ impl Interpreter {
     }
 
     fn current_import_base(&self) -> std::path::PathBuf {
-        self.module_dir_stack.last().cloned().unwrap_or_default()
+        self.module_dir_stack
+            .last()
+            .map(|(dir, _)| dir.clone())
+            .unwrap_or_default()
+    }
+
+    fn callable_source(&self) -> Option<String> {
+        self.compiled_scope.clone().or_else(|| {
+            self.module_dir_stack
+                .last()
+                .and_then(|(_, source)| source.clone())
+        })
     }
 
     //     fn load_stdlib_from_ject(environment: &mut Environment) -> RuntimeResult<()> {
@@ -273,8 +296,61 @@ impl Interpreter {
     //         Ok(())
     //     }
     //
-    pub fn interpret(&mut self, statements: &[Stmt]) -> RuntimeResult<()> {
+    /// Bind compiled native imports to package contents authorized by the host.
+    pub fn set_compiled_native_checksums(&mut self, checksums: HashMap<String, String>) {
+        self.compiled_native_checksums = checksums;
+    }
+
+    pub fn interpret_compiled_program(
+        &mut self,
+        program: crate::module_artifact::Program,
+    ) -> RuntimeResult<()> {
+        let entry = program.entry.clone();
+        let statements = program.modules[&entry].statements.clone();
+        let previous_cache = std::mem::take(&mut self.module_cache);
+        self.compiled_program = Some(program);
+        self.compiled_scope = Some(entry.clone());
+        self.import_stack.push(entry);
+        let result = self.interpret(&statements);
+        self.import_stack.pop();
+        self.compiled_program = None;
+        self.compiled_scope = None;
+        self.module_cache = previous_cache;
+        result
+    }
+
+    fn predeclare_module_functions(&mut self, statements: &[Stmt]) {
+        // Functions are declarations, so make every local and exported function
+        // available before executing module code. This preserves forward calls and
+        // mutual recursion without reordering value-producing statements.
         for statement in statements {
+            match statement {
+                Stmt::Function { name, params, body }
+                | Stmt::ExportFunction { name, params, body } => {
+                    let function = Value::Function {
+                        name: name.clone(),
+                        source: self.callable_source(),
+                        import_directory: self.current_import_base(),
+                        params: params.clone(),
+                        body: body.clone(),
+                        closure_env: self.environment.clone(),
+                    };
+                    self.environment.define(name.clone(), function);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn interpret(&mut self, statements: &[Stmt]) -> RuntimeResult<()> {
+        self.predeclare_module_functions(statements);
+        for statement in statements {
+            if matches!(
+                statement,
+                Stmt::Function { .. } | Stmt::ExportFunction { .. }
+            ) {
+                continue;
+            }
             match self.execute_statement(statement)? {
                 ControlFlow::Return(_) => break,
                 ControlFlow::Throw(error) => {
@@ -451,7 +527,8 @@ impl Interpreter {
             Stmt::Function { name, params, body } => {
                 let func = Value::Function {
                     name: name.clone(),
-                    source: self.import_stack.last().cloned(),
+                    source: self.callable_source(),
+                    import_directory: self.current_import_base(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -604,7 +681,8 @@ impl Interpreter {
             Stmt::ExportFunction { name, params, body } => {
                 let func = Value::Function {
                     name: name.clone(),
-                    source: self.import_stack.last().cloned(),
+                    source: self.callable_source(),
+                    import_directory: self.current_import_base(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -613,31 +691,7 @@ impl Interpreter {
                 Ok(ControlFlow::None)
             }
             Stmt::Print { values, sep, end } => {
-                // Evaluate all values
-                let mut output = Vec::new();
-                for value_expr in values {
-                    let value = self.evaluate_expression(value_expr)?;
-                    output.push(value.display()); // Use display() for print (no quotes on strings)
-                }
-
-                // Determine separator (default: space)
-                let separator = if let Some(sep_expr) = sep {
-                    self.evaluate_expression(sep_expr)?.display()
-                } else {
-                    " ".to_string()
-                };
-
-                // Determine end (default: newline)
-                let ending = if let Some(end_expr) = end {
-                    self.evaluate_expression(end_expr)?.display()
-                } else {
-                    "\n".to_string()
-                };
-
-                // Print with separator
-                print!("{}", output.join(&separator));
-                print!("{}", ending);
-
+                self.evaluate_legacy_print(values, sep.as_ref(), end.as_ref())?;
                 Ok(ControlFlow::None)
             }
             Stmt::Struct { name, fields } => {
@@ -711,6 +765,13 @@ impl Interpreter {
             Expr::Integer(n) => Ok(Value::Integer(*n)),
             Expr::Float(f) => Ok(Value::Float(*f)),
             Expr::String(s) => Ok(Value::String(s.clone())),
+            Expr::CompiledInterpolation(parts) => {
+                let mut result = String::new();
+                for part in parts {
+                    result.push_str(&self.evaluate_expression(part)?.display());
+                }
+                Ok(Value::String(result))
+            }
             Expr::InterpolatedString(parts) => {
                 let mut result = String::new();
                 for part in parts {
@@ -1059,7 +1120,13 @@ impl Interpreter {
                 // Convert step to integer
                 let step_i = match step_val {
                     Value::Integer(n) => n,
-                    Value::Float(f) => f.floor() as i64,
+                    Value::Float(f)
+                        if f.is_finite()
+                            && f.floor() >= i64::MIN as f64
+                            && f.floor() < -(i64::MIN as f64) =>
+                    {
+                        f.floor() as i64
+                    }
                     _ => {
                         return Err(RuntimeError {
                             message: "Slice step must be a number".to_string(),
@@ -1141,7 +1208,10 @@ impl Interpreter {
                         if step_i > 0 {
                             while current < to_i {
                                 result.push(arr[current as usize].clone());
-                                current += step_i;
+                                let Some(next) = current.checked_add(step_i) else {
+                                    break;
+                                };
+                                current = next;
                             }
                         } else {
                             // For reverse slice, go down to and including to_i (if to_i >= 0)
@@ -1151,7 +1221,10 @@ impl Interpreter {
                                 if current == 0 {
                                     break;
                                 }
-                                current += step_i;
+                                let Some(next) = current.checked_add(step_i) else {
+                                    break;
+                                };
+                                current = next;
                             }
                         }
 
@@ -1223,7 +1296,10 @@ impl Interpreter {
                         if step_i > 0 {
                             while current < to_i {
                                 result.push(chars[current as usize]);
-                                current += step_i;
+                                let Some(next) = current.checked_add(step_i) else {
+                                    break;
+                                };
+                                current = next;
                             }
                         } else {
                             // For reverse slice, go down to and including to_i (if to_i >= 0)
@@ -1233,7 +1309,10 @@ impl Interpreter {
                                 if current == 0 {
                                     break;
                                 }
-                                current += step_i;
+                                let Some(next) = current.checked_add(step_i) else {
+                                    break;
+                                };
+                                current = next;
                             }
                         }
 
@@ -1247,6 +1326,8 @@ impl Interpreter {
             Expr::Lambda { params, body } => {
                 // Capture current environment for closure support
                 Ok(Value::Lambda {
+                    source: self.callable_source(),
+                    import_directory: self.current_import_base(),
                     params: params.clone(),
                     body: body.clone(),
                     closure_env: self.environment.clone(),
@@ -1339,7 +1420,13 @@ impl Interpreter {
                 // Convert to integers (floor floats)
                 let start_i = match start_val {
                     Value::Integer(n) => n,
-                    Value::Float(f) => f.floor() as i64,
+                    Value::Float(f)
+                        if f.is_finite()
+                            && f.floor() >= i64::MIN as f64
+                            && f.floor() < -(i64::MIN as f64) =>
+                    {
+                        f.floor() as i64
+                    }
                     _ => {
                         return Err(RuntimeError {
                             message: "Range start must be a number".to_string(),
@@ -1348,7 +1435,13 @@ impl Interpreter {
                 };
                 let end_i = match end_val {
                     Value::Integer(n) => n,
-                    Value::Float(f) => f.floor() as i64,
+                    Value::Float(f)
+                        if f.is_finite()
+                            && f.floor() >= i64::MIN as f64
+                            && f.floor() < -(i64::MIN as f64) =>
+                    {
+                        f.floor() as i64
+                    }
                     _ => {
                         return Err(RuntimeError {
                             message: "Range end must be a number".to_string(),
@@ -1357,7 +1450,13 @@ impl Interpreter {
                 };
                 let step_i = match step_val {
                     Value::Integer(n) => n,
-                    Value::Float(f) => f.floor() as i64,
+                    Value::Float(f)
+                        if f.is_finite()
+                            && f.floor() >= i64::MIN as f64
+                            && f.floor() < -(i64::MIN as f64) =>
+                    {
+                        f.floor() as i64
+                    }
                     _ => {
                         return Err(RuntimeError {
                             message: "Range step must be a number".to_string(),
@@ -1377,12 +1476,18 @@ impl Interpreter {
                 if step_i > 0 {
                     while current < end_i {
                         result.push(Value::Integer(current));
-                        current += step_i;
+                        let Some(next) = current.checked_add(step_i) else {
+                            break;
+                        };
+                        current = next;
                     }
                 } else {
                     while current > end_i {
                         result.push(Value::Integer(current));
-                        current += step_i;
+                        let Some(next) = current.checked_add(step_i) else {
+                            break;
+                        };
+                        current = next;
                     }
                 }
 
@@ -1458,30 +1563,30 @@ impl Interpreter {
                 })
             }
             Expr::Print { values, sep, end } => {
-                // Expression form of print: perform side effects, return nil.
-                let mut output = Vec::new();
-                for v in values {
-                    let value = self.evaluate_expression(v)?;
-                    output.push(value.display());
-                }
-
-                let separator = if let Some(sep) = sep {
-                    self.evaluate_expression(sep)?.display()
-                } else {
-                    " ".to_string()
-                };
-
-                let ending = if let Some(end) = end {
-                    self.evaluate_expression(end)?.display()
-                } else {
-                    "\n".to_string()
-                };
-
-                print!("{}", output.join(&separator));
-                print!("{}", ending);
-                Ok(Value::Nil)
+                self.evaluate_legacy_print(values, sep.as_deref(), end.as_deref())
             }
         }
+    }
+
+    fn evaluate_legacy_print(
+        &mut self,
+        values: &[Expr],
+        sep: Option<&Expr>,
+        end: Option<&Expr>,
+    ) -> RuntimeResult<Value> {
+        let args = values
+            .iter()
+            .map(|value| self.evaluate_expression(value))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+        let separator = match sep {
+            Some(expr) => self.evaluate_expression(expr)?.display(),
+            None => " ".into(),
+        };
+        let ending = match end {
+            Some(expr) => self.evaluate_expression(expr)?.display(),
+            None => "\n".into(),
+        };
+        crate::stdlib::print_values(&args, &separator, &ending)
     }
 
     fn evaluate_binary_op(
@@ -1492,7 +1597,10 @@ impl Interpreter {
     ) -> RuntimeResult<Value> {
         match (left, op, right) {
             // Arithmetic
-            (Value::Integer(a), BinaryOp::Add, Value::Integer(b)) => Ok(Value::Integer(a + b)),
+            (Value::Integer(a), BinaryOp::Add, Value::Integer(b)) => a
+                .checked_add(*b)
+                .map(Value::Integer)
+                .ok_or_else(|| RuntimeError::integer_overflow("+")),
             (Value::Float(a), BinaryOp::Add, Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Integer(a), BinaryOp::Add, Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
             (Value::Float(a), BinaryOp::Add, Value::Integer(b)) => Ok(Value::Float(a + *b as f64)),
@@ -1507,7 +1615,10 @@ impl Interpreter {
                 Ok(Value::array(result))
             }
 
-            (Value::Integer(a), BinaryOp::Subtract, Value::Integer(b)) => Ok(Value::Integer(a - b)),
+            (Value::Integer(a), BinaryOp::Subtract, Value::Integer(b)) => a
+                .checked_sub(*b)
+                .map(Value::Integer)
+                .ok_or_else(|| RuntimeError::integer_overflow("-")),
             (Value::Float(a), BinaryOp::Subtract, Value::Float(b)) => Ok(Value::Float(a - b)),
             (Value::Integer(a), BinaryOp::Subtract, Value::Float(b)) => {
                 Ok(Value::Float(*a as f64 - b))
@@ -1516,7 +1627,10 @@ impl Interpreter {
                 Ok(Value::Float(a - *b as f64))
             }
 
-            (Value::Integer(a), BinaryOp::Multiply, Value::Integer(b)) => Ok(Value::Integer(a * b)),
+            (Value::Integer(a), BinaryOp::Multiply, Value::Integer(b)) => a
+                .checked_mul(*b)
+                .map(Value::Integer)
+                .ok_or_else(|| RuntimeError::integer_overflow("*")),
             (Value::Float(a), BinaryOp::Multiply, Value::Float(b)) => Ok(Value::Float(a * b)),
             (Value::Integer(a), BinaryOp::Multiply, Value::Float(b)) => {
                 Ok(Value::Float(*a as f64 * b))
@@ -1568,7 +1682,9 @@ impl Interpreter {
                         message: "Modulo by zero".to_string(),
                     })
                 } else {
-                    Ok(Value::Integer(a % b))
+                    a.checked_rem(*b)
+                        .map(Value::Integer)
+                        .ok_or_else(|| RuntimeError::integer_overflow("%"))
                 }
             }
             (Value::Float(a), BinaryOp::Modulo, Value::Float(b)) => {
@@ -1732,7 +1848,10 @@ impl Interpreter {
 
     fn evaluate_unary_op(&self, op: &UnaryOp, operand: &Value) -> RuntimeResult<Value> {
         match (op, operand) {
-            (UnaryOp::Negate, Value::Integer(n)) => Ok(Value::Integer(-n)),
+            (UnaryOp::Negate, Value::Integer(n)) => n
+                .checked_neg()
+                .map(Value::Integer)
+                .ok_or_else(|| RuntimeError::integer_overflow("negation")),
             (UnaryOp::Negate, Value::Float(f)) => Ok(Value::Float(-f)),
             (UnaryOp::Not, val) => Ok(Value::Bool(!val.is_truthy())),
             (op, operand) => Err(RuntimeError {
@@ -1773,11 +1892,22 @@ impl Interpreter {
                     .to_string();
                 self.import_stack.last() == Some(&entry)
             });
-            if !own_backend && !embedded_facade && !bundled_facade && !dependency_facade {
+            let allowed = if let Some(program) = &self.compiled_program {
+                let scope = self.compiled_scope.as_deref().unwrap_or(&program.entry);
+                program
+                    .modules
+                    .get(scope)
+                    .and_then(|module| module.native.as_ref())
+                    .is_some_and(|(declared, checksum)| {
+                        declared == backend
+                            && self.compiled_native_checksums.get(backend) == Some(checksum)
+                    })
+            } else {
+                own_backend || embedded_facade || bundled_facade || dependency_facade
+            };
+            if !allowed {
                 return Err(RuntimeError {
-                    message: format!(
-                        "native backend '{backend}' is private; import its public package instead"
-                    ),
+                    message: crate::stdlib::private_native_import_message(backend),
                 });
             }
         }
@@ -1824,6 +1954,10 @@ impl Interpreter {
             return Ok(());
         }
 
+        if self.compiled_program.is_some() {
+            return self.load_compiled_module(module_path, items, alias);
+        }
+
         // Standard-library, package, and path imports share the same canonical
         // resolver used by diagnostics and editor tooling.
         let resolved =
@@ -1856,7 +1990,8 @@ impl Interpreter {
         }
 
         self.import_stack.push(module_file_path.clone());
-        self.module_dir_stack.push(module_dir);
+        self.module_dir_stack
+            .push((module_dir, Some(module_file_path.clone())));
         let body_result =
             self.execute_module_file(module_path, &module_file_path, Some(module_content));
         self.module_dir_stack.pop();
@@ -1866,6 +2001,50 @@ impl Interpreter {
         self.module_cache
             .insert(module_file_path.clone(), exports.clone());
         self.apply_module_exports(module_path, exports, items, alias)
+    }
+
+    fn load_compiled_module(
+        &mut self,
+        specifier: &str,
+        items: &Option<Vec<String>>,
+        alias: &Option<String>,
+    ) -> RuntimeResult<()> {
+        let program = self
+            .compiled_program
+            .as_ref()
+            .expect("compiled import mode");
+        let importer = self.compiled_scope.as_ref().unwrap_or(&program.entry);
+        let destination = program.modules[importer]
+            .imports
+            .get(specifier)
+            .ok_or_else(|| RuntimeError {
+                message: format!(
+                    "Compiled module {importer:?} has no import mapping for {specifier:?}"
+                ),
+            })?
+            .clone();
+        if let Some(exports) = self.module_cache.get(&destination) {
+            return self.apply_module_exports(specifier, exports.clone(), items, alias);
+        }
+        if self.import_stack.contains(&destination) {
+            let mut chain = self.import_stack.clone();
+            chain.push(destination);
+            return Err(RuntimeError {
+                message: format!("Circular compiled import: {}", chain.join(" -> ")),
+            });
+        }
+
+        let module = &program.modules[&destination];
+        let statements = module.statements.clone();
+        let stem = module.stem.clone().unwrap_or_else(|| destination.clone());
+        self.import_stack.push(destination.clone());
+        let previous_scope = self.compiled_scope.replace(destination.clone());
+        let result = self.execute_module_statements(&statements, &destination, &stem);
+        self.compiled_scope = previous_scope;
+        self.import_stack.pop();
+        let exports = result?;
+        self.module_cache.insert(destination, exports.clone());
+        self.apply_module_exports(specifier, exports, items, alias)
     }
 
     /// Parses and executes a module file's body, producing its exports. Does not apply
@@ -1898,15 +2077,6 @@ impl Interpreter {
             message: format!("Parse error in module '{}': {}", module_path, e),
         })?;
 
-        // Create a new environment for the module
-        let mut module_env = Environment::new();
-
-        // Load standard library into module environment
-        let stdlib = crate::stdlib::create_stdlib();
-        for (name, value) in stdlib {
-            module_env.define_const(name, value);
-        }
-
         let module_file_stem = if module_file_path.starts_with("<embedded:") {
             module_path.trim_end_matches(".ject").to_string()
         } else {
@@ -1916,7 +2086,21 @@ impl Interpreter {
                 .unwrap_or("")
                 .to_string()
         };
-        for (name, value) in crate::stdlib::inject_module_file_builtins(&module_file_stem) {
+        self.execute_module_statements(&statements, module_file_path, &module_file_stem)
+    }
+
+    fn execute_module_statements(
+        &mut self,
+        statements: &[Stmt],
+        module_file_path: &str,
+        module_file_stem: &str,
+    ) -> RuntimeResult<HashMap<String, Value>> {
+        let mut module_env = Environment::new();
+        for (name, value) in crate::stdlib::create_stdlib() {
+            module_env.define_const(name, value);
+        }
+
+        for (name, value) in crate::stdlib::inject_module_file_builtins(module_file_stem) {
             module_env.define(name, value);
         }
 
@@ -1927,7 +2111,7 @@ impl Interpreter {
         // restored below either way, so a failing module (e.g. a bad `export` value)
         // can't leave the interpreter stuck in its module-local environment.
         let outcome = self
-            .run_module_body(&statements, module_file_path)
+            .run_module_body(statements, module_file_path)
             .map_err(|error| error.with_source(Some(module_file_path)));
 
         self.environment = saved_env;
@@ -1939,25 +2123,7 @@ impl Interpreter {
         statements: &[Stmt],
         module_file_path: &str,
     ) -> RuntimeResult<HashMap<String, Value>> {
-        // Functions are declarations, so make every local and exported function
-        // available before executing module code. This preserves forward calls and
-        // mutual recursion without reordering value-producing statements.
-        for statement in statements {
-            match statement {
-                Stmt::Function { name, params, body }
-                | Stmt::ExportFunction { name, params, body } => {
-                    let function = Value::Function {
-                        name: name.clone(),
-                        source: Some(module_file_path.to_string()),
-                        params: params.clone(),
-                        body: body.clone(),
-                        closure_env: self.environment.clone(),
-                    };
-                    self.environment.define(name.clone(), function);
-                }
-                _ => {}
-            }
-        }
+        self.predeclare_module_functions(statements);
 
         // Execute declarations and side effects in source order. The old loader ran
         // every non-export statement before every export, which made a `let` placed
@@ -1985,6 +2151,7 @@ impl Interpreter {
                     let func = Value::ModuleFunction {
                         name: name.clone(),
                         source: Some(module_file_path.to_string()),
+                        import_directory: self.current_import_base(),
                         params: params.clone(),
                         body: body.clone(),
                         closure_env: self.environment.clone(),
@@ -2054,10 +2221,8 @@ impl Interpreter {
     fn call_function(&mut self, func: Value, args: &[Argument]) -> RuntimeResult<Value> {
         match &func {
             Value::Function { params, .. } | Value::ModuleFunction { params, .. } => {
-                // Function supports keyword arguments and defaults, so argument
-                // resolution stays here; invoke_callable just does the actual call.
                 let resolved_args = self.resolve_arguments(params, args)?;
-                self.invoke_callable(&func, resolved_args)
+                self.invoke_named_function(&func, resolved_args)
             }
             Value::Lambda { .. } => {
                 let mut arg_values = Vec::new();
@@ -2074,6 +2239,38 @@ impl Interpreter {
                     }
                 }
                 self.invoke_callable(&func, arg_values)
+            }
+            Value::BuiltinFunction(name) if name == "print" => {
+                let mut values = Vec::new();
+                let mut separator = None;
+                let mut ending = None;
+                for arg in args {
+                    match arg {
+                        Argument::Positional(expr) => values.push(self.evaluate_expression(expr)?),
+                        Argument::Keyword { name, value } => {
+                            let option = match name.as_str() {
+                                "sep" => &mut separator,
+                                "end" => &mut ending,
+                                _ => {
+                                    return Err(RuntimeError {
+                                        message: format!("Unknown print option: {name}"),
+                                    })
+                                }
+                            };
+                            if option.is_some() {
+                                return Err(RuntimeError {
+                                    message: format!("Duplicate print option: {name}"),
+                                });
+                            }
+                            *option = Some(self.evaluate_expression(value)?.display());
+                        }
+                    }
+                }
+                crate::stdlib::print_values(
+                    &values,
+                    separator.as_deref().unwrap_or(" "),
+                    ending.as_deref().unwrap_or("\n"),
+                )
             }
             Value::BuiltinFunction(_) | Value::NativeFunction { .. } => {
                 let mut arg_values = Vec::new();
@@ -2160,10 +2357,49 @@ impl Interpreter {
         arg_values: Vec<Value>,
     ) -> RuntimeResult<Value> {
         match callable {
+            Value::Function { .. } | Value::ModuleFunction { .. } => {
+                self.invoke_named_function(callable, arg_values.into_iter().map(Some).collect())
+            }
+            Value::Lambda {
+                source,
+                import_directory,
+                ..
+            } => self.with_callable_origin(source, import_directory, |interpreter| {
+                interpreter.invoke_callable_body(callable, arg_values)
+            }),
+            _ => self.invoke_callable_body(callable, arg_values),
+        }
+    }
+
+    fn with_callable_origin<T>(
+        &mut self,
+        source: &Option<String>,
+        import_directory: &Path,
+        callback: impl FnOnce(&mut Self) -> RuntimeResult<T>,
+    ) -> RuntimeResult<T> {
+        let saved_scope = self.compiled_scope.clone();
+        if self.compiled_program.is_some() {
+            self.compiled_scope = source.clone();
+        }
+        self.module_dir_stack
+            .push((import_directory.to_path_buf(), source.clone()));
+        let result = callback(self);
+        self.module_dir_stack.pop();
+        self.compiled_scope = saved_scope;
+        result
+    }
+
+    fn invoke_callable_body(
+        &mut self,
+        callable: &Value,
+        arg_values: Vec<Value>,
+    ) -> RuntimeResult<Value> {
+        match callable {
             Value::Lambda {
                 params,
                 body,
                 closure_env,
+                ..
             } => {
                 if arg_values.len() != params.len() {
                     return Err(RuntimeError {
@@ -2192,84 +2428,6 @@ impl Interpreter {
                 self.environment = saved_env;
                 result
             }
-            Value::Function {
-                name,
-                source,
-                params,
-                body,
-                closure_env,
-            } => {
-                if arg_values.len() != params.len() {
-                    return Err(RuntimeError {
-                        message: format!(
-                            "Expected {} argument(s) but got {}",
-                            params.len(),
-                            arg_values.len()
-                        ),
-                    });
-                }
-
-                let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                self.environment.push_scope();
-                for (param, arg) in params.iter().zip(arg_values.iter()) {
-                    self.environment.define(param.name.clone(), arg.clone());
-                }
-
-                let result = match self.execute_block(body) {
-                    Ok(ControlFlow::Return(value)) => Ok(value),
-                    Ok(ControlFlow::Throw(error)) => Err(RuntimeError {
-                        message: error.display(),
-                    }),
-                    Ok(ControlFlow::Break) | Ok(ControlFlow::Continue) => Err(RuntimeError {
-                        message: "break/continue in function".to_string(),
-                    }),
-                    Ok(ControlFlow::None) => Ok(Value::Nil),
-                    Err(e) => Err(e),
-                };
-
-                self.environment.pop_scope();
-                self.environment = saved_env;
-                result.map_err(|error| error.with_source(source.as_deref()).with_frame(name))
-            }
-            Value::ModuleFunction {
-                name,
-                source,
-                params,
-                body,
-                closure_env,
-            } => {
-                if arg_values.len() != params.len() {
-                    return Err(RuntimeError {
-                        message: format!(
-                            "Expected {} argument(s) but got {}",
-                            params.len(),
-                            arg_values.len()
-                        ),
-                    });
-                }
-
-                let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
-                self.environment.push_scope();
-                for (param, arg) in params.iter().zip(arg_values.iter()) {
-                    self.environment.define(param.name.clone(), arg.clone());
-                }
-
-                let result = match self.execute_block(body) {
-                    Ok(ControlFlow::Return(value)) => Ok(value),
-                    Ok(ControlFlow::Throw(error)) => Err(RuntimeError {
-                        message: error.display(),
-                    }),
-                    Ok(ControlFlow::Break) | Ok(ControlFlow::Continue) => Err(RuntimeError {
-                        message: "break/continue in function".to_string(),
-                    }),
-                    Ok(ControlFlow::None) => Ok(Value::Nil),
-                    Err(e) => Err(e),
-                };
-
-                self.environment.pop_scope();
-                self.environment = saved_env;
-                result.map_err(|error| error.with_source(source.as_deref()).with_frame(name))
-            }
             Value::BuiltinFunction(name) => crate::stdlib::call_builtin_function(name, arg_values),
             Value::NativeFunction { module, name } => {
                 crate::native::call_module_with_interpreter(module, name, arg_values, self)
@@ -2280,11 +2438,78 @@ impl Interpreter {
         }
     }
 
+    fn invoke_named_function(
+        &mut self,
+        callable: &Value,
+        args: Vec<Option<Value>>,
+    ) -> RuntimeResult<Value> {
+        let (name, source, import_directory, params, body, closure_env) = match callable {
+            Value::Function {
+                name,
+                source,
+                import_directory,
+                params,
+                body,
+                closure_env,
+            }
+            | Value::ModuleFunction {
+                name,
+                source,
+                import_directory,
+                params,
+                body,
+                closure_env,
+            } => (name, source, import_directory, params, body, closure_env),
+            _ => unreachable!("named invocation requires a named function"),
+        };
+        if args.len() != params.len() {
+            return Err(RuntimeError {
+                message: format!(
+                    "Expected {} argument(s) but got {}",
+                    params.len(),
+                    args.len()
+                ),
+            });
+        }
+
+        let saved_env = std::mem::replace(&mut self.environment, closure_env.clone());
+        self.environment.push_scope();
+        let result = self.with_callable_origin(source, import_directory, |interpreter| {
+            for (parameter, provided) in params.iter().zip(args) {
+                let value = match (provided, &parameter.default_value) {
+                    (Some(value), _) => value,
+                    (None, Some(default)) => interpreter.evaluate_expression(default)?,
+                    (None, None) => {
+                        return Err(RuntimeError {
+                            message: format!("Missing required argument '{}'", parameter.name),
+                        })
+                    }
+                };
+                interpreter
+                    .environment
+                    .define(parameter.name.clone(), value);
+            }
+            match interpreter.execute_block(body)? {
+                ControlFlow::Return(value) => Ok(value),
+                ControlFlow::Throw(error) => Err(RuntimeError {
+                    message: error.display(),
+                }),
+                ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                    message: "break/continue in function".to_string(),
+                }),
+                ControlFlow::None => Ok(Value::Nil),
+            }
+        });
+        self.environment.pop_scope();
+        self.environment = saved_env;
+        result.map_err(|error| error.with_source(source.as_deref()).with_frame(name))
+    }
+
     fn resolve_arguments(
         &mut self,
         params: &[crate::ast::Parameter],
         args: &[Argument],
-    ) -> RuntimeResult<Vec<Value>> {
+    ) -> RuntimeResult<Vec<Option<Value>>> {
         let mut resolved_args = vec![None; params.len()];
         let mut positional_count = 0;
 
@@ -2330,21 +2555,7 @@ impl Interpreter {
             }
         }
 
-        // Third pass: fill in default values and check for missing arguments
-        for (i, param) in params.iter().enumerate() {
-            if resolved_args[i].is_none() {
-                if let Some(default_expr) = &param.default_value {
-                    resolved_args[i] = Some(self.evaluate_expression(default_expr)?);
-                } else {
-                    return Err(RuntimeError {
-                        message: format!("Missing required argument '{}'", param.name),
-                    });
-                }
-            }
-        }
-
-        // Convert Vec<Option<Value>> to Vec<Value>
-        Ok(resolved_args.into_iter().map(|arg| arg.unwrap()).collect())
+        Ok(resolved_args)
     }
 
     fn pattern_matches(
@@ -2508,7 +2719,20 @@ impl Interpreter {
                     message: format!("Undefined variable '{}'", name),
                 })?;
                 let new_value = match current {
-                    Value::Integer(n) => Value::Integer(if is_increment { n + 1 } else { n - 1 }),
+                    Value::Integer(n) => Value::Integer(
+                        if is_increment {
+                            n.checked_add(1)
+                        } else {
+                            n.checked_sub(1)
+                        }
+                        .ok_or_else(|| {
+                            RuntimeError::integer_overflow(if is_increment {
+                                "increment"
+                            } else {
+                                "decrement"
+                            })
+                        })?,
+                    ),
                     Value::Float(f) => Value::Float(if is_increment { f + 1.0 } else { f - 1.0 }),
                     _ => {
                         return Err(RuntimeError {

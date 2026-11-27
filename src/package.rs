@@ -76,19 +76,38 @@ pub struct NativeConfig {
 }
 
 pub fn discover(start: &Path) -> Result<Project, String> {
+    discover_optional(start)?
+        .ok_or_else(|| format!("no {MANIFEST_FILE} found in this directory or its parents"))
+}
+
+pub fn discover_optional(start: &Path) -> Result<Option<Project>, String> {
+    let absolute;
+    let start = if start.is_absolute() {
+        start
+    } else {
+        absolute = std::env::current_dir()
+            .map_err(|error| format!("cannot determine current directory: {error}"))?
+            .join(start);
+        &absolute
+    };
     let start = if start.is_file() {
         start.parent().unwrap_or(start)
     } else {
         start
     };
-    let root = start
+    start
         .ancestors()
         .find(|dir| dir.join(MANIFEST_FILE).is_file())
-        .ok_or_else(|| format!("no {MANIFEST_FILE} found in this directory or its parents"))?;
-    load(root)
+        .map(load)
+        .transpose()
 }
 
 pub fn load(root: &Path) -> Result<Project, String> {
+    let root = if root.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        root
+    };
     let manifest_path = root.join(MANIFEST_FILE);
     let source = fs::read_to_string(&manifest_path)
         .map_err(|e| format!("failed to read {}: {e}", manifest_path.display()))?;

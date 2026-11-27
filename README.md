@@ -29,7 +29,35 @@ print greet("Ject")
   paths behind a stable native ABI.
 - Diagnostics use stable codes, source spans, notes, and actionable help.
 
-## Install from source
+## Install Ject
+
+On Linux or macOS, download the installer from the latest tagged release and
+run it:
+
+```sh
+curl -fLo install.sh https://github.com/riffifi/ject/releases/latest/download/install.sh
+sh install.sh
+export PATH="$HOME/.local/bin:$PATH"
+ject --version
+```
+
+Use `jectup update` to upgrade, `jectup update v0.11.0` to select a published
+version, and `jectup uninstall` to remove the installation. The installer
+supports x64 and ARM64 on Linux and macOS.
+
+On x64 Windows, run these commands in PowerShell:
+
+```powershell
+Invoke-WebRequest https://github.com/riffifi/ject/releases/latest/download/install.ps1 -OutFile install.ps1
+.\install.ps1
+ject --version
+```
+
+Use `jectup.ps1 update` and `jectup.ps1 uninstall` to manage the Windows
+installation. The installer checks the SHA-256 of the prebuilt executable
+before replacing the installed binary.
+
+### Build from source
 
 Ject currently builds with Cargo:
 
@@ -43,6 +71,8 @@ ject --version
 
 Native packages additionally need a working Rust toolchain. Ordinary Ject scripts and
 source-only packages do not.
+
+See [Releasing Ject](docs/RELEASING.md) for packaging and verification.
 
 ## Start here
 
@@ -68,6 +98,35 @@ ject run
 
 Create a library instead with `ject new useful --lib`. Add `--native` when the package
 needs a private Rust component.
+
+### Try the self-hosted compiler
+
+The standard distribution uses the optimized Rust frontend. The
+Ject-written compiler is opt-in for compiler development and inspecting
+compiled artifacts.
+
+With the bootstrap compiler source available locally, install it once and
+use the same Ject binary to compile, check, or run scripts and packages:
+
+```sh
+ject bootstrap install /path/to/bootstrap
+ject bootstrap run hello.ject
+ject bootstrap check
+ject bootstrap build -o program.json
+```
+
+`run`, `check`, and `build` default to the current package. Pass application
+arguments after a script path or use `ject bootstrap run -- ARGS` for the
+current package. See `ject bootstrap --help` for the full command syntax.
+
+To use the compiler through the regular CLI, install it alongside the host in
+a new directory and put that directory first on PATH:
+
+```sh
+ject bootstrap install-cli "$HOME/.local/share/ject/bootstrap-bin"
+export PATH="$HOME/.local/share/ject/bootstrap-bin:$PATH"
+ject hello.ject
+```
 
 ## A quick language tour
 
@@ -236,6 +295,7 @@ See [Packages and native libraries](docs/PACKAGES.md) for the complete authoring
 | `ject check` | Parse and lint every package source |
 | `ject test` | Run `tests/*.ject` |
 | `ject build [--release]` | Check source and build native components |
+| `ject build --binary [--release] [--output PATH]` | Compile a source-only application into an executable |
 | `ject native list`, `trust`, `untrust` | Manage the native dependency allowlist |
 | `ject add`, `remove`, `update` | Edit and resolve dependencies |
 | `ject install [--locked]` | Resolve, lock, and build the graph |
@@ -251,6 +311,7 @@ Run `ject --help` for the command summary.
 
 - [The Ject guide and language reference](docs/DOCS.md)
 - [Packages and native libraries](docs/PACKAGES.md)
+- [graf chart library](packages/graf/README.md)
 - [Compatibility and release policy](docs/COMPATIBILITY.md)
 - [Runnable examples](examples/README.md)
 - [Release history](CHANGELOG.md)

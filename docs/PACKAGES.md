@@ -219,6 +219,14 @@ ject add widgets --git https://github.com/example/widgets --tag v1.4.0
 The manifest always stores the resolved 40-character commit. A tracked branch, tag, or
 HEAD is stored alongside it so `ject update` knows what may move.
 
+[Langkit](https://github.com/riffifi/ject-langkit) provides reusable Unicode
+cursor and fixed-token scanning primitives for parsers and tools written in Ject:
+
+```sh
+ject add langkit --git https://github.com/riffifi/ject-langkit --rev 5517e230f213532226af77b4f386c8f0e10dfbfc
+ject install --locked
+```
+
 ## 6. Install, lock, and update
 
 ```sh
@@ -263,6 +271,18 @@ ject test
 ject build
 ject build --release
 ```
+
+Source-only applications can be compiled into native executables:
+
+```sh
+ject build --binary
+ject build --binary --release --output dist/player
+```
+
+The binary embeds the project's source and local path dependencies. Registry and Git
+dependencies are not supported by the first compiler pass, and packages with native
+components return an explicit error. Source-only compilation requires a Rust toolchain
+on the build machine; it does not require Ject or Rust to run the resulting executable.
 
 `check` covers every `.ject` file under `src/` plus an external configured entry. It
 does not execute code or build/load native artifacts. `test` builds native packages when
@@ -488,3 +508,34 @@ process.
 - Commit `Ject.lock` for applications and `native/Cargo.lock` for published mixed
   packages.
 - Run `ject install --locked`, `ject check`, and `ject test` in CI.
+
+### Standalone numerical package
+
+The public [jnum repository](https://github.com/riffifi/ject-jnum) contains the
+Ject facade, Rust backend, vendored SDK, and tests. Add the first standalone
+revision from an application directory:
+
+```sh
+ject add jnum --git https://github.com/riffifi/ject-jnum --rev 94b2f4c5da7d82e1d3e8d3aed03117e4c1a5b500
+ject install
+```
+
+The in-tree copy supplies CI and offline fixtures.
+
+### Standalone graphics packages
+
+[JGUI](https://github.com/riffifi/ject-jgui) provides native desktop widgets.
+[Graf](https://github.com/riffifi/ject-graf) produces SVG charts and desktop
+chart widgets. Graf pins the JGUI revision it was tested against.
+
+From a Ject application directory:
+
+```sh
+ject add graf --git https://github.com/riffifi/ject-graf --rev 6534071977ea38e45835e544f67e0ddf24b2a30b
+ject native trust jgui
+ject install
+```
+
+Graf currently brings in the native JGUI backend even for SVG-only use.
+Review the pinned dependency before granting trust. The local copies under
+`packages/` supply existing examples and offline checks.

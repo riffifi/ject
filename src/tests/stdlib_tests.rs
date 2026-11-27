@@ -17,6 +17,55 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn integer_host_helpers_handle_extreme_inputs() {
+        use crate::stdlib::call_builtin_function;
+        use crate::value::Value::Integer;
+        for (name, args) in [
+            ("abs", vec![Integer(i64::MIN)]),
+            ("gcd", vec![Integer(i64::MIN), Integer(0)]),
+            ("lcm", vec![Integer(i64::MAX), Integer(2)]),
+            ("factorial", vec![Integer(21)]),
+        ] {
+            assert!(
+                call_builtin_function(name, args)
+                    .unwrap_err()
+                    .message
+                    .contains("Integer overflow"),
+                "{name}"
+            );
+        }
+        for (name, a, b, expected) in [
+            ("gcd", i64::MIN, -1, 1),
+            ("gcd", i64::MIN, 2, 2),
+            ("gcd", 0, 0, 0),
+            ("lcm", 0, 0, 0),
+            ("lcm", i64::MIN, 0, 0),
+            ("lcm", i64::MAX, i64::MAX, i64::MAX),
+            ("lcm", -6, 8, 24),
+        ] {
+            assert_eq!(
+                call_builtin_function(name, vec![Integer(a), Integer(b)]).unwrap(),
+                Integer(expected),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            call_builtin_function("factorial", vec![Integer(20)]).unwrap(),
+            Integer(2432902008176640000)
+        );
+        for (min, max) in [(i64::MIN, i64::MAX), (i64::MIN, 0), (0, i64::MAX)] {
+            for _ in 0..64 {
+                let Integer(value) =
+                    call_builtin_function("random_int", vec![Integer(min), Integer(max)]).unwrap()
+                else {
+                    panic!("expected an integer");
+                };
+                assert!(value >= min && value < max);
+            }
+        }
+    }
+
     // ========== Math Functions Tests ==========
 
     #[test]
@@ -1166,6 +1215,7 @@ json.to_json(root)
 import "http" as http
 let response = http.get("{url}")
 assert(response.status == 404, "status should be preserved")
+assert(response.elapsed_ms >= 0, "HTTP duration should be measured in milliseconds")
 assert(response.success == false, "404 is not success")
 assert(response.text == "missing", "error body should be available")
 assert(response.headers["x-reply"] == "ready", "response header missing")

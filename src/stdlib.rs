@@ -9,6 +9,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+fn integer_gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
 static SEED: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
@@ -408,6 +415,16 @@ pub fn create_corlib() -> HashMap<String, Value> {
         "values".to_string(),
         Value::BuiltinFunction("values".to_string()),
     );
+
+    for name in [
+        "unicode_alphabetic",
+        "unicode_alphanumeric",
+        "bootstrap_source",
+        "bootstrap_binding_names",
+        "bootstrap_warning",
+    ] {
+        corlib.insert(name.to_string(), Value::BuiltinFunction(name.to_string()));
+    }
 
     // ========== Constants ==========
     corlib.insert("inf".to_string(), Value::Float(f64::INFINITY));
@@ -1169,6 +1186,48 @@ pub fn create_stdlib() -> HashMap<String, Value> {
 pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
     std::env::set_var("RUST_BACKTRACE", "full");
     match name {
+        "bootstrap_warning" => {
+            let [Value::String(filename), Value::Integer(line), Value::Integer(column), Value::String(message)] =
+                args.as_slice()
+            else {
+                return Err(RuntimeError {
+                    message: "bootstrap_warning expects a filename, line, column, and message"
+                        .into(),
+                });
+            };
+            let diagnostic = crate::diagnostic::Diagnostic::warning(message.clone())
+                .with_code("W2001".into())
+                .with_filename(filename.clone())
+                .with_location(
+                    (*line).try_into().unwrap_or(1),
+                    (*column).try_into().unwrap_or(1),
+                );
+            crate::diagnostic::DiagnosticRenderer::render_diagnostic(&diagnostic);
+            Ok(Value::Nil)
+        }
+        "bootstrap_binding_names" => {
+            let [Value::String(filename)] = args.as_slice() else {
+                return Err(RuntimeError {
+                    message: "bootstrap_binding_names expects a filename".into(),
+                });
+            };
+            let stem = filename
+                .strip_prefix("<embedded:")
+                .and_then(|name| name.strip_suffix('>'))
+                .or_else(|| {
+                    std::path::Path::new(filename)
+                        .file_stem()
+                        .and_then(|name| name.to_str())
+                })
+                .unwrap_or_default();
+            let mut names = corlib_names();
+            names.extend(inject_module_file_builtins(stem).into_keys());
+            names.sort();
+            names.dedup();
+            Ok(Value::array(names.into_iter().map(Value::String).collect()))
+        }
+        "bootstrap_source" => bootstrap_source(&args),
+        "print" => print_values(&args, " ", "\n"),
         "http_request" => crate::http::request(args),
         "http_download" => crate::http::download(args),
         // Enhanced array functions
@@ -1379,7 +1438,10 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 });
             }
             match &args[0] {
-                Value::Integer(n) => Ok(Value::Integer(n.abs())),
+                Value::Integer(n) => n
+                    .checked_abs()
+                    .map(Value::Integer)
+                    .ok_or_else(|| RuntimeError::integer_overflow("abs()")),
                 Value::Float(f) => Ok(Value::Float(f.abs())),
                 _ => Err(RuntimeError {
                     message: "abs() requires a number".to_string(),
@@ -1960,9 +2022,8 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             match &args[0] {
                 Value::Array(arr) => {
-                    let mut new_arr = arr.borrow().clone();
-                    new_arr.push(args[1].clone());
-                    Ok(Value::array(new_arr))
+                    arr.borrow_mut().push(args[1].clone());
+                    Ok(args[0].clone())
                 }
                 _ => Err(RuntimeError {
                     message: "push() requires an array as first argument".to_string(),
@@ -1982,8 +2043,7 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                             message: "pop() cannot pop from empty array".to_string(),
                         });
                     }
-                    let mut new_arr = arr.borrow().clone();
-                    let popped = new_arr.pop().unwrap();
+                    let popped = arr.borrow_mut().pop().unwrap();
                     Ok(popped)
                 }
                 _ => Err(RuntimeError {
@@ -2497,15 +2557,10 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             match (&args[0], &args[1]) {
                 (Value::Integer(a), Value::Integer(b)) => {
-                    fn gcd(mut n: i64, mut m: i64) -> i64 {
-                        while m != 0 {
-                            let temp = m;
-                            m = n % m;
-                            n = temp;
-                        }
-                        n.abs()
-                    }
-                    Ok(Value::Integer(gcd(*a, *b)))
+                    let magnitude = integer_gcd(a.unsigned_abs(), b.unsigned_abs());
+                    i64::try_from(magnitude)
+                        .map(Value::Integer)
+                        .map_err(|_| RuntimeError::integer_overflow("gcd()"))
                 }
                 _ => Err(RuntimeError {
                     message: "gcd() requires two integers".to_string(),
@@ -2520,18 +2575,15 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
             }
             match (&args[0], &args[1]) {
                 (Value::Integer(a), Value::Integer(b)) => {
-                    fn lcm(n: i64, m: i64) -> i64 {
-                        (n * m / gcd(n, m)).abs()
+                    let (a, b) = (a.unsigned_abs(), b.unsigned_abs());
+                    if a == 0 || b == 0 {
+                        return Ok(Value::Integer(0));
                     }
-                    fn gcd(mut n: i64, mut m: i64) -> i64 {
-                        while m != 0 {
-                            let temp = m;
-                            m = n % m;
-                            n = temp;
-                        }
-                        n.abs()
-                    }
-                    Ok(Value::Integer(lcm(*a, *b)))
+                    (a / integer_gcd(a, b))
+                        .checked_mul(b)
+                        .and_then(|value| i64::try_from(value).ok())
+                        .map(Value::Integer)
+                        .ok_or_else(|| RuntimeError::integer_overflow("lcm()"))
                 }
                 _ => Err(RuntimeError {
                     message: "lcm() requires two integers".to_string(),
@@ -2775,6 +2827,19 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                 _ => Ok(Value::Bool(false)),
             }
         }
+        "unicode_alphabetic" | "unicode_alphanumeric" => match args.as_slice() {
+            [Value::String(text)] => {
+                let predicate = if name == "unicode_alphabetic" {
+                    char::is_alphabetic
+                } else {
+                    char::is_alphanumeric
+                };
+                Ok(Value::Bool(!text.is_empty() && text.chars().all(predicate)))
+            }
+            _ => Err(RuntimeError {
+                message: format!("{name}() requires exactly one string"),
+            }),
+        },
         "is_alpha" => {
             if args.len() != 1 {
                 return Err(RuntimeError {
@@ -2914,7 +2979,9 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                     }
                     let mut result = 1i64;
                     for i in 1..=*n {
-                        result *= i;
+                        result = result
+                            .checked_mul(i)
+                            .ok_or_else(|| RuntimeError::integer_overflow("factorial()"))?;
                     }
                     Ok(Value::Integer(result))
                 }
@@ -2937,9 +3004,9 @@ pub fn call_builtin_function(name: &str, args: Vec<Value>) -> Result<Value, Runt
                         });
                     }
                     let seed = SEED.fetch_add(1, Ordering::Relaxed);
-                    let range = (max - min) as u64;
+                    let range = (*max as i128 - *min as i128) as u64;
                     let hash = seed.wrapping_mul(1103515245).wrapping_add(12345) % range;
-                    let result = min + (hash as i64);
+                    let result = (*min as i128 + hash as i128) as i64;
                     Ok(Value::Integer(result))
                 }
                 _ => Err(RuntimeError {
@@ -3955,4 +4022,134 @@ fn ject_value_to_json_inner(
             message: "Cannot convert this native value to JSON".to_string(),
         }),
     }
+}
+
+pub(crate) fn print_values(
+    args: &[Value],
+    separator: &str,
+    ending: &str,
+) -> Result<Value, RuntimeError> {
+    use std::io::Write;
+    let output = args
+        .iter()
+        .map(Value::display)
+        .collect::<Vec<_>>()
+        .join(separator);
+    write!(std::io::stdout().lock(), "{output}{ending}").map_err(|error| RuntimeError {
+        message: format!("print: {error}"),
+    })?;
+    Ok(Value::Nil)
+}
+
+/// Resolve or read a source unit without invoking the lexer, parser, or linter.
+pub(crate) fn private_native_import_message(backend: &str) -> String {
+    format!("native backend '{backend}' is private; import its public package instead")
+}
+
+fn bootstrap_source(args: &[Value]) -> Result<Value, RuntimeError> {
+    use crate::module_resolver::{ModuleIdentity, ModuleResolver};
+    let read = || -> Result<Value, String> {
+        use std::path::Path;
+
+        let (anchor, import) = match args {
+            [Value::String(anchor), Value::Nil] => (Path::new(anchor).to_path_buf(), None),
+            [Value::String(anchor), Value::String(import)] => {
+                (Path::new(anchor).to_path_buf(), Some(import))
+            }
+            [Value::String(source), Value::Nil, Value::String(manifest)] => {
+                let directory = Path::new(manifest).parent().unwrap_or_else(|| Path::new(""));
+                (directory.join(source), None)
+            }
+            _ => return Err("bootstrap_source expects a path, an import name or nil, and an optional graph manifest path for source files".into()),
+        };
+        if import.map(String::as_str) == Some("base") {
+            let exports = get_base_module()
+                .into_keys()
+                .map(|name| (name, Value::Nil))
+                .collect();
+            return Ok(Value::dictionary(HashMap::from([(
+                "exports".into(),
+                Value::dictionary(exports),
+            )])));
+        }
+        let path = anchor.canonicalize().map_err(|e| e.to_string())?;
+        let (identity, anchor, stem, source) = if let Some(import) = import {
+            if let Some(backend) = import.strip_prefix("@native/") {
+                let owner = crate::package::discover(&path)
+                    .map_err(|_| private_native_import_message(backend))?;
+                if owner.name != backend
+                    || owner.native.is_none()
+                    || owner.entry.canonicalize().ok().as_ref() != Some(&path)
+                {
+                    return Err(private_native_import_message(backend));
+                }
+                return Ok(Value::dictionary(HashMap::from([
+                    ("backend".into(), Value::String(backend.into())),
+                    (
+                        "checksum".into(),
+                        Value::String(crate::package::package_checksum(&owner)?),
+                    ),
+                ])));
+            }
+            let resolved = ModuleResolver::for_path(&path)
+                .resolve(import)
+                .map_err(|e| e.to_string())?;
+            let identity = resolved.identity.cache_key();
+            let (anchor, stem) = match resolved.identity {
+                ModuleIdentity::File(file) => {
+                    let stem = file
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    (file, stem)
+                }
+                ModuleIdentity::Embedded(name) => (resolved.directory, name),
+            };
+            (identity, anchor, stem, resolved.source)
+        } else {
+            let project = if args.len() == 2 {
+                if path.is_dir() {
+                    crate::package::discover(&path).map(Some)
+                } else {
+                    crate::package::discover_optional(&path)
+                }
+                .map_err(|error| {
+                    format!("Bootstrap unlocated check error: package graph: {error}")
+                })?
+            } else {
+                None
+            };
+            if let Some(project) = &project {
+                crate::package::dependency_projects(project).map_err(|error| {
+                    format!("Bootstrap unlocated check error: package graph: {error}")
+                })?;
+            }
+            let entry = if path.is_dir() {
+                project
+                    .map(|project| project.entry)
+                    .ok_or_else(|| format!("module source must be a file: {}", path.display()))?
+            } else {
+                path
+            };
+            let entry = entry.canonicalize().map_err(|e| e.to_string())?;
+            let source = std::fs::read_to_string(&entry).map_err(|e| e.to_string())?;
+            let stem = entry
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            (entry.to_string_lossy().into_owned(), entry, stem, source)
+        };
+        Ok(Value::dictionary(HashMap::from([
+            ("identity".into(), Value::String(identity)),
+            (
+                "anchor".into(),
+                Value::String(anchor.to_string_lossy().into_owned()),
+            ),
+            ("stem".into(), Value::String(stem)),
+            ("source".into(), Value::String(source)),
+        ])))
+    };
+    read().map_err(|message| RuntimeError { message })
 }

@@ -52,11 +52,39 @@ A release is not complete until all of these agree:
    name the same language version.
 2. Breaking changes have migration notes and removed compatibility aliases are
    listed explicitly.
-3. Format, strict Clippy, all targets, package tests, installed-CLI smokes, and
-   native dependency smokes pass from a clean checkout.
+3. Format, strict Clippy, all targets in debug and release profiles, package
+   tests, installed-CLI smokes, and native dependency smokes pass from a clean
+   checkout. Optimized runtime tests must preserve the same language behavior
+   and error handling as debug builds.
 4. Native ABI changes include SDK tests and clean rebuilds of bundled mixed
    packages.
 5. The release tag is created only after the cross-platform workflow succeeds.
 
 The goal for 1.0 is to make minor releases backward-compatible as well. Until
 then, the rules above favor honest, documented evolution over accidental promises.
+
+### Printing
+
+Use `print("one", "two", sep=", ", end="\n")` for new code. Parenthesized
+printing uses ordinary function calls, so `let emit = print` and
+`emit("ready")` also work. Legacy statements such as `print "ready"` still
+parse in statement position.
+
+### Self-hosted compiler
+
+The compiler written in Ject lexes, parses, checks, and links source into
+artifacts that execute on the Rust host. The verified bootstrap builds
+stage 1 from a Rust seed and rebuilds the same source with stage 1 to produce
+a byte-identical stage 2. Its verification covers compiler source relocation,
+lexer and parser parity, diagnostics, and program execution.
+
+The standard distribution uses the Rust frontend for immediate script and
+project execution. The self-hosted compiler is available through
+`ject bootstrap` for development and artifact builds. See
+[Releasing Ject](RELEASING.md) for the performance comparison.
+
+The bootstrap lexer uses [Langkit](https://github.com/riffifi/ject-langkit).
+The host exposes
+`unicode_alphabetic(text)` and `unicode_alphanumeric(text)` so language tools
+can share the Rust host's Unicode character classification. Both require
+nonempty text for a positive result and classify every scalar in the input.

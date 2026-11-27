@@ -17,6 +17,7 @@ pub enum Value {
     Function {
         name: String,
         source: Option<String>,
+        import_directory: std::path::PathBuf,
         params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,
@@ -24,11 +25,14 @@ pub enum Value {
     ModuleFunction {
         name: String,
         source: Option<String>,
+        import_directory: std::path::PathBuf,
         params: Vec<Parameter>,
         body: Vec<Stmt>,
         closure_env: Environment,
     },
     Lambda {
+        source: Option<String>,
+        import_directory: std::path::PathBuf,
         params: Vec<String>,
         body: crate::ast::LambdaBody,
         closure_env: Environment,

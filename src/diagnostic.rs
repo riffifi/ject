@@ -301,6 +301,13 @@ pub fn parse_diagnostic(message: &str, line: Option<usize>, column: Option<usize
             "E1002",
             Some("add a closing `\"` before the end of the line or file"),
         )
+    } else if lower.contains("unterminated multiline comment") {
+        ("E1003", Some("close the multiline comment with `*#`"))
+    } else if lower.contains("numeric literal") {
+        (
+            "E1004",
+            Some("use a valid finite number; integer literals must fit in signed 64-bit storage"),
+        )
     } else if lower.contains("unexpected character") {
         (
             "E1001",
@@ -345,6 +352,8 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
             "E3002",
             Some("ensure the denominator is not zero before dividing"),
         )
+    } else if lower.contains("integer overflow") {
+        ("E3008", Some("keep integer results within -9223372036854775808..9223372036854775807 or use floating-point arithmetic"))
     } else if lower.contains("immutable binding") {
         (
             "E3007",
@@ -387,9 +396,46 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
     } else {
         ("E3999", None)
     };
-    let mut d = Diagnostic::error(message.into()).with_code(code.into());
+    let parse_message = message.strip_prefix("Bootstrap parse error: ");
+    let unlocated_check = message.strip_prefix("Bootstrap unlocated check error: ");
+    let check_message = unlocated_check.or_else(|| message.strip_prefix("Bootstrap check error: "));
+    let mut d = match parse_message {
+        Some(message) => parse_diagnostic(message, None, None),
+        None => match check_message {
+            Some(message) => {
+                let code = crate::linter::Linter::error_code(message);
+                let diagnostic = Diagnostic::error(message.into()).with_code(code.into());
+                if code == "E4102" {
+                    diagnostic.with_help("check each path dependency in Ject.toml".into())
+                } else if code == "E3101" {
+                    diagnostic.with_help(
+                        "check the import path, package dependency, and exported name".into(),
+                    )
+                } else if message.contains("immutable binding") {
+                    diagnostic.with_help(
+                        "declare a mutable binding with `let` if this value must be reassigned"
+                            .into(),
+                    )
+                } else {
+                    diagnostic
+                }
+            }
+            None => Diagnostic::error(message.into()).with_code(code.into()),
+        },
+    };
+    let mut check_help = None::<String>;
     for detail in lines {
         let detail = detail.trim();
+        if let Some(chain) = detail
+            .strip_prefix("note: import chain: ")
+            .filter(|_| parse_message.is_some() || check_message.is_some())
+        {
+            d = d.with_note(format!("import chain: {chain}"));
+            continue;
+        }
+        if unlocated_check.is_some() {
+            continue;
+        }
         if let Some(location) = detail.strip_prefix("-->") {
             let mut parts = location.trim().rsplitn(3, ':');
             if let (Some(column), Some(line)) = (parts.next(), parts.next()) {
@@ -400,11 +446,28 @@ pub fn runtime_diagnostic(message: &str) -> Diagnostic {
                     }
                 }
             }
-        } else if let Some(frame) = detail.strip_prefix("at ") {
-            d = d.with_note(format!("at {frame}"));
+        } else if parse_message.is_some() || check_message.is_some() {
+            if let Some(help) = detail
+                .strip_prefix("help: ")
+                .filter(|_| check_message.is_some())
+            {
+                check_help = Some(help.to_owned());
+            } else if detail.starts_with("- ") {
+                if let Some(help) = &mut check_help {
+                    help.push_str("\n    ");
+                    help.push_str(detail);
+                }
+            }
+        } else {
+            if let Some(frame) = detail.strip_prefix("at ") {
+                d = d.with_note(format!("at {frame}"));
+            }
         }
     }
-    if let Some(help) = help {
+    if let Some(help) = check_help {
+        d = d.with_help(help);
+    }
+    if let Some(help) = help.filter(|_| parse_message.is_none() && check_message.is_none()) {
         d = d.with_help(help.into());
     }
     d
@@ -425,6 +488,13 @@ pub fn parse_lint_message(message: &str) -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn integer_overflow_has_a_specific_diagnostic() {
+        let diagnostic = runtime_diagnostic("Integer overflow in +");
+        assert_eq!(diagnostic.code.as_deref(), Some("E3008"));
+        assert!(diagnostic.help.unwrap().contains("floating-point"));
+    }
+
     #[test]
     fn renders_stable_rust_style_diagnostic() {
         let d = Diagnostic::error("unknown name `totla`".into())

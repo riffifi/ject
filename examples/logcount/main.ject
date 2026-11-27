@@ -1,0 +1,20 @@
+import "system" as system
+import "io" as io
+
+let files = system.args()
+if len(files) == 0 then
+    print("Usage: ject examples/logcount/main.ject FILE ...")
+    system.exit(2)
+end
+
+let total = 0
+for path in files do
+    if not io.is_file(path) then
+        print("Expected a file", path, sep=": ")
+        system.exit(1)
+    end
+    let lines = len(io.read_lines(path))
+    print(lines, path, sep="\t")
+    total += lines
+end
+print(total, "total", sep="\t")

@@ -1,6 +1,6 @@
 use crate::ast::{Argument, Expr, Parameter, Stmt};
 use crate::diagnostic::Diagnostic;
-use crate::module_interface::{ExportKind, ModuleInterface};
+use crate::module_interface::{ExportKind, ModuleExport, ModuleInterface};
 use crate::semantic::SymbolKind;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -12,6 +12,8 @@ struct Variable {
     mutable: bool,
     warn_if_unused: bool,
     declaration: Option<crate::lexer::SourcePosition>,
+    module_interface: Option<ModuleInterface>,
+    function_signature: Option<FunctionSignature>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,11 +40,13 @@ pub struct Linter {
     errors: Vec<LintError>,
     functions: HashSet<String>,
     function_signatures: HashMap<String, FunctionSignature>, // Track function signatures
-    module_signatures: HashMap<String, HashMap<String, FunctionSignature>>,
     in_function: bool,
+    in_loop: bool,
+    expression_start: Option<(usize, usize)>,
     // Store positioned tokens to find locations of identifiers
     positioned_tokens: Vec<(crate::lexer::Token, crate::lexer::SourcePosition)>,
     next_return_token: usize,
+    next_loop_control_token: usize,
     source: String,
     source_path: std::path::PathBuf,
     module_interfaces: RefCell<HashMap<String, Result<ModuleInterface, String>>>,
@@ -76,6 +80,9 @@ impl Linter {
                 });
             }
             self.functions.insert(name.clone());
+            // If CorLib already contributed a binding, calls now use the
+            // predeclared source function at that name.
+            self.set_binding_signature(name, params);
             self.function_signatures.insert(
                 name.clone(),
                 FunctionSignature {
@@ -85,10 +92,17 @@ impl Linter {
         }
     }
 
-    fn error_code(message: &str) -> &'static str {
-        if message.contains("module '")
+    pub(crate) fn error_code(message: &str) -> &'static str {
+        if message.starts_with("package graph: ") {
+            "E4102"
+        } else if message.starts_with("circular module import: ") {
+            "E3102"
+        } else if message.starts_with("module graph ")
+            || message.contains("module '")
             || message.contains("cannot inspect module")
             || message.contains("does not export")
+            || (message.starts_with("native backend '")
+                && message.ends_with(" is private; import its public package instead"))
         {
             "E3101"
         } else {
@@ -107,10 +121,12 @@ impl Linter {
             errors: Vec::new(),
             functions: HashSet::new(),
             function_signatures: HashMap::new(),
-            module_signatures: HashMap::new(),
             in_function: false,
+            in_loop: false,
+            expression_start: None,
             positioned_tokens: Vec::new(),
             next_return_token: 0,
+            next_loop_control_token: 0,
             source: String::new(),
             source_path: std::env::current_dir().unwrap_or_default(),
             module_interfaces: RefCell::new(HashMap::new()),
@@ -180,6 +196,7 @@ impl Linter {
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
         self.reset_declaration_positions();
         self.next_return_token = 0;
+        self.next_loop_control_token = 0;
         self.scopes.clear();
         self.scopes.push(HashMap::new()); // Global scope
         self.warnings.clear();
@@ -191,8 +208,8 @@ impl Linter {
         self.add_builtin_functions();
 
         self.function_signatures.clear();
-        self.module_signatures.clear();
         self.in_function = false;
+        self.in_loop = false;
         self.predeclare_functions(statements);
 
         // Single pass: analyze all statements
@@ -260,6 +277,7 @@ impl Linter {
     pub fn lint_repl(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
         self.reset_declaration_positions();
         self.next_return_token = 0;
+        self.next_loop_control_token = 0;
         // Only clear warnings and errors, keep global scope variables and functions
         self.warnings.clear();
         self.errors.clear();
@@ -274,6 +292,7 @@ impl Linter {
         self.add_builtin_functions();
 
         self.in_function = false;
+        self.in_loop = false;
         self.predeclare_functions(statements);
 
         // Single pass: analyze all statements
@@ -408,6 +427,8 @@ impl Linter {
                     mutable,
                     warn_if_unused,
                     declaration,
+                    module_interface: None,
+                    function_signature: None,
                 },
             );
         }
@@ -454,6 +475,17 @@ impl Linter {
     }
 
     fn get_module_interface(&self, module_path: &str) -> Result<ModuleInterface, String> {
+        if module_path == "base" {
+            return Ok(ModuleInterface {
+                exports: crate::stdlib::get_base_module()
+                    .into_keys()
+                    .map(|name| ModuleExport {
+                        name,
+                        kind: ExportKind::Value,
+                    })
+                    .collect(),
+            });
+        }
         if let Some(interface) = self.module_interfaces.borrow().get(module_path) {
             return interface.clone();
         }
@@ -488,7 +520,7 @@ impl Linter {
             for var_name in scope.keys() {
                 let var_lower = var_name.to_lowercase();
                 // Simple similarity check - same length and similar characters
-                if var_lower.len() == name_lower.len() {
+                if var_lower.chars().count() == name_lower.chars().count() {
                     let mut diff = 0;
                     for (c1, c2) in name_lower.chars().zip(var_lower.chars()) {
                         if c1 != c2 {
@@ -603,22 +635,21 @@ impl Linter {
                 }
             }
             Stmt::Function { name, params, body } => {
-                self.functions.insert(name.clone());
-
-                // Store function signature for validation
-                self.function_signatures.insert(
-                    name.clone(),
-                    FunctionSignature {
-                        parameters: params.clone(),
-                    },
-                );
-
-                // Declare the function as a function, not as a variable
+                if self.scopes.len() > 1 {
+                    self.declare_binding_with_unused_warning(
+                        name.clone(),
+                        true,
+                        Some(SymbolKind::Function),
+                        false,
+                    );
+                    self.set_binding_signature(name, params);
+                }
 
                 // Create new scope for function
                 self.push_scope();
                 let was_in_function = self.in_function;
                 self.in_function = true;
+                let was_in_loop = std::mem::replace(&mut self.in_loop, false);
 
                 // Add parameters to function scope and analyze default values
                 for param in params {
@@ -635,6 +666,7 @@ impl Linter {
                 }
 
                 self.in_function = was_in_function;
+                self.in_loop = was_in_loop;
                 self.pop_scope();
             }
             Stmt::If {
@@ -672,9 +704,11 @@ impl Linter {
             Stmt::While { condition, body } => {
                 self.analyze_expr(condition);
                 self.push_scope();
+                let was_in_loop = std::mem::replace(&mut self.in_loop, true);
                 for stmt in body {
                     self.analyze_statement(stmt);
                 }
+                self.in_loop = was_in_loop;
                 self.pop_scope();
             }
             Stmt::For {
@@ -686,13 +720,19 @@ impl Linter {
                 // For loop creates its own scope with the loop variable
                 self.push_scope();
                 self.declare_variable(var.clone());
+                let was_in_loop = std::mem::replace(&mut self.in_loop, true);
                 for stmt in body {
                     self.analyze_statement(stmt);
                 }
+                self.in_loop = was_in_loop;
                 self.pop_scope();
             }
             Stmt::Return(Some(expr)) => {
-                let position = self.take_return_position();
+                let expression_start = match expr {
+                    Expr::Located { span, .. } => Some((span.line, span.column)),
+                    _ => None,
+                };
+                let position = self.take_return_position(expression_start);
                 self.analyze_expr(expr);
                 if !self.in_function {
                     self.errors.push(LintError {
@@ -702,7 +742,7 @@ impl Linter {
                 }
             }
             Stmt::Return(None) => {
-                let position = self.take_return_position();
+                let position = self.take_return_position(None);
                 if !self.in_function {
                     self.errors.push(LintError {
                         message: "`return` outside of function".to_string(),
@@ -757,12 +797,7 @@ impl Linter {
                         {
                             valid_export = true;
                             if let ExportKind::Function { parameters } = &export.kind {
-                                self.function_signatures.insert(
-                                    item.clone(),
-                                    FunctionSignature {
-                                        parameters: parameters.clone(),
-                                    },
-                                );
+                                self.set_binding_signature(item, parameters);
                             }
                         } else if let Some(interface) = &module_api {
                             if interface.export(item).is_none() {
@@ -785,12 +820,7 @@ impl Linter {
                         for export in &interface.exports {
                             self.declare_external_constant(export.name.clone());
                             if let ExportKind::Function { parameters } = &export.kind {
-                                self.function_signatures.insert(
-                                    export.name.clone(),
-                                    FunctionSignature {
-                                        parameters: parameters.clone(),
-                                    },
-                                );
+                                self.set_binding_signature(&export.name, parameters);
                             }
                         }
                     }
@@ -801,24 +831,13 @@ impl Linter {
                     if module_api.is_none() {
                         self.use_variable(alias_name);
                     }
-                    if let Some(interface) = &module_api {
-                        let signatures = interface
-                            .exports
-                            .iter()
-                            .filter_map(|export| {
-                                let ExportKind::Function { parameters } = &export.kind else {
-                                    return None;
-                                };
-                                Some((
-                                    export.name.clone(),
-                                    FunctionSignature {
-                                        parameters: parameters.clone(),
-                                    },
-                                ))
-                            })
-                            .collect();
-                        self.module_signatures
-                            .insert(alias_name.clone(), signatures);
+                    if let (Some(interface), Some(binding)) = (
+                        &module_api,
+                        self.scopes
+                            .last_mut()
+                            .and_then(|scope| scope.get_mut(alias_name)),
+                    ) {
+                        binding.module_interface = Some(interface.clone());
                     }
                 }
             }
@@ -838,17 +857,8 @@ impl Linter {
                 self.use_variable(name);
             }
             Stmt::ExportFunction { name, params, body } => {
-                self.functions.insert(name.clone());
-
-                // Store function signature for validation
-                self.function_signatures.insert(
-                    name.clone(),
-                    FunctionSignature {
-                        parameters: params.clone(),
-                    },
-                );
-
                 self.declare_binding(name.clone(), true, Some(SymbolKind::Function));
+                self.set_binding_signature(name, params);
                 // Public functions are API surface even when this module does
                 // not call them internally.
                 self.use_variable(name);
@@ -856,6 +866,7 @@ impl Linter {
 
                 let was_in_function = self.in_function;
                 self.in_function = true;
+                let was_in_loop = std::mem::replace(&mut self.in_loop, false);
 
                 for param in params {
                     // Analyze default value first
@@ -870,6 +881,7 @@ impl Linter {
                 }
 
                 self.in_function = was_in_function;
+                self.in_loop = was_in_loop;
                 self.pop_scope();
             }
             Stmt::Struct { name, fields: _ } => {
@@ -907,23 +919,42 @@ impl Linter {
             Stmt::Throw(expr) => {
                 self.analyze_expr(expr);
             }
-            Stmt::Break => {
-                // break is valid inside loops
-            }
-            Stmt::Continue => {
-                // continue is valid inside loops
+            Stmt::Break | Stmt::Continue => {
+                let is_break = matches!(stmt, Stmt::Break);
+                let position = self.take_loop_control_position(is_break);
+                if !self.in_loop {
+                    let keyword = if is_break { "break" } else { "continue" };
+                    self.errors.push(LintError {
+                        message: format!("`{keyword}` outside of loop"),
+                        position,
+                    });
+                }
             }
         }
     }
 
     fn analyze_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::Located { expression, .. } => self.analyze_expr(expression),
+            Expr::Located { expression, span } => {
+                let previous = self.expression_start.replace((span.line, span.column));
+                self.analyze_expr(expression);
+                self.expression_start = previous;
+            }
             Expr::Identifier(name) => {
                 // Check if it's a function first, then check if it's a variable
                 // Prefer lexical variable bindings over builtins (e.g. param `min` vs `min()`)
                 if !self.use_variable(name) && !self.functions.contains(name) {
-                    let position = self.find_identifier_position(name);
+                    let position = self
+                        .positioned_tokens
+                        .iter()
+                        .find_map(|(token, position)| {
+                            (matches!(token, crate::lexer::Token::Identifier(identifier) if identifier == name)
+                                && self.expression_start.is_none_or(|start| {
+                                    (position.line, position.column) >= start
+                                }))
+                            .then(|| position.clone())
+                        })
+                        .or_else(|| self.find_identifier_position(name));
 
                     // Try to find similar variable names for suggestions
                     let suggestions = self.find_similar_variables(name);
@@ -987,16 +1018,29 @@ impl Linter {
                     self.validate_function_call(func_name, args);
                 } else if let Expr::StructAccess { object, field } = callee.as_ref() {
                     if let Expr::Identifier(alias) = object.as_ref() {
-                        if let Some(signature) = self
-                            .module_signatures
-                            .get(alias)
-                            .and_then(|functions| functions.get(field))
-                            .cloned()
+                        if let Some((signature, position)) = self
+                            .scopes
+                            .iter()
+                            .rev()
+                            .find_map(|scope| scope.get(alias))
+                            .and_then(|binding| {
+                                let export = binding.module_interface.as_ref()?.export(field)?;
+                                let ExportKind::Function { parameters } = &export.kind else {
+                                    return None;
+                                };
+                                Some((
+                                    FunctionSignature {
+                                        parameters: parameters.clone(),
+                                    },
+                                    binding.declaration.clone(),
+                                ))
+                            })
                         {
                             self.validate_call_against_signature(
                                 &format!("{alias}.{field}"),
                                 &signature,
                                 args,
+                                position,
                             );
                         }
                     }
@@ -1006,8 +1050,40 @@ impl Linter {
                 self.analyze_expr(object);
                 self.analyze_expr(index);
             }
-            Expr::StructAccess { object, .. } => {
+            Expr::Slice {
+                object,
+                from,
+                to,
+                step,
+            } => {
                 self.analyze_expr(object);
+                for bound in [from.as_deref(), to.as_deref(), step.as_deref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    self.analyze_expr(bound);
+                }
+            }
+            Expr::StructAccess { object, field } => {
+                self.analyze_expr(object);
+                if let Expr::Identifier(alias) = object.as_ref() {
+                    if let Some(binding) =
+                        self.scopes.iter().rev().find_map(|scope| scope.get(alias))
+                    {
+                        if binding
+                            .module_interface
+                            .as_ref()
+                            .is_some_and(|api| api.export(field).is_none())
+                        {
+                            self.errors.push(LintError {
+                                message: format!(
+                                    "module alias '{alias}' does not export '{field}'"
+                                ),
+                                position: binding.declaration.clone(),
+                            });
+                        }
+                    }
+                }
             }
             Expr::StructInit {
                 struct_name,
@@ -1026,7 +1102,7 @@ impl Linter {
                     self.analyze_expr(field_value);
                 }
             }
-            Expr::Array(elements) => {
+            Expr::Array(elements) | Expr::UniqueArray(elements) => {
                 for elem in elements {
                     self.analyze_expr(elem);
                 }
@@ -1061,6 +1137,9 @@ impl Linter {
             Expr::Lambda { params, body } => {
                 // Lambda creates its own scope
                 self.push_scope();
+                let was_in_function = self.in_function;
+                self.in_function = true;
+                let was_in_loop = std::mem::replace(&mut self.in_loop, false);
                 // Declare parameters
                 for param in params {
                     self.declare_parameter(param.clone());
@@ -1076,6 +1155,8 @@ impl Linter {
                         self.analyze_expr(expr);
                     }
                 }
+                self.in_function = was_in_function;
+                self.in_loop = was_in_loop;
                 self.pop_scope();
             }
             Expr::Match { expr, arms } => {
@@ -1102,6 +1183,22 @@ impl Linter {
                     self.pop_scope();
                 }
             }
+            Expr::ConditionalExpr {
+                condition,
+                then_expr,
+                elseif_branches,
+                else_expr,
+            } => {
+                self.analyze_expr(condition);
+                self.analyze_expr(then_expr);
+                for branch in elseif_branches {
+                    self.analyze_expr(&branch.condition);
+                    self.analyze_expr(&branch.then_expr);
+                }
+                if let Some(expression) = else_expr {
+                    self.analyze_expr(expression);
+                }
+            }
             Expr::Print { values, sep, end } => {
                 for v in values {
                     self.analyze_expr(v);
@@ -1111,6 +1208,11 @@ impl Linter {
                 }
                 if let Some(end) = end {
                     self.analyze_expr(end);
+                }
+            }
+            Expr::CompiledInterpolation(parts) => {
+                for part in parts {
+                    self.analyze_expr(part);
                 }
             }
             Expr::InterpolatedString(parts) => {
@@ -1137,8 +1239,6 @@ impl Linter {
 
             // Literals don't need analysis
             Expr::Integer(_) | Expr::Float(_) | Expr::String(_) | Expr::Bool(_) | Expr::Nil => {}
-
-            _ => {}
         }
     }
 
@@ -1176,14 +1276,42 @@ impl Linter {
         None
     }
 
-    fn take_return_position(&mut self) -> Option<crate::lexer::SourcePosition> {
+    fn take_return_position(
+        &mut self,
+        before: Option<(usize, usize)>,
+    ) -> Option<crate::lexer::SourcePosition> {
         let (index, (_, position)) = self
             .positioned_tokens
             .iter()
             .enumerate()
             .skip(self.next_return_token)
             .find(|(_, (token, _))| matches!(token, crate::lexer::Token::Return))?;
+        // Arrow bodies lower to a return without a corresponding source token.
+        if before.is_some_and(|start| (position.line, position.column) >= start) {
+            return None;
+        }
         self.next_return_token = index + 1;
+        Some(position.clone())
+    }
+
+    fn take_loop_control_position(
+        &mut self,
+        is_break: bool,
+    ) -> Option<crate::lexer::SourcePosition> {
+        use crate::lexer::Token;
+
+        let (index, (_, position)) = self
+            .positioned_tokens
+            .iter()
+            .enumerate()
+            .skip(self.next_loop_control_token)
+            .find(|(_, (token, _))| {
+                matches!(
+                    (token, is_break),
+                    (Token::Break, true) | (Token::Continue, false)
+                )
+            })?;
+        self.next_loop_control_token = index + 1;
         Some(position.clone())
     }
 
@@ -1216,9 +1344,29 @@ impl Linter {
         None
     }
 
+    fn set_binding_signature(&mut self, name: &str, parameters: &[Parameter]) {
+        if let Some(binding) = self.scopes.last_mut().and_then(|scope| scope.get_mut(name)) {
+            binding.function_signature = Some(FunctionSignature {
+                parameters: parameters.to_vec(),
+            });
+        }
+    }
+
     fn validate_function_call(&mut self, func_name: &str, args: &[Argument]) {
-        if let Some(signature) = self.function_signatures.get(func_name).cloned() {
-            self.validate_call_against_signature(func_name, &signature, args);
+        let binding = self
+            .scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(func_name));
+        let signature = match binding {
+            Some(binding) => binding.function_signature.as_ref(),
+            None => self.function_signatures.get(func_name),
+        };
+        if let Some(signature) = signature.cloned() {
+            let position = binding
+                .and_then(|binding| binding.declaration.clone())
+                .or_else(|| self.find_identifier_position(func_name));
+            self.validate_call_against_signature(func_name, &signature, args, position);
         }
         // If function signature not found, we already reported "undeclared variable" error
     }
@@ -1228,6 +1376,7 @@ impl Linter {
         func_name: &str,
         signature: &FunctionSignature,
         args: &[Argument],
+        position: Option<crate::lexer::SourcePosition>,
     ) {
         // Simulate the argument resolution logic from the interpreter
         let mut resolved_args = vec![false; signature.parameters.len()]; // track which args are provided
@@ -1238,7 +1387,6 @@ impl Linter {
             match arg {
                 Argument::Positional(_) => {
                     if positional_count >= signature.parameters.len() {
-                        let position = self.find_identifier_position(func_name);
                         self.errors.push(LintError {
                             message: format!("too many arguments for function `{}`", func_name),
                             position,
@@ -1263,7 +1411,6 @@ impl Linter {
                 match param_index {
                     Some(index) => {
                         if resolved_args[index] {
-                            let position = self.find_identifier_position(func_name);
                             self.errors.push(LintError {
                                 message: format!(
                                     "argument `{}` specified multiple times in call to `{}`",
@@ -1276,7 +1423,6 @@ impl Linter {
                         resolved_args[index] = true;
                     }
                     None => {
-                        let position = self.find_identifier_position(func_name);
                         self.errors.push(LintError {
                             message: format!(
                                 "unknown parameter `{}` for function `{}`",
@@ -1293,13 +1439,12 @@ impl Linter {
         // Third pass: check for missing required arguments
         for (i, param) in signature.parameters.iter().enumerate() {
             if !resolved_args[i] && param.default_value.is_none() {
-                let position = self.find_identifier_position(func_name);
                 self.errors.push(LintError {
                     message: format!(
                         "missing required argument `{}` for function `{}`",
                         param.name, func_name
                     ),
-                    position,
+                    position: position.clone(),
                 });
             }
         }

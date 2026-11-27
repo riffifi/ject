@@ -64,7 +64,6 @@ pub enum Token {
     End,
     Do,
     Then,
-    Print,
     Import,
     Export,
     From,
@@ -127,6 +126,8 @@ pub enum Token {
     // Special
     Invalid(char),
     UnterminatedString,
+    UnterminatedComment,
+    InvalidNumber(String),
     Newline,
     Eof,
 }
@@ -206,29 +207,21 @@ impl Lexer {
         }
     }
 
-    fn skip_multiline_comment(&mut self) {
+    fn skip_multiline_comment(&mut self) -> bool {
         // Skip #*
         self.advance();
         self.advance();
-
-        let start_line = self.line;
-        let start_column = self.column - 2;
 
         while let Some(ch) = self.current_char {
             if ch == '*' && self.peek() == Some('#') {
                 // Found *#, skip both and exit
                 self.advance();
                 self.advance();
-                return;
+                return true;
             }
             self.advance();
         }
-
-        // If we reach here, the comment was never closed - this is an error
-        panic!(
-            "Error at line {}: Unclosed multiline comment starting at line {}, column {}",
-            self.line, start_line, start_column
-        );
+        false
     }
 
     fn read_number(&mut self) -> Token {
@@ -275,9 +268,15 @@ impl Lexer {
         }
 
         if is_float {
-            Token::Float(number.parse().unwrap_or(0.0))
+            match number.parse::<f64>() {
+                Ok(value) if value.is_finite() => Token::Float(value),
+                _ => Token::InvalidNumber(number),
+            }
         } else {
-            Token::Integer(number.parse().unwrap_or(0))
+            match number.parse::<i64>() {
+                Ok(value) => Token::Integer(value),
+                Err(_) => Token::InvalidNumber(number),
+            }
         }
     }
 
@@ -466,7 +465,6 @@ impl Lexer {
             "end" => Token::End,
             "do" => Token::Do,
             "then" => Token::Then,
-            "print" => Token::Print,
             "import" => Token::Import,
             "export" => Token::Export,
             "from" => Token::From,
@@ -503,7 +501,9 @@ impl Lexer {
                 }
                 Some('#') => {
                     if self.peek() == Some('*') {
-                        self.skip_multiline_comment();
+                        if !self.skip_multiline_comment() {
+                            return LocatedToken::new(Token::UnterminatedComment, start_pos);
+                        }
                     } else {
                         self.skip_comment();
                     }

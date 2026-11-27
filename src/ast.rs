@@ -79,6 +79,7 @@ pub enum Expr {
     Float(f64),
     String(String),
     InterpolatedString(Vec<InterpolationPart>),
+    CompiledInterpolation(Vec<Expr>),
     Bool(bool),
     Nil,
     Identifier(String),
@@ -320,6 +321,13 @@ impl fmt::Display for Expr {
                         InterpolationPart::Text(text) => write!(f, "{}", text)?,
                         InterpolationPart::Expression(expr) => write!(f, "${{{}}}", expr)?,
                     }
+                }
+                write!(f, "\"")
+            }
+            Expr::CompiledInterpolation(parts) => {
+                write!(f, "\"")?;
+                for part in parts {
+                    write!(f, "${{{part}}}")?;
                 }
                 write!(f, "\"")
             }

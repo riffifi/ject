@@ -12,6 +12,33 @@ mod tests {
         parser.parse().map_err(|e| e.message)
     }
 
+    #[test]
+    fn invalid_source_reports_lexical_errors_at_the_original_token() {
+        for (source, message, line, column) in [
+            ("\n  #* unclosed", "Unterminated multiline comment", 2, 3),
+            ("\nlet x = 1e+", "numeric literal", 2, 9),
+            ("let x = 9223372036854775808", "numeric literal", 1, 9),
+        ] {
+            let tokens = Lexer::new(source)
+                .tokenize_with_positions()
+                .into_iter()
+                .map(|token| (token.token, token.position))
+                .collect();
+            let error = Parser::new(tokens).parse().unwrap_err();
+            assert!(error.message.contains(message), "{error:?}");
+            assert_eq!((error.line, error.column), (Some(line), Some(column)));
+        }
+        let statements = parse("let min = -9223372036854775808").unwrap();
+        assert!(matches!(
+            &statements[0],
+            Stmt::Let {
+                value: Expr::Integer(i64::MIN),
+                ..
+            }
+        ));
+        assert!(parse("let too_small = -9223372036854775809").is_err());
+    }
+
     // ========== Basic Statement Tests ==========
 
     #[test]
