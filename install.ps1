@@ -39,10 +39,10 @@ function Update-Path([bool]$Add) {
 
 if ($Command -eq 'uninstall') {
     if (!$ownsInstall) { throw "No installer-managed Ject in $BinDir" }
-    Update-Path $false
     foreach ($file in @($executable, $manager, $receipt)) {
         if (Test-Path -LiteralPath $file -PathType Leaf) { Remove-Item -LiteralPath $file -Force }
     }
+    Update-Path $false
     Write-Output "Uninstalled Ject from $BinDir"
     return
 }

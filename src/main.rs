@@ -65,7 +65,7 @@ fn main() {
                         return;
                     }
                     Err(error) => {
-                        emit_cli_error("E4101", error, Some("use source-only path dependencies and run `ject build --binary` again"));
+                        emit_cli_error("E4101", error, Some("use source-only dependencies and run `ject install` to refresh the lockfile"));
                         std::process::exit(1);
                     }
                 }

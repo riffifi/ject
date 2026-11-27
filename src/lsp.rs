@@ -1428,6 +1428,17 @@ fn exported_identity(
         {
             return Some((uri, id));
         }
+        return indexes.iter().find_map(|(target, index)| {
+            if same_file_uri(&uri, target) {
+                index
+                    .exports
+                    .get(name)
+                    .copied()
+                    .map(|id| (target.clone(), id))
+            } else {
+                None
+            }
+        });
     }
     indexes.iter().find_map(|(uri, index)| {
         if module_matches(uri, module) {
@@ -1439,14 +1450,28 @@ fn exported_identity(
 }
 
 fn resolved_module_uri(importer: &Url, module: &str) -> Option<Url> {
-    let importer_path = importer.to_file_path().ok()?;
-    let resolved = crate::module_resolver::ModuleResolver::for_path(&importer_path)
-        .resolve(module)
-        .ok()?;
+    let resolved = resolver_for_document(importer)?.resolve(module).ok()?;
     match resolved.identity {
         crate::module_resolver::ModuleIdentity::File(path) => Url::from_file_path(path).ok(),
         crate::module_resolver::ModuleIdentity::Embedded(_) => None,
     }
+}
+
+fn resolver_for_document(uri: &Url) -> Option<crate::module_resolver::ModuleResolver> {
+    let path = uri.to_file_path().ok()?;
+    Some(crate::module_resolver::ModuleResolver::for_path(
+        path.parent()?,
+    ))
+}
+
+fn same_file_uri(left: &Url, right: &Url) -> bool {
+    if left == right {
+        return true;
+    }
+    let (Ok(left), Ok(right)) = (left.to_file_path(), right.to_file_path()) else {
+        return false;
+    };
+    matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
 fn dependent_documents(indexes: &HashMap<Url, DocumentIndex>, changed: &Url) -> Vec<Url> {
@@ -1460,8 +1485,9 @@ fn dependent_documents(indexes: &HashMap<Url, DocumentIndex>, changed: &Url) -> 
             }
             let depends_on_affected = index.imports.iter().any(|module| {
                 let resolved = resolved_module_uri(uri, module);
-                affected.iter().any(|target| {
-                    resolved.as_ref() == Some(target) || module_matches(target, module)
+                affected.iter().any(|target| match &resolved {
+                    Some(resolved) => same_file_uri(resolved, target),
+                    None => module_matches(target, module),
                 })
             });
             if depends_on_affected {
@@ -2098,9 +2124,11 @@ fn exported_completion_items(
     module: &str,
 ) -> Vec<CompletionItem> {
     let mut items = BTreeMap::new();
+    let resolved = resolved_module_uri(importer, module);
     for (uri, index) in indexes {
-        let resolved = resolved_module_uri(importer, module);
-        if resolved.as_ref().is_some_and(|target| target != uri)
+        if resolved
+            .as_ref()
+            .is_some_and(|target| !same_file_uri(target, uri))
             || (resolved.is_none() && !module_matches(uri, module))
         {
             continue;
@@ -2124,14 +2152,8 @@ fn exported_completion_items(
         }
     }
     if items.is_empty() {
-        let interface = importer
-            .to_file_path()
-            .ok()
-            .and_then(|path| {
-                crate::module_resolver::ModuleResolver::for_path(&path)
-                    .resolve(module)
-                    .ok()
-            })
+        let interface = resolver_for_document(importer)
+            .and_then(|resolver| resolver.resolve(module).ok())
             .and_then(|resolved| ModuleInterface::parse(&resolved.source).ok());
         if let Some(interface) = interface {
             for export in interface.exports {
@@ -2313,6 +2335,28 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    fn fixture_uri(name: &str) -> Url {
+        Url::from_file_path(std::env::temp_dir().join("ject-lsp-fixtures").join(name)).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolved_imports_match_editor_uris_through_symlinks() {
+        let root =
+            std::env::temp_dir().join(format!("ject-lsp-symlink-test-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let dependency = root.join("actual.ject");
+        let alias = root.join("alias.ject");
+        fs::write(&dependency, "export value = 1\n").unwrap();
+        std::os::unix::fs::symlink(&dependency, &alias).unwrap();
+        let editor_uri = Url::from_file_path(&alias).unwrap();
+        let importer = Url::from_file_path(root.join("app.ject")).unwrap();
+        let resolved = resolved_module_uri(&importer, "./alias.ject").unwrap();
+        assert_ne!(editor_uri, resolved);
+        assert!(same_file_uri(&editor_uri, &resolved));
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn malformed_literals_and_comments_produce_editor_diagnostics() {
         for (source, code, column) in [
@@ -2421,7 +2465,7 @@ mod tests {
 
     #[test]
     fn constants_use_constant_completion_items() {
-        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let uri = fixture_uri("app.ject");
         let source = "const answer = 42\nans";
         let indexes = HashMap::from([(uri.clone(), index_document(source))]);
         let documents = HashMap::from([(uri.clone(), source.into())]);
@@ -2436,7 +2480,7 @@ mod tests {
 
     #[test]
     fn completion_uses_the_runtime_corlib_catalog() {
-        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let uri = fixture_uri("app.ject");
         let source = "";
         let indexes = HashMap::from([(uri.clone(), index_document(source))]);
         let documents = HashMap::from([(uri.clone(), source.into())]);
@@ -2494,7 +2538,7 @@ mod tests {
             item.name == "missing" && item.detail.as_deref() == Some("let missing: float")
         }));
 
-        let uri = Url::parse("file:///tmp/special-floats.ject").unwrap();
+        let uri = fixture_uri("special-floats.ject");
         let indexes = HashMap::from([(uri.clone(), index)]);
         let documents = HashMap::from([(uri.clone(), source.into())]);
         let completions = completion_items(&indexes, &documents, &uri, Position::new(2, 2));
@@ -2522,7 +2566,7 @@ mod tests {
 
     #[test]
     fn document_highlights_respect_shadowing() {
-        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let uri = fixture_uri("app.ject");
         let source = "let value = 1\nif true\n    let value = 2\n    print value\nend\nprint value";
         let indexes = HashMap::from([(uri.clone(), index_document(source))]);
         let documents = HashMap::from([(uri.clone(), source.into())]);
@@ -2544,8 +2588,8 @@ mod tests {
 
     #[test]
     fn resolves_selective_imports_to_exported_identity() {
-        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let library = "export fn paint(text)\n    return text\nend";
         let app = "import {paint} from \"colors\"\npaint(\"hi\")";
         let indexes = HashMap::from([
@@ -2572,8 +2616,8 @@ mod tests {
 
     #[test]
     fn resolves_qualified_module_members() {
-        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let library = "export fn paint(text)\n    return text\nend";
         let app = "import \"colors\" as c\nc.paint(\"hi\")";
         let indexes = HashMap::from([
@@ -2595,8 +2639,8 @@ mod tests {
 
     #[test]
     fn resolves_unaliased_import_names_to_their_export() {
-        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let library = "export fn paint(text)\n    return text\nend";
         let app = "import \"colors\"\npaint(\"hi\")";
         let indexes = HashMap::from([
@@ -2626,9 +2670,9 @@ mod tests {
 
     #[test]
     fn unaliased_import_names_stay_ambiguous_when_modules_collide() {
-        let colors_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let canvas_uri = Url::parse("file:///tmp/canvas.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let colors_uri = fixture_uri("colors.ject");
+        let canvas_uri = fixture_uri("canvas.ject");
+        let app_uri = fixture_uri("app.ject");
         let library = "export fn paint()\nend";
         let app = "import \"colors\"\nimport \"canvas\"\npaint()";
         let indexes = HashMap::from([
@@ -2647,9 +2691,9 @@ mod tests {
 
     #[test]
     fn same_named_reexports_keep_source_and_public_identities_separate() {
-        let base_uri = Url::parse("file:///tmp/base.ject").unwrap();
-        let facade_uri = Url::parse("file:///tmp/facade.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let base_uri = fixture_uri("base.ject");
+        let facade_uri = fixture_uri("facade.ject");
+        let app_uri = fixture_uri("app.ject");
         let base = "export fn paint()\nend";
         let facade = "import {paint} from \"base\"\nexport paint = paint";
         let app = "import {paint} from \"facade\"\npaint()";
@@ -2689,9 +2733,9 @@ mod tests {
 
     #[test]
     fn imported_identity_ignores_same_named_exports() {
-        let colors_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let drawing_uri = Url::parse("file:///tmp/drawing.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let colors_uri = fixture_uri("colors.ject");
+        let drawing_uri = fixture_uri("drawing.ject");
+        let app_uri = fixture_uri("app.ject");
         let colors = "export fn paint(text)\n    return text\nend";
         let drawing = "export fn paint(canvas)\n    return canvas\nend";
         let app = "import {paint} from \"colors\"\npaint(\"hi\")";
@@ -2719,8 +2763,8 @@ mod tests {
 
     #[test]
     fn rename_rejects_export_and_visible_scope_collisions() {
-        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let library = "export fn paint()\nend\nexport fn draw()\nend";
         let app = "import {paint} from \"colors\"\nlet replacement = 1\npaint()";
         let indexes = HashMap::from([
@@ -2747,8 +2791,8 @@ mod tests {
 
     #[test]
     fn qualified_export_rename_ignores_unrelated_local_names() {
-        let library_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let library_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let library = "export fn paint()\nend";
         let app = "import \"colors\" as colors\nlet render = 1\ncolors.paint()";
         let indexes = HashMap::from([
@@ -2825,9 +2869,9 @@ mod tests {
 
     #[test]
     fn completion_respects_module_and_import_boundaries() {
-        let colors_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let drawing_uri = Url::parse("file:///tmp/drawing.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let colors_uri = fixture_uri("colors.ject");
+        let drawing_uri = fixture_uri("drawing.ject");
+        let app_uri = fixture_uri("app.ject");
         let colors = "export fn paint(text)\n    return text\nend\nfn private_helper()\nend";
         let drawing = "export fn sketch(canvas)\n    return canvas\nend";
         let app = "import \"colors\" as c\nlet local = 1\nc.pa";
@@ -2865,8 +2909,8 @@ mod tests {
 
     #[test]
     fn completion_only_offers_exports_in_selective_imports() {
-        let colors_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let colors_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let colors = "export fn paint(text)\nend\nfn private_helper()\nend";
         let app = "import {pa} from \"colors\"";
         let indexes = HashMap::from([
@@ -3026,7 +3070,7 @@ mod tests {
 
     #[test]
     fn completion_hides_symbols_from_closed_scopes() {
-        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let uri = fixture_uri("app.ject");
         let source = "let outer = 1\nif true\n    let inner = 2\n    inn\nend\nout";
         let indexes = HashMap::from([(uri.clone(), index_document(source))]);
         let documents = HashMap::from([(uri.clone(), source.into())]);
@@ -3039,8 +3083,8 @@ mod tests {
 
     #[test]
     fn signature_help_resolves_imported_qualified_functions() {
-        let colors_uri = Url::parse("file:///tmp/colors.ject").unwrap();
-        let app_uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let colors_uri = fixture_uri("colors.ject");
+        let app_uri = fixture_uri("app.ject");
         let colors = "export fn mix(left, right, amount=0.5)\nend";
         let app = "import \"colors\" as c\nc.mix(\"red\", ";
         let indexes = HashMap::from([
@@ -3077,7 +3121,7 @@ mod tests {
 
     #[test]
     fn signature_help_ignores_nested_argument_commas() {
-        let uri = Url::parse("file:///tmp/app.ject").unwrap();
+        let uri = fixture_uri("app.ject");
         let source = "map([pair(1, 2)], ";
         let indexes = HashMap::from([(uri.clone(), index_document(source))]);
         let documents = HashMap::from([(uri.clone(), source.into())]);

@@ -279,10 +279,10 @@ ject build --binary
 ject build --binary --release --output dist/player
 ```
 
-The binary embeds the project's source and local path dependencies. Registry and Git
-dependencies are not supported by the first compiler pass, and packages with native
-components return an explicit error. Source-only compilation requires a Rust toolchain
-on the build machine; it does not require Ject or Rust to run the resulting executable.
+The binary embeds the project and its source-only dependencies, including Git and
+registry packages. Run `ject install` and commit `Ject.lock` for those dependencies
+before building. Building a binary uses Cargo and a Ject executable built from an
+available source checkout. Recipients can run the resulting executable directly.
 
 `check` covers every `.ject` file under `src/` plus an external configured entry. It
 does not execute code or build/load native artifacts. `test` builds native packages when

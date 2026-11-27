@@ -826,7 +826,11 @@ fn package_checksum_root(root: &Path) -> Result<String, String> {
         let relative = path.strip_prefix(&root).unwrap_or(&path);
         let bytes = fs::read(&path)
             .map_err(|error| format!("failed to checksum {}: {error}", path.display()))?;
-        let relative = relative.to_string_lossy();
+        let relative = relative
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
         digest.update((relative.len() as u64).to_le_bytes());
         digest.update(relative.as_bytes());
         digest.update((bytes.len() as u64).to_le_bytes());
@@ -1324,6 +1328,7 @@ fn materialize_git_dependency(
         return Err(format!("failed to clone git dependency '{name}'"));
     }
     let checkout = Command::new("git")
+        .args(["-c", "core.autocrlf=false"])
         .arg("-C")
         .arg(&temporary)
         .arg("checkout")
@@ -1984,6 +1989,30 @@ mod tests {
 
         fs::write(root.join("src/lib.ject"), "export value = 2\n").unwrap();
         assert_ne!(original, package_checksum(&project).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_checksum_uses_forward_slashes() {
+        let root = std::env::temp_dir().join(format!(
+            "ject-checksum-path-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        let relative = b"src/main.ject";
+        let content = b"print(1)\n";
+        fs::write(root.join("src/main.ject"), content).unwrap();
+
+        let mut expected = Sha256::new();
+        expected.update((relative.len() as u64).to_le_bytes());
+        expected.update(relative);
+        expected.update((content.len() as u64).to_le_bytes());
+        expected.update(content);
+        assert_eq!(
+            package_checksum_root(&root).unwrap(),
+            format!("{:x}", expected.finalize())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
