@@ -542,6 +542,7 @@ dependencies = [
  "toml",
  "toml_edit",
  "tower-lsp",
+ "unicode-width",
  "ureq",
 ]
 

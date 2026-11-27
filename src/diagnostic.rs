@@ -1,6 +1,7 @@
 use colored::Colorize;
 use std::fmt::Write;
 use std::io::{self, IsTerminal, Write as IoWrite};
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DiagnosticLevel {
@@ -104,6 +105,7 @@ impl Diagnostic {
         let span = SourceSpan::new(line, column, length);
         self.line = Some(span.line);
         self.column = Some(span.column);
+        self.labels.retain(|label| !label.primary);
         self.labels.push(DiagnosticLabel {
             span,
             message: None,
@@ -114,6 +116,7 @@ impl Diagnostic {
     pub fn with_primary_label(mut self, span: SourceSpan, message: impl Into<String>) -> Self {
         self.line = Some(span.line);
         self.column = Some(span.column);
+        self.labels.retain(|label| !label.primary);
         self.labels.push(DiagnosticLabel {
             span,
             message: Some(message.into()),
@@ -209,10 +212,13 @@ impl DiagnosticRenderer {
                     .zip(diagnostic.column)
                     .map(|(l, c)| SourceSpan::new(l, c, 1))
             });
+        let file = filename
+            .or(diagnostic.filename.as_deref())
+            .unwrap_or("<input>");
+        let lines: Vec<_> = source
+            .map(|text| text.split_terminator('\n').collect())
+            .unwrap_or_default();
         if let Some(span) = primary {
-            let file = filename
-                .or(diagnostic.filename.as_deref())
-                .unwrap_or("<input>");
             let _ = writeln!(
                 out,
                 " {} {file}:{}:{}",
@@ -220,47 +226,46 @@ impl DiagnosticRenderer {
                 span.line,
                 span.column
             );
-            let lines: Vec<&str> = source.map(|s| s.lines().collect()).unwrap_or_default();
             let text = lines
                 .get(span.line - 1)
                 .copied()
                 .or(diagnostic.source_line.as_deref());
             if let Some(text) = text {
-                let gutter = " ".repeat(span.line.to_string().len());
-                let _ = writeln!(out, " {gutter} {}", self.blue("|"));
-                let _ = writeln!(
-                    out,
-                    " {} {} {text}",
-                    self.blue(&span.line.to_string()),
-                    self.blue("|")
-                );
-                let padding: String = text
-                    .chars()
-                    .take(span.column - 1)
-                    .map(|c| if c == '\t' { '\t' } else { ' ' })
-                    .collect();
-                let available = text.chars().count().saturating_sub(span.column - 1);
-                let marker = diagnostic
-                    .level
-                    .paint(&"^".repeat(span.length.min(available).max(1)), self.color);
                 let label = diagnostic
                     .labels
                     .iter()
                     .find(|l| l.primary)
-                    .and_then(|l| l.message.as_deref())
-                    .map(|s| format!(" {s}"))
-                    .unwrap_or_default();
-                let _ = writeln!(out, " {gutter} {} {padding}{marker}{label}", self.blue("|"));
+                    .and_then(|l| l.message.as_deref());
+                self.render_excerpt(&mut out, span, text, diagnostic.level, "^", label);
             }
         }
         for label in diagnostic.labels.iter().filter(|l| !l.primary) {
+            let message = label.message.as_deref().unwrap_or("related location");
+            if let Some(text) = lines.get(label.span.line - 1) {
+                let _ = writeln!(
+                    out,
+                    " {} {file}:{}:{}",
+                    self.blue(":::"),
+                    label.span.line,
+                    label.span.column
+                );
+                self.render_excerpt(
+                    &mut out,
+                    label.span,
+                    text,
+                    DiagnosticLevel::Note,
+                    "-",
+                    Some(message),
+                );
+                continue;
+            }
             let _ = writeln!(
                 out,
                 " {} {}:{}: {}",
                 self.blue("="),
                 label.span.line,
                 label.span.column,
-                label.message.as_deref().unwrap_or("related location")
+                message
             );
         }
         for note in &diagnostic.notes {
@@ -275,6 +280,58 @@ impl DiagnosticRenderer {
         }
         out.push('\n');
         out
+    }
+
+    fn render_excerpt(
+        &self,
+        out: &mut String,
+        span: SourceSpan,
+        text: &str,
+        level: DiagnosticLevel,
+        marker: &str,
+        label: Option<&str>,
+    ) {
+        let number = span.line.to_string();
+        let gutter = " ".repeat(number.len());
+        let start = span.column - 1;
+        let stop = start.saturating_add(span.length);
+        let mut visible = String::new();
+        let mut cells = 0;
+        let mut padding = 0;
+        let mut width = 0;
+        for (index, character) in text.trim_end_matches('\r').chars().enumerate() {
+            let advance = match character {
+                '\t' => {
+                    let spaces = 4 - cells % 4;
+                    visible.push_str(&" ".repeat(spaces));
+                    spaces
+                }
+                character if character.is_control() => {
+                    visible.push('�');
+                    1
+                }
+                character => {
+                    visible.push(character);
+                    character.width().unwrap_or(0)
+                }
+            };
+            cells += advance;
+            if index < start {
+                padding += advance;
+            } else if index < stop {
+                width += advance;
+            }
+        }
+        let _ = writeln!(out, " {gutter} {}", self.blue("|"));
+        let _ = writeln!(out, " {} {} {visible}", self.blue(&number), self.blue("|"));
+        let pointer = level.paint(&marker.repeat(width.max(1)), self.color);
+        let message = label.map(|label| format!(" {label}")).unwrap_or_default();
+        let _ = writeln!(
+            out,
+            " {gutter} {} {}{pointer}{message}",
+            self.blue("|"),
+            " ".repeat(padding)
+        );
     }
     fn blue(&self, text: &str) -> String {
         if self.color {
@@ -512,6 +569,24 @@ mod tests {
         assert!(out.contains("^^^^^ not found"));
         assert!(out.contains("= note:"));
         assert!(out.contains("= help:"));
+    }
+
+    #[test]
+    fn terminal_spans_use_display_cells_and_include_related_source() {
+        let diagnostic = Diagnostic::warning("duplicate binding".into())
+            .with_span(2, 1, 1)
+            .with_primary_label(SourceSpan::new(2, 3, 2), "new binding")
+            .with_secondary_label(SourceSpan::new(1, 5, 2), "previous binding");
+        let rendered = DiagnosticRenderer::plain().render_to_string(
+            &diagnostic,
+            Some("demo.ject"),
+            Some("let 名字 = 1\n\t界名字 = 2\n"),
+        );
+        assert!(rendered.contains("--> demo.ject:2:3"));
+        assert!(rendered.contains("2 |     界名字 = 2"));
+        assert!(rendered.contains("|       ^^^^ new binding"));
+        assert!(rendered.contains("::: demo.ject:1:5"));
+        assert!(rendered.contains("|     ---- previous binding"));
     }
     #[test]
     fn runtime_codes_are_specific() {

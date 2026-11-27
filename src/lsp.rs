@@ -76,17 +76,29 @@ impl Backend {
                 cache.remove(dependent);
             }
         }
-        let diagnostics = self.diagnostics_for(&uri).await;
-        self.client
-            .publish_diagnostics(uri.clone(), diagnostics, version)
-            .await;
+        self.publish_document_diagnostics(uri, version).await;
 
         for dependent in dependents {
-            let diagnostics = self.diagnostics_for(&dependent).await;
-            self.client
-                .publish_diagnostics(dependent, diagnostics, None)
-                .await;
+            self.publish_document_diagnostics(dependent, None).await;
         }
+    }
+
+    async fn publish_document_diagnostics(&self, uri: Url, version: Option<i32>) {
+        let mut diagnostics = self.diagnostics_for(&uri).await;
+        {
+            let documents = self.documents.read().await;
+            for diagnostic in &mut diagnostics {
+                diagnostic.range = wire_range(documents.get(&uri), diagnostic.range);
+                if let Some(related) = &mut diagnostic.related_information {
+                    for item in related {
+                        encode_location(&documents, &mut item.location);
+                    }
+                }
+            }
+        }
+        self.client
+            .publish_diagnostics(uri, diagnostics, version)
+            .await;
     }
 
     async fn diagnostics_for(&self, uri: &Url) -> Vec<Diagnostic> {
@@ -126,8 +138,8 @@ impl Backend {
             };
             if let Ok(graph) = &graph {
                 let discovered = graph_documents(graph, &sources);
-                let mut documents = self.documents.write().await;
                 let mut indexes = self.indexes.write().await;
+                let mut documents = self.documents.write().await;
                 for (module_uri, module_source) in discovered {
                     indexes
                         .entry(module_uri.clone())
@@ -161,8 +173,8 @@ impl LanguageServer for Backend {
         }
         scan_roots.sort();
         scan_roots.dedup();
-        let mut documents = self.documents.write().await;
         let mut indexes = self.indexes.write().await;
+        let mut documents = self.documents.write().await;
         for root in scan_roots {
             for path in collect_ject_files(&root) {
                 if let (Ok(text), Ok(uri)) = (fs::read_to_string(&path), Url::from_file_path(&path))
@@ -326,7 +338,7 @@ impl LanguageServer for Backend {
             &indexes,
             &documents,
             uri,
-            params.text_document_position.position,
+            scalar_position(documents.get(uri), params.text_document_position.position),
         );
         Ok(Some(CompletionResponse::Array(items)))
     }
@@ -336,23 +348,29 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
         let indexes = self.indexes.read().await;
         let documents = self.documents.read().await;
-        Ok(signature_help_at(&indexes, &documents, uri, position))
+        Ok(signature_help_at(
+            &indexes,
+            &documents,
+            uri,
+            scalar_position(documents.get(uri), position),
+        ))
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = &params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
+        let indexes = self.indexes.read().await;
         let documents = self.documents.read().await;
         let Some(text) = documents.get(uri) else {
             return Ok(None);
         };
+        let position = scalar_position(Some(text), position);
         let Some(word) = word_at(text, position) else {
             return Ok(None);
         };
         if KEYWORDS.contains(&word.as_str()) {
             return Ok(None);
         }
-        let indexes = self.indexes.read().await;
         let description = if crate::stdlib::is_corlib_function(&word) {
             format!(
                 "```ject\n{}\n```\n\nJect built-in function",
@@ -396,15 +414,21 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position_params.text_document.uri;
         let indexes = self.indexes.read().await;
         let documents = self.documents.read().await;
-        let Some((target_uri, target_id)) =
-            symbol_identity_at(&indexes, &documents, &uri, position)
-        else {
+        let Some((target_uri, target_id)) = symbol_identity_at(
+            &indexes,
+            &documents,
+            &uri,
+            scalar_position(documents.get(&uri), position),
+        ) else {
             return Ok(None);
         };
         let location = indexes
             .get(&target_uri)
             .and_then(|index| index.semantic.symbols.get(target_id))
-            .map(|symbol| Location::new(target_uri, range_from_span(symbol.span)));
+            .map(|symbol| {
+                let range = wire_range(documents.get(&target_uri), range_from_span(symbol.span));
+                Location::new(target_uri, range)
+            });
         Ok(location.map(GotoDefinitionResponse::Scalar))
     }
 
@@ -413,13 +437,21 @@ impl LanguageServer for Backend {
         let position = params.text_document_position.position;
         let indexes = self.indexes.read().await;
         let documents = self.documents.read().await;
-        let Some(identity) = symbol_identity_at(&indexes, &documents, &uri, position) else {
+        let Some(identity) = symbol_identity_at(
+            &indexes,
+            &documents,
+            &uri,
+            scalar_position(documents.get(&uri), position),
+        ) else {
             return Ok(None);
         };
         let locations = locations_for_identity(&indexes, &documents, &identity)
             .into_iter()
             .filter(|(_, declaration)| params.context.include_declaration || !declaration)
-            .map(|(location, _)| location)
+            .map(|(mut location, _)| {
+                encode_location(&documents, &mut location);
+                location
+            })
             .collect();
         Ok(Some(locations))
     }
@@ -432,12 +464,21 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
         let indexes = self.indexes.read().await;
         let documents = self.documents.read().await;
-        let Some(identity) = symbol_identity_at(&indexes, &documents, &uri, position) else {
+        let source = documents.get(&uri);
+        let Some(identity) = symbol_identity_at(
+            &indexes,
+            &documents,
+            &uri,
+            scalar_position(source, position),
+        ) else {
             return Ok(None);
         };
-        Ok(Some(document_highlights_for_identity(
-            &indexes, &documents, &uri, &identity,
-        )))
+        let mut highlights =
+            document_highlights_for_identity(&indexes, &documents, &uri, &identity);
+        for highlight in &mut highlights {
+            highlight.range = wire_range(source, highlight.range);
+        }
+        Ok(Some(highlights))
     }
 
     async fn prepare_rename(
@@ -449,23 +490,20 @@ impl LanguageServer for Backend {
         let Some(index) = indexes.get(&params.text_document.uri) else {
             return Ok(None);
         };
-        if symbol_identity_at(
-            &indexes,
-            &documents,
-            &params.text_document.uri,
-            params.position,
-        )
-        .and_then(|identity| definition_occurrence(&indexes, &identity))
-        .is_none()
+        let source = documents.get(&params.text_document.uri);
+        let position = scalar_position(source, params.position);
+        if symbol_identity_at(&indexes, &documents, &params.text_document.uri, position)
+            .and_then(|identity| definition_occurrence(&indexes, &identity))
+            .is_none()
         {
             return Ok(None);
         }
         Ok(index
             .occurrences
             .iter()
-            .find(|item| contains(item.range, params.position))
+            .find(|item| contains(item.range, position))
             .map(|item| PrepareRenameResponse::RangeWithPlaceholder {
-                range: item.range,
+                range: wire_range(source, item.range),
                 placeholder: item.name.clone(),
             }))
     }
@@ -483,7 +521,7 @@ impl LanguageServer for Backend {
             &indexes,
             &documents,
             &uri,
-            params.text_document_position.position,
+            scalar_position(documents.get(&uri), params.text_document_position.position),
         ) else {
             return Ok(None);
         };
@@ -491,7 +529,8 @@ impl LanguageServer for Backend {
             return Err(tower_lsp::jsonrpc::Error::invalid_params(message));
         }
         let mut changes = HashMap::new();
-        for (location, _) in locations_for_identity(&indexes, &documents, &identity) {
+        for (mut location, _) in locations_for_identity(&indexes, &documents, &identity) {
+            encode_location(&documents, &mut location);
             changes
                 .entry(location.uri)
                 .or_insert_with(Vec::new)
@@ -509,6 +548,8 @@ impl LanguageServer for Backend {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         let indexes = self.indexes.read().await;
+        let documents = self.documents.read().await;
+        let source = documents.get(&params.text_document.uri);
         let symbols = indexes
             .get(&params.text_document.uri)
             .map(|index| {
@@ -521,7 +562,10 @@ impl LanguageServer for Backend {
                         kind: item.kind,
                         tags: None,
                         deprecated: None,
-                        location: Location::new(params.text_document.uri.clone(), item.range),
+                        location: Location::new(
+                            params.text_document.uri.clone(),
+                            wire_range(source, item.range),
+                        ),
                         container_name: None,
                     })
                     .collect()
@@ -537,10 +581,12 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<SymbolInformation>>> {
         let query = params.query.to_lowercase();
         let indexes = self.indexes.read().await;
+        let documents = self.documents.read().await;
         let mut symbols = indexes
             .iter()
             .flat_map(|(uri, index)| {
                 let container = symbol_container(uri);
+                let source = documents.get(uri);
                 index
                     .occurrences
                     .iter()
@@ -550,7 +596,7 @@ impl LanguageServer for Backend {
                         kind: item.kind,
                         tags: None,
                         deprecated: None,
-                        location: Location::new(uri.clone(), item.range),
+                        location: Location::new(uri.clone(), wire_range(source, item.range)),
                         container_name: container.clone(),
                     })
             })
@@ -616,14 +662,13 @@ fn analyze_at_with_sources_without_graph(
             let (diagnostics, _) = linter.lint(&statements);
             diagnostics
                 .into_iter()
-                .map(to_lsp_diagnostic)
+                .map(|report| to_lsp_diagnostic(report, Some(path)))
                 .collect::<Vec<_>>()
         }
-        Err(error) => vec![to_lsp_diagnostic(diagnostic::parse_diagnostic(
-            &error.message,
-            error.line,
-            error.column,
-        ))],
+        Err(error) => vec![to_lsp_diagnostic(
+            diagnostic::parse_diagnostic(&error.message, error.line, error.column),
+            Some(path),
+        )],
     }
 }
 
@@ -653,6 +698,7 @@ fn append_graph_diagnostic(
             diagnostic::Diagnostic::error(error.to_string())
                 .with_code(code.into())
                 .with_help(help.into()),
+            current_path,
         );
         if let Some(site) = error.import_site() {
             if let ject::module_resolver::ModuleIdentity::File(path) = &site.module {
@@ -683,7 +729,7 @@ fn append_graph_diagnostic(
     }
 }
 
-fn to_lsp_diagnostic(value: diagnostic::Diagnostic) -> Diagnostic {
+fn to_lsp_diagnostic(value: diagnostic::Diagnostic, path: Option<&Path>) -> Diagnostic {
     let span = value
         .labels
         .iter()
@@ -707,6 +753,23 @@ fn to_lsp_diagnostic(value: diagnostic::Diagnostic) -> Diagnostic {
         message.push_str("\n\nhelp: ");
         message.push_str(&help);
     }
+    let related_information = path
+        .and_then(|path| Url::from_file_path(path).ok())
+        .map(|uri| {
+            value
+                .labels
+                .iter()
+                .filter(|label| !label.primary)
+                .map(|label| DiagnosticRelatedInformation {
+                    location: Location::new(uri.clone(), range_from_span(label.span)),
+                    message: label
+                        .message
+                        .clone()
+                        .unwrap_or_else(|| "related location".into()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty());
     Diagnostic {
         range: Range::new(start, end),
         severity: Some(match value.level {
@@ -718,23 +781,32 @@ fn to_lsp_diagnostic(value: diagnostic::Diagnostic) -> Diagnostic {
         code: value.code.map(NumberOrString::String),
         source: Some("ject".into()),
         message,
+        related_information,
         ..Diagnostic::default()
     }
 }
 
 fn word_at(text: &str, position: Position) -> Option<String> {
     let line = text.lines().nth(position.line as usize)?;
-    let index = (position.character as usize).min(line.len());
-    let bytes = line.as_bytes();
-    let mut start = index;
-    let mut end = index;
-    while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
-        start -= 1;
-    }
-    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-        end += 1;
-    }
+    let index = scalar_byte_offset(line, position.character);
+    let start = identifier_start(&line[..index]);
+    let end = index
+        + line[index..]
+            .find(|ch| !is_identifier_char(ch))
+            .unwrap_or(line.len() - index);
     (start < end).then(|| line[start..end].to_string())
+}
+
+fn is_identifier_char(ch: char) -> bool {
+    ch == '_' || ch.is_alphanumeric()
+}
+
+fn identifier_start(prefix: &str) -> usize {
+    prefix
+        .rfind(|ch| !is_identifier_char(ch))
+        .map_or(0, |index| {
+            index + prefix[index..].chars().next().unwrap().len_utf8()
+        })
 }
 
 fn index_document(source: &str) -> DocumentIndex {
@@ -1705,29 +1777,14 @@ fn document_highlights_for_identity(
 
 fn qualified_member_at(source: &str, position: Position) -> Option<(String, String)> {
     let line = source.lines().nth(position.line as usize)?;
-    let cursor = (position.character as usize).min(line.len());
-    let bytes = line.as_bytes();
-    let mut member_start = cursor;
-    while member_start > 0
-        && (bytes[member_start - 1].is_ascii_alphanumeric() || bytes[member_start - 1] == b'_')
-    {
-        member_start -= 1;
-    }
-    let mut member_end = cursor;
-    while member_end < bytes.len()
-        && (bytes[member_end].is_ascii_alphanumeric() || bytes[member_end] == b'_')
-    {
-        member_end += 1;
-    }
-    if member_start == 0 || bytes.get(member_start - 1) != Some(&b'.') {
-        return None;
-    }
-    let mut alias_start = member_start - 1;
-    while alias_start > 0
-        && (bytes[alias_start - 1].is_ascii_alphanumeric() || bytes[alias_start - 1] == b'_')
-    {
-        alias_start -= 1;
-    }
+    let cursor = scalar_byte_offset(line, position.character);
+    let member_start = identifier_start(&line[..cursor]);
+    let member_end = cursor
+        + line[cursor..]
+            .find(|ch| !is_identifier_char(ch))
+            .unwrap_or(line.len() - cursor);
+    let alias = line[..member_start].strip_suffix('.')?;
+    let alias_start = identifier_start(alias);
     if alias_start == member_start - 1 {
         return None;
     }
@@ -1827,12 +1884,11 @@ fn call_context(source: &str, position: Position) -> Option<(String, Position, u
     while end > 0 && bytes[end - 1].is_ascii_whitespace() {
         end -= 1;
     }
-    let mut start = end;
-    while start > 0
-        && (bytes[start - 1].is_ascii_alphanumeric() || matches!(bytes[start - 1], b'_' | b'.'))
-    {
-        start -= 1;
-    }
+    let start = source[..end]
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !is_identifier_char(*ch) && *ch != '.')
+        .map_or(0, |(index, ch)| index + ch.len_utf8());
     if start == end {
         return None;
     }
@@ -1950,12 +2006,60 @@ fn split_top_level(value: &str) -> Vec<&str> {
     result
 }
 
+fn scalar_byte_offset(line: &str, column: u32) -> usize {
+    line.char_indices()
+        .nth(column as usize)
+        .map_or(line.len(), |(index, _)| index)
+}
+
+fn scalar_position(source: Option<&String>, mut position: Position) -> Position {
+    if let Some(line) = source.and_then(|source| source.lines().nth(position.line as usize)) {
+        let mut units = 0;
+        position.character = line
+            .chars()
+            .take_while(|character| {
+                units += character.len_utf16() as u32;
+                units <= position.character
+            })
+            .count() as u32;
+    }
+    position
+}
+
+fn wire_range(source: Option<&String>, mut range: Range) -> Range {
+    let Some(source) = source else { return range };
+    for position in [&mut range.start, &mut range.end] {
+        if let Some(line) = source.lines().nth(position.line as usize) {
+            position.character = line
+                .chars()
+                .take(position.character as usize)
+                .map(|ch| ch.len_utf16() as u32)
+                .sum();
+        }
+    }
+    range
+}
+
+fn encode_location(documents: &HashMap<Url, String>, location: &mut Location) {
+    if let Some(source) = documents.get(&location.uri) {
+        location.range = wire_range(Some(source), location.range);
+    } else if let Some(source) = location
+        .uri
+        .to_file_path()
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+    {
+        location.range = wire_range(Some(&source), location.range);
+    }
+}
+
 fn byte_offset(source: &str, position: Position) -> Option<usize> {
     let mut offset = 0usize;
     for (line_number, line) in source.split_inclusive('\n').enumerate() {
         if line_number == position.line as usize {
             return Some(
-                offset + (position.character as usize).min(line.trim_end_matches('\n').len()),
+                offset
+                    + scalar_byte_offset(line.trim_end_matches(['\r', '\n']), position.character),
             );
         }
         offset += line.len();
@@ -1968,7 +2072,9 @@ fn position_from_offset(source: &str, offset: usize) -> Position {
     let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32;
     let character = prefix
         .rsplit_once('\n')
-        .map_or(prefix.len(), |(_, tail)| tail.len()) as u32;
+        .map_or(prefix, |(_, tail)| tail)
+        .chars()
+        .count() as u32;
     Position::new(line, character)
 }
 
@@ -1985,7 +2091,7 @@ fn completion_items(
         .lines()
         .nth(position.line as usize)
         .unwrap_or_default();
-    let cursor = (position.character as usize).min(line.len());
+    let cursor = scalar_byte_offset(line, position.character);
     let prefix = &line[..cursor];
 
     if import_string_context(prefix) {
@@ -2337,6 +2443,42 @@ mod tests {
 
     fn fixture_uri(name: &str) -> Url {
         Url::from_file_path(std::env::temp_dir().join("ject-lsp-fixtures").join(name)).unwrap()
+    }
+
+    #[test]
+    fn utf16_positions_follow_unicode_scalars_in_editor_diagnostics() {
+        let uri = fixture_uri("unicode.ject");
+        let path = uri.to_file_path().unwrap();
+        let source = "let 名 = 1\nlet 名 = len(\"😀\") + 缺少\n".to_owned();
+        let diagnostics = analyze_at(&source, &path);
+        let undefined = diagnostics
+            .iter()
+            .find(|item| item.message.contains("缺少"))
+            .unwrap();
+        let range = wire_range(Some(&source), undefined.range);
+        assert_eq!(
+            range,
+            Range::new(Position::new(1, 20), Position::new(1, 22))
+        );
+        let duplicate = diagnostics
+            .iter()
+            .find(|item| item.message.contains("already declared"))
+            .unwrap();
+        assert!(duplicate.message.starts_with("variable"));
+        let related = &duplicate.related_information.as_ref().unwrap()[0];
+        assert_eq!(related.location.uri, uri);
+        assert_eq!(
+            related.location.range,
+            Range::new(Position::new(0, 4), Position::new(0, 5))
+        );
+
+        let source = "print(\"😀\"); 名字".to_owned();
+        let cursor = scalar_position(Some(&source), Position::new(0, 13));
+        assert_eq!(word_at(&source, cursor).as_deref(), Some("名字"));
+        assert_eq!(
+            scalar_position(Some(&source), Position::new(0, 8)).character,
+            7
+        );
     }
 
     #[cfg(unix)]

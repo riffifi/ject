@@ -31,6 +31,7 @@ struct LintError {
 struct LintWarning {
     message: String,
     position: Option<crate::lexer::SourcePosition>,
+    previous: Option<crate::lexer::SourcePosition>,
 }
 
 #[derive(Clone)]
@@ -75,8 +76,9 @@ impl Linter {
             // declarations are redeclarations here.
             if !declared_here.insert(name.clone()) {
                 self.warnings.push(LintWarning {
-                    message: format!("warning: function `{name}` is already defined"),
+                    message: format!("function `{name}` is already defined"),
                     position: self.find_identifier_position(name),
+                    previous: None,
                 });
             }
             self.functions.insert(name.clone());
@@ -225,6 +227,7 @@ impl Linter {
                     self.warnings.push(LintWarning {
                         message: format!("unused variable `{}`", var.name),
                         position: var.declaration.clone(),
+                        previous: None,
                     });
                 }
             }
@@ -248,7 +251,7 @@ impl Linter {
                 );
             }
             if let Some(pos) = &error.position {
-                diagnostic = diagnostic.with_location(pos.line, pos.column);
+                diagnostic = diagnostic.with_span(pos.line, pos.column, self.identifier_width(pos));
                 // Add source line context
                 if let Some(source_line) = self.get_source_line(pos.line) {
                     diagnostic = diagnostic.with_source_line(source_line);
@@ -257,18 +260,7 @@ impl Linter {
             diagnostics.push(diagnostic);
         }
 
-        for warning in &self.warnings {
-            let mut diagnostic =
-                Diagnostic::warning(warning.message.clone()).with_code("W2001".to_string());
-            if let Some(pos) = &warning.position {
-                diagnostic = diagnostic.with_location(pos.line, pos.column);
-                // Add source line context
-                if let Some(source_line) = self.get_source_line(pos.line) {
-                    diagnostic = diagnostic.with_source_line(source_line);
-                }
-            }
-            diagnostics.push(diagnostic);
-        }
+        diagnostics.extend(self.warning_diagnostics());
 
         (diagnostics, has_errors)
     }
@@ -325,24 +317,64 @@ impl Linter {
             diagnostics.push(diagnostic);
         }
 
-        for warning in &self.warnings {
-            let mut diagnostic =
-                Diagnostic::warning(warning.message.clone()).with_code("W2001".to_string());
-            if let Some(pos) = &warning.position {
-                diagnostic = diagnostic.with_location(pos.line, pos.column);
-                // Add source line context
-                if let Some(source_line) = self.get_source_line(pos.line) {
-                    diagnostic = diagnostic.with_source_line(source_line);
-                }
-            }
-            diagnostics.push(diagnostic);
-        }
+        diagnostics.extend(self.warning_diagnostics());
 
         (diagnostics, has_errors)
     }
 
     fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
+    }
+
+    fn warning_diagnostic(&self, warning: &LintWarning) -> Diagnostic {
+        let mut diagnostic = Diagnostic::warning(warning.message.clone()).with_code("W2001".into());
+        if let Some(pos) = &warning.position {
+            diagnostic = diagnostic.with_span(pos.line, pos.column, self.identifier_width(pos));
+            if let Some(source_line) = self.get_source_line(pos.line) {
+                diagnostic = diagnostic.with_source_line(source_line);
+            }
+        }
+        if let Some(pos) = &warning.previous {
+            diagnostic = diagnostic.with_secondary_label(
+                crate::diagnostic::SourceSpan::new(
+                    pos.line,
+                    pos.column,
+                    self.identifier_width(pos),
+                ),
+                "previous declaration here",
+            );
+        }
+        diagnostic
+    }
+
+    fn warning_diagnostics(&self) -> Vec<Diagnostic> {
+        let mut warnings: Vec<_> = self.warnings.iter().collect();
+        warnings.sort_by_key(|warning| {
+            (
+                warning
+                    .position
+                    .as_ref()
+                    .map(|position| (position.line, position.column)),
+                warning.message.as_str(),
+            )
+        });
+        warnings
+            .into_iter()
+            .map(|warning| self.warning_diagnostic(warning))
+            .collect()
+    }
+
+    fn identifier_width(&self, pos: &crate::lexer::SourcePosition) -> usize {
+        self.positioned_tokens
+            .binary_search_by_key(&(pos.line, pos.column), |(_, token)| {
+                (token.line, token.column)
+            })
+            .ok()
+            .and_then(|index| match &self.positioned_tokens[index].0 {
+                crate::lexer::Token::Identifier(name) => Some(name.chars().count()),
+                _ => None,
+            })
+            .unwrap_or(1)
     }
 
     fn pop_scope(&mut self) {
@@ -354,6 +386,7 @@ impl Linter {
                         self.warnings.push(LintWarning {
                             message: format!("unused variable `{}`", var.name),
                             position: var.declaration.clone(),
+                            previous: None,
                         });
                     }
                 }
@@ -399,23 +432,14 @@ impl Linter {
                 .get_mut(&(name.clone(), kind))
                 .and_then(VecDeque::pop_front)
         });
-        let already_declared = self
-            .scopes
-            .last()
-            .is_some_and(|scope| scope.contains_key(&name));
-        let replaces_external_function = is_function
-            && self.scopes.last().is_some_and(|scope| {
-                scope
-                    .get(&name)
-                    .is_some_and(|binding| !binding.warn_if_unused && binding.declaration.is_none())
-            });
-        if already_declared && !replaces_external_function {
+        let previous_binding = self.scopes.last().and_then(|scope| scope.get(&name));
+        if let Some(previous) = previous_binding.filter(|binding| {
+            !is_function || binding.warn_if_unused || binding.declaration.is_some()
+        }) {
             self.warnings.push(LintWarning {
-                message: format!(
-                    "warning: variable `{}` is already declared in this scope",
-                    name
-                ),
+                message: format!("variable `{}` is already declared in this scope", name),
                 position: declaration.clone(),
+                previous: previous.declaration.clone(),
             });
         }
         if let Some(current_scope) = self.scopes.last_mut() {

@@ -28,6 +28,7 @@ flate2 = "1.0"
 tar = "0.4"
 ureq = "2.12"
 colored = "2.0"
+unicode-width = "0.1"
 ject-native = { path = "crates/ject-native" }
 libloading = "0.8"
 libc = "0.2"

@@ -888,6 +888,10 @@ Codes identify the subsystem:
 | `E41xx`–`E42xx` | Native builds and loading |
 | `W20xx` | Non-fatal source warnings |
 
+Static name diagnostics underline the full identifier. Redeclaration warnings
+point to both declarations. Terminal highlights account for tabs and wide
+characters. Editors receive related locations as navigable links.
+
 `ject check` is safe for editor and CI use because it never executes application code
 or builds/loads native libraries. `ject run` and `ject test` build native packages before
 execution; `ject test` runs all test files and reports pass/fail counts.
