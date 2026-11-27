@@ -1280,7 +1280,7 @@ fn builtin_signature(name: &str) -> &'static str {
         "char_at" => "char_at(string, index) -> string",
         "substring" => "substring(string, start, end?) -> string",
         "repeat" => "repeat(string, count) -> string",
-        "print" => "print(...values, sep?, end?) -> nil",
+        "print" => "print(...values)",
         "input" => "input(prompt?) -> string",
         "read_file" => "read_file(path) -> string",
         "write_file" => "write_file(path, content) -> nil",
