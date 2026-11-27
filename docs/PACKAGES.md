@@ -236,6 +236,8 @@ ject install
 Installation materializes registry and Git sources in the package cache, validates
 every manifest, resolves transitive dependencies, verifies content, writes a
 deterministic `Ject.lock`, and builds native components in dependency order.
+Ject puts each native artifact in the `target` directory of its native Cargo
+package so the runner loads the artifact from that package's build.
 
 The lockfile records the package graph, source versions, dependency checksums,
 and native status. It can travel with the project to another checkout. Editing

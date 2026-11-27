@@ -17,6 +17,7 @@ fn run_ject(directory: &Path, command: &str) -> Output {
 fn run_ject_args(directory: &Path, arguments: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ject"))
         .current_dir(directory)
+        .env("CARGO_TARGET_DIR", directory.join("cargo-target-override"))
         .args(arguments)
         .output()
         .expect("ject should start")

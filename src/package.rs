@@ -1539,8 +1539,14 @@ pub fn build_native(project: &Project, release: bool) -> Result<Option<PathBuf>,
             manifest.display()
         ));
     }
+    let target = native.path.join("target");
     let mut command = Command::new("cargo");
-    command.arg("build").arg("--manifest-path").arg(&manifest);
+    command
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .arg("--target-dir")
+        .arg(&target);
     if project.registry_source.is_some() || project.git_source.is_some() {
         command.arg("--locked");
     }
@@ -1554,9 +1560,7 @@ pub fn build_native(project: &Project, release: bool) -> Result<Option<PathBuf>,
         return Err(format!("native build failed with status {status}"));
     }
     let profile = if release { "release" } else { "debug" };
-    let artifact = native
-        .path
-        .join("target")
+    let artifact = target
         .join(profile)
         .join(dynamic_library_name(&native.library));
     if !artifact.is_file() {
