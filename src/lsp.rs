@@ -2484,15 +2484,15 @@ mod tests {
     #[test]
     fn duplicate_module_function_points_to_the_redefinition() {
         let path = fixture_uri("functions.ject").to_file_path().unwrap();
-        let source = "fn outer()\n    fn repeated() -> 0\n    return repeated()\nend\nfn repeated() -> 1\nfn repeated() -> 2\nprint(repeated())\n";
+        let source = "fn outer()\n    fn repeated() -> 0\n    return repeated()\nend\nlet _items = [1 for item in [1]]\nfn repeated() -> 1\nfn repeated() -> 2\nprint(repeated())\n";
         let diagnostics = analyze_at(source, &path);
         let duplicate = diagnostics
             .iter()
             .find(|item| item.message.contains("already defined"))
             .unwrap();
-        assert_eq!(duplicate.range.start, Position::new(5, 3));
+        assert_eq!(duplicate.range.start, Position::new(6, 3));
         let previous = &duplicate.related_information.as_ref().unwrap()[0];
-        assert_eq!(previous.location.range.start, Position::new(4, 3));
+        assert_eq!(previous.location.range.start, Position::new(5, 3));
     }
 
     #[cfg(unix)]

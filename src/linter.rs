@@ -53,6 +53,7 @@ pub struct Linter {
     module_interfaces: RefCell<HashMap<String, Result<ModuleInterface, String>>>,
     source_overrides: HashMap<std::path::PathBuf, String>,
     declaration_positions: HashMap<(String, SymbolKind), VecDeque<crate::lexer::SourcePosition>>,
+    module_function_declarations: HashMap<String, Option<crate::lexer::SourcePosition>>,
 }
 
 impl Default for Linter {
@@ -63,7 +64,6 @@ impl Default for Linter {
 
 impl Linter {
     fn predeclare_functions(&mut self, statements: &[Stmt]) {
-        let mut source_free_declarations = HashSet::new();
         for statement in statements {
             let (name, params) = match statement {
                 Stmt::Function { name, params, .. } | Stmt::ExportFunction { name, params, .. } => {
@@ -71,13 +71,6 @@ impl Linter {
                 }
                 _ => continue,
             };
-            if self.source.is_empty() && !source_free_declarations.insert(name) {
-                self.warnings.push(LintWarning {
-                    message: format!("function `{name}` is already defined"),
-                    position: None,
-                    previous: None,
-                });
-            }
             self.functions.insert(name.clone());
             // If CorLib already contributed a binding, calls now use the
             // predeclared source function at that name.
@@ -131,6 +124,7 @@ impl Linter {
             module_interfaces: RefCell::new(HashMap::new()),
             source_overrides: HashMap::new(),
             declaration_positions: HashMap::new(),
+            module_function_declarations: HashMap::new(),
         }
     }
 
@@ -170,26 +164,34 @@ impl Linter {
 
     fn reset_declaration_positions(&mut self) {
         self.declaration_positions.clear();
-        let mut module_functions = HashMap::new();
+        self.module_function_declarations.clear();
         for symbol in crate::semantic::analyze(&self.source).symbols {
             let position =
                 crate::lexer::SourcePosition::new(symbol.span.line, symbol.span.column, 0);
-            if symbol.scope == 0 && symbol.kind == SymbolKind::Function {
-                if let Some(previous) =
-                    module_functions.insert(symbol.name.clone(), position.clone())
-                {
-                    self.warnings.push(LintWarning {
-                        message: format!("function `{}` is already defined", symbol.name),
-                        position: Some(position.clone()),
-                        previous: Some(previous),
-                    });
-                }
-            }
             self.declaration_positions
                 .entry((symbol.name, symbol.kind))
                 .or_default()
                 .push_back(position);
         }
+    }
+
+    fn record_module_function(
+        &mut self,
+        name: &str,
+        position: Option<crate::lexer::SourcePosition>,
+    ) -> bool {
+        if let Some(previous) = self
+            .module_function_declarations
+            .insert(name.to_owned(), position.clone())
+        {
+            self.warnings.push(LintWarning {
+                message: format!("function `{name}` is already defined"),
+                position,
+                previous,
+            });
+            return true;
+        }
+        false
     }
 
     pub fn with_source_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
@@ -439,9 +441,13 @@ impl Linter {
                 .get_mut(&(name.clone(), kind))
                 .and_then(VecDeque::pop_front)
         });
+        let reported_duplicate = is_function
+            && self.scopes.len() == 1
+            && self.record_module_function(&name, declaration.clone());
         let previous_binding = self.scopes.last().and_then(|scope| scope.get(&name));
         if let Some(previous) = previous_binding.filter(|binding| {
-            !is_function || binding.warn_if_unused || binding.declaration.is_some()
+            !reported_duplicate
+                && (!is_function || binding.warn_if_unused || binding.declaration.is_some())
         }) {
             self.warnings.push(LintWarning {
                 message: format!("variable `{}` is already declared in this scope", name),
@@ -674,11 +680,12 @@ impl Linter {
                         false,
                     );
                     self.set_binding_signature(name, params);
-                } else if let Some(positions) = self
-                    .declaration_positions
-                    .get_mut(&(name.clone(), SymbolKind::Function))
-                {
-                    positions.pop_front();
+                } else {
+                    let declaration = self
+                        .declaration_positions
+                        .get_mut(&(name.clone(), SymbolKind::Function))
+                        .and_then(VecDeque::pop_front);
+                    self.record_module_function(name, declaration);
                 }
 
                 // Create new scope for function
