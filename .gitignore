@@ -9,3 +9,5 @@ n.jt
 Cargo.lock
 .idea/
 .ject-roadmap.md
+
+!packages/jgui/native/Cargo.lock

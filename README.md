@@ -4,7 +4,7 @@ Ject is a small, dynamically typed language for scripts, applications, and libra
 It pairs readable, expression-friendly syntax with one tool for running code, checking
 projects, testing packages, managing dependencies, and building optional Rust extensions.
 
-This checkout contains **Ject 1.0.0-rc.2**, the first release candidate for 1.0.
+The current language version is **1.0.0**.
 
 ```ject
 const greeting = "Hello"
@@ -41,7 +41,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ject --version
 ```
 
-Use `jectup update` to upgrade, `jectup update v1.0.0-rc.2` to select a published
+Use `jectup update` to upgrade, `jectup update v1.0.0` to select a published
 version, and `jectup uninstall` to remove the installation. The installer
 supports x64 and ARM64 on Linux and macOS.
 
@@ -56,18 +56,6 @@ ject --version
 Use `jectup.ps1 update` and `jectup.ps1 uninstall` to manage the Windows
 installation. The installer checks the SHA-256 of the prebuilt executable
 before replacing the installed binary.
-
-To try the release candidate, pin its tag in both the installer URL and the
-install command:
-
-```sh
-tag=v1.0.0-rc.2
-curl -fLo install.sh "https://github.com/riffifi/ject/releases/download/$tag/install.sh"
-sh install.sh install "$tag"
-```
-
-In PowerShell, use the same tagged URL with `install.ps1` and run
-`.\install.ps1 install v1.0.0-rc.2`.
 
 ### Build from source
 

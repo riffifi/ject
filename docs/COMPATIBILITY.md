@@ -1,18 +1,17 @@
 # Compatibility and release policy
 
-Ject is pre-1.0. This document defines what users can rely on now and what a
-version number means while the language is still settling.
+This policy defines the compatibility contract for Ject 1.0 and later.
 
 ## Version promises
 
-Ject follows semantic versioning with a stricter patch-release rule:
+Ject follows semantic versioning:
 
-- `0.MINOR.0` may change language syntax, runtime behavior, standard-library
-  APIs, commands, manifests, lockfiles, or native interfaces. Breaking changes
-  must be called out in the changelog with a practical migration.
-- `0.MINOR.PATCH` must remain source- and package-compatible with that minor
-  release. Patch releases may fix behavior that was unsafe, security-sensitive,
-  undocumented, or impossible to use as documented.
+- Minor releases may add language, library, and tooling features while
+  preserving documented behavior for existing code and manifests.
+- Patch releases preserve compatibility and fix incorrect behavior.
+- Breaking changes to documented syntax, public standard-library APIs,
+  CLI contracts, and package formats require a major release and a migration
+  note. Experimental compiler artifacts follow their own format version.
 - Deprecations should remain available for at least one minor release when that
   is practical. Security fixes and removal of behavior that never worked may be
   immediate and must be explained in the changelog.
@@ -60,8 +59,9 @@ A release is not complete until all of these agree:
    packages.
 5. The release tag is created only after the cross-platform workflow succeeds.
 
-The goal for 1.0 is to make minor releases backward-compatible as well. Until
-then, the rules above favor honest, documented evolution over accidental promises.
+When migrating from pre-1.0, run `ject install` to regenerate a portable
+`Ject.lock` and commit it. Version 2 lockfiles can still be verified where their
+original path and checksum data match.
 
 ### Printing
 

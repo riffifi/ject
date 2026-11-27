@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 1.0.0-rc.2
+## 1.0.0
 
 - Added checksummed prebuilt downloads and installer management for Linux,
   macOS, and Windows. The optimized Rust frontend is the default.
