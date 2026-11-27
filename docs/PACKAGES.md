@@ -237,8 +237,11 @@ Installation materializes registry and Git sources in the package cache, validat
 every manifest, resolves transitive dependencies, verifies content, writes a
 deterministic `Ject.lock`, and builds native components in dependency order.
 
-The lockfile records each package's exact version, source, checksum, and native status.
-Commit it for applications and CI. Do not edit it by hand.
+The lockfile records the package graph, source versions, dependency checksums,
+and native status. It can travel with the project to another checkout. Editing
+the application's own source leaves the dependency lock valid. Commit
+`Ject.lock` for applications and CI. Run `ject install` to upgrade an existing
+lockfile to the portable format.
 
 ```sh
 ject install --locked
