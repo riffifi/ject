@@ -536,7 +536,7 @@ chart widgets. Graf pins the JGUI revision it was tested against.
 From a Ject application directory:
 
 ```sh
-ject add graf --git https://github.com/riffifi/ject-graf --rev 6534071977ea38e45835e544f67e0ddf24b2a30b
+ject add graf --git https://github.com/riffifi/ject-graf --tag v0.2.0
 ject native trust jgui
 ject install
 ```

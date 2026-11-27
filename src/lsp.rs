@@ -2481,6 +2481,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn duplicate_module_function_points_to_the_redefinition() {
+        let path = fixture_uri("functions.ject").to_file_path().unwrap();
+        let source = "fn outer()\n    fn repeated() -> 0\n    return repeated()\nend\nfn repeated() -> 1\nfn repeated() -> 2\nprint(repeated())\n";
+        let diagnostics = analyze_at(source, &path);
+        let duplicate = diagnostics
+            .iter()
+            .find(|item| item.message.contains("already defined"))
+            .unwrap();
+        assert_eq!(duplicate.range.start, Position::new(5, 3));
+        let previous = &duplicate.related_information.as_ref().unwrap()[0];
+        assert_eq!(previous.location.range.start, Position::new(4, 3));
+    }
+
     #[cfg(unix)]
     #[test]
     fn resolved_imports_match_editor_uris_through_symlinks() {

@@ -63,7 +63,7 @@ impl Default for Linter {
 
 impl Linter {
     fn predeclare_functions(&mut self, statements: &[Stmt]) {
-        let mut declared_here = HashSet::new();
+        let mut source_free_declarations = HashSet::new();
         for statement in statements {
             let (name, params) = match statement {
                 Stmt::Function { name, params, .. } | Stmt::ExportFunction { name, params, .. } => {
@@ -71,13 +71,10 @@ impl Linter {
                 }
                 _ => continue,
             };
-            // Builtins live in the caller's global namespace, but a module's
-            // declarations form its own API namespace. Only duplicate source
-            // declarations are redeclarations here.
-            if !declared_here.insert(name.clone()) {
+            if self.source.is_empty() && !source_free_declarations.insert(name) {
                 self.warnings.push(LintWarning {
                     message: format!("function `{name}` is already defined"),
-                    position: self.find_identifier_position(name),
+                    position: None,
                     previous: None,
                 });
             }
@@ -173,15 +170,25 @@ impl Linter {
 
     fn reset_declaration_positions(&mut self) {
         self.declaration_positions.clear();
+        let mut module_functions = HashMap::new();
         for symbol in crate::semantic::analyze(&self.source).symbols {
+            let position =
+                crate::lexer::SourcePosition::new(symbol.span.line, symbol.span.column, 0);
+            if symbol.scope == 0 && symbol.kind == SymbolKind::Function {
+                if let Some(previous) =
+                    module_functions.insert(symbol.name.clone(), position.clone())
+                {
+                    self.warnings.push(LintWarning {
+                        message: format!("function `{}` is already defined", symbol.name),
+                        position: Some(position.clone()),
+                        previous: Some(previous),
+                    });
+                }
+            }
             self.declaration_positions
                 .entry((symbol.name, symbol.kind))
                 .or_default()
-                .push_back(crate::lexer::SourcePosition::new(
-                    symbol.span.line,
-                    symbol.span.column,
-                    0,
-                ));
+                .push_back(position);
         }
     }
 
@@ -196,12 +203,12 @@ impl Linter {
     }
 
     pub fn lint(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
-        self.reset_declaration_positions();
         self.next_return_token = 0;
         self.next_loop_control_token = 0;
         self.scopes.clear();
         self.scopes.push(HashMap::new()); // Global scope
         self.warnings.clear();
+        self.reset_declaration_positions();
         self.errors.clear();
         self.module_interfaces.borrow_mut().clear();
 
@@ -267,11 +274,11 @@ impl Linter {
 
     // REPL-specific linting that maintains state between statements
     pub fn lint_repl(&mut self, statements: &[Stmt]) -> (Vec<Diagnostic>, bool) {
-        self.reset_declaration_positions();
         self.next_return_token = 0;
         self.next_loop_control_token = 0;
         // Only clear warnings and errors, keep global scope variables and functions
         self.warnings.clear();
+        self.reset_declaration_positions();
         self.errors.clear();
         self.module_interfaces.borrow_mut().clear();
 
@@ -308,7 +315,7 @@ impl Linter {
                 );
             }
             if let Some(pos) = &error.position {
-                diagnostic = diagnostic.with_location(pos.line, pos.column);
+                diagnostic = diagnostic.with_span(pos.line, pos.column, self.identifier_width(pos));
                 // Add source line context
                 if let Some(source_line) = self.get_source_line(pos.line) {
                     diagnostic = diagnostic.with_source_line(source_line);
@@ -667,6 +674,11 @@ impl Linter {
                         false,
                     );
                     self.set_binding_signature(name, params);
+                } else if let Some(positions) = self
+                    .declaration_positions
+                    .get_mut(&(name.clone(), SymbolKind::Function))
+                {
+                    positions.pop_front();
                 }
 
                 // Create new scope for function
