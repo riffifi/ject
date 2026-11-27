@@ -1,6 +1,6 @@
 # Packages and native libraries
 
-This guide explains how Ject 0.11.0 packages are created, resolved, locked, tested,
+This guide explains how Ject 1.0.0-rc.2 packages are created, resolved, locked, tested,
 published, and optionally backed by Rust. The package system is part of the `ject`
 binary; there is no separate package-manager command.
 

@@ -30,7 +30,7 @@ candidate.
 
 Set the version in `Cargo.toml` and commit the corresponding lockfile and
 release notes. Push a tag matching the executable's version, such as
-`v1.0.0-rc.1`. The workflow publishes the installer scripts, executables,
+`v1.0.0-rc.2`. The workflow publishes the installer scripts, executables,
 and SHA-256 files only after all platform jobs pass. Tags with a prerelease
 suffix are published as prereleases. Users can install them by tag.
 

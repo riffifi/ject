@@ -1,6 +1,6 @@
 # The Ject guide
 
-This is the user guide and language reference for Ject 0.11.0. It starts with the
+This is the user guide and language reference for Ject 1.0.0-rc.2. It starts with the
 smallest useful programs, then builds toward modules, packages, editor tooling, and
 the complete syntax. Package authors who need Rust should continue with
 [Packages and native libraries](PACKAGES.md).

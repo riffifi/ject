@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 1.0.0-rc.2
+
+- Added checksummed prebuilt downloads and installer management for Linux,
+  macOS, and Windows. The optimized Rust frontend is the default.
+- Kept the self-hosted compiler available for development and artifact builds.
+- Made dependency lockfiles portable across checkouts and independent of
+  edits to the root application's source.
+- Added locked Git and registry source packages to standalone binary builds
+  from a Ject source checkout.
+- Fixed cross-platform package-cache discovery and editor import resolution.
+
 - `io.copy_file` now provides no-clobber file copying, and `io.remove_dir`
   supports safe empty-directory removal plus explicit recursive cleanup.
 - Applications can enforce a transitive native-plugin trust boundary with
