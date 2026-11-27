@@ -836,22 +836,25 @@ fn package_checksum_root(root: &Path) -> Result<String, String> {
 }
 
 fn registry_cache_root() -> Result<PathBuf, String> {
-    if let Some(root) = std::env::var_os("JECT_HOME") {
-        return Ok(PathBuf::from(root).join("registry/src"));
-    }
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|root| root.join(".ject/registry/src"))
-        .ok_or_else(|| "cannot locate Ject cache; set JECT_HOME".to_string())
+    Ok(cache_root()?.join("registry/src"))
 }
 
 fn git_cache_root() -> Result<PathBuf, String> {
+    Ok(cache_root()?.join("git/checkouts"))
+}
+
+fn cache_root() -> Result<PathBuf, String> {
     if let Some(root) = std::env::var_os("JECT_HOME") {
-        return Ok(PathBuf::from(root).join("git/checkouts"));
+        return Ok(PathBuf::from(root));
     }
     std::env::var_os("HOME")
+        .or_else(|| {
+            cfg!(windows)
+                .then(|| std::env::var_os("USERPROFILE"))
+                .flatten()
+        })
         .map(PathBuf::from)
-        .map(|root| root.join(".ject/git/checkouts"))
+        .map(|root| root.join(".ject"))
         .ok_or_else(|| "cannot locate Ject cache; set JECT_HOME".to_string())
 }
 
@@ -2073,7 +2076,8 @@ mod tests {
         fs::write(
             &manifest,
             format!(
-                "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\ndemo = {{ version = \"1.0.0\", requirement = \"^1.0\", registry = \"{registry_url}\" }}\n"
+                "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\ndemo = {{ version = \"1.0.0\", requirement = \"^1.0\", registry = {} }}\n",
+                toml_edit::Value::from(registry_url.as_str())
             ),
         )
         .unwrap();

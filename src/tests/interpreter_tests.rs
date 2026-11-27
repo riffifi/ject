@@ -1581,6 +1581,7 @@ print "Program completed successfully!"
         std::fs::create_dir_all(&root).unwrap();
         let module = root.join("broken.ject");
         std::fs::write(&module, "export fn fail()\n    return missing\nend\n").unwrap();
+        let canonical_module = module.canonicalize().unwrap();
         let source = "import \"./broken\" as broken\nbroken.fail()\n";
         let mut lexer = Lexer::new(source);
         let tokens = lexer
@@ -1592,9 +1593,13 @@ print "Program completed successfully!"
         let mut interpreter = Interpreter::new();
         interpreter.set_script_dir(root.clone());
         let error = interpreter.interpret(&statements).unwrap_err();
-        assert!(error
-            .message
-            .contains(&format!("--> {}:2:12", module.display())));
+        assert!(
+            error
+                .message
+                .contains(&format!("--> {}:2:12", canonical_module.display())),
+            "{}",
+            error.message
+        );
         assert!(error.message.contains("\n  at fail"));
         std::fs::remove_dir_all(root).unwrap();
     }

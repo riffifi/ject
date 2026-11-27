@@ -900,25 +900,36 @@ assert(len(values(d2)) == 1, "values should return one value")
 
     #[test]
     fn test_read_lines() {
-        let result = run(r#"
-let path = "/tmp/ject_read_lines_test.txt"
+        let path = std::env::temp_dir().join(format!("ject-read-lines-{}.txt", std::process::id()));
+        let quoted = serde_json::to_string(&path).unwrap();
+        let result = run(&format!(
+            r#"
+let path = {quoted}
 write_file(path, "a\nb\nc")
 let lines = read_lines(path)
 assert(len(lines) == 3, "read_lines should return 3 lines")
-"#);
-        assert!(result.is_ok());
+"#
+        ));
+        let _ = std::fs::remove_file(path);
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
     fn test_append_file() {
-        let result = run(r#"
-let path = "/tmp/ject_append_file_test.txt"
+        let path =
+            std::env::temp_dir().join(format!("ject-append-file-{}.txt", std::process::id()));
+        let quoted = serde_json::to_string(&path).unwrap();
+        let result = run(&format!(
+            r#"
+let path = {quoted}
 write_file(path, "hello")
 append_file(path, " world")
 let text = read_file(path)
 assert(text == "hello world", "append_file should append content")
-"#);
-        assert!(result.is_ok());
+"#
+        ));
+        let _ = std::fs::remove_file(path);
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
@@ -1020,7 +1031,11 @@ assert(not io.file_exists("{path}/tree"), "recursive remove_dir should remove th
         let directory = std::env::temp_dir().join(format!("ject-nonutf8-test-{unique}"));
         std::fs::create_dir(&directory).unwrap();
         let name = std::ffi::OsStr::from_bytes(b"invalid-\xff");
-        std::fs::write(directory.join(name), b"data").unwrap();
+        if let Err(error) = std::fs::write(directory.join(name), b"data") {
+            std::fs::remove_dir(&directory).unwrap();
+            assert_eq!(error.raw_os_error(), Some(libc::EILSEQ));
+            return;
+        }
         let result = run(&format!(
             "import \"io\" as io\nio.list_dir(\"{}\")",
             directory.display()
