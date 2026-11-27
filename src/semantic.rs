@@ -137,13 +137,23 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
     let mut previous: Option<&Token> = None;
     let mut import_may_be_selective = false;
     let mut selective_import = false;
-    let mut expression_function_braces: Vec<usize> = Vec::new();
+    let mut expression_function_braces: Vec<(ScopeId, usize)> = Vec::new();
+    let mut arrays: Vec<(usize, bool)> = Vec::new();
 
     for (position, located) in tokens.iter().enumerate() {
         match &located.token {
             Token::End => pop_scope(&mut index, &mut scope_stack, &located.position),
-            Token::Newline if expression_function_braces.last() == Some(&0) => {
-                while expression_function_braces.last() == Some(&0) {
+            Token::Newline => {
+                while expression_function_braces
+                    .last()
+                    .is_some_and(|&(scope, depth)| {
+                        depth == 0
+                            && scope_stack.last() == Some(&scope)
+                            && arrays
+                                .last()
+                                .is_none_or(|&(depth, _)| depth < scope_stack.len())
+                    })
+                {
                     pop_scope(&mut index, &mut scope_stack, &located.position);
                     expression_function_braces.pop();
                 }
@@ -163,6 +173,11 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
             Token::Struct => pending = Some(SymbolKind::Struct),
             Token::As => pending = Some(SymbolKind::Module),
             Token::For => {
+                if let Some((depth, comprehension)) = arrays.last_mut() {
+                    if *depth == scope_stack.len() {
+                        *comprehension = true;
+                    }
+                }
                 push_scope(
                     &mut index,
                     &mut bindings,
@@ -180,15 +195,28 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
                     &located.position,
                 );
             }
+            Token::LeftBracket => arrays.push((scope_stack.len(), false)),
+            Token::RightBracket => {
+                if let Some((depth, true)) = arrays.pop() {
+                    while scope_stack.len() > depth {
+                        if expression_function_braces.last().map(|(scope, _)| scope)
+                            == scope_stack.last()
+                        {
+                            expression_function_braces.pop();
+                        }
+                        pop_scope(&mut index, &mut scope_stack, &located.position);
+                    }
+                }
+            }
             Token::LeftBrace if import_may_be_selective => {
                 import_may_be_selective = false;
                 selective_import = true;
             }
             Token::LeftBrace if !expression_function_braces.is_empty() => {
-                *expression_function_braces.last_mut().unwrap() += 1;
+                expression_function_braces.last_mut().unwrap().1 += 1;
             }
             Token::RightBrace if !expression_function_braces.is_empty() => {
-                let depth = expression_function_braces.last_mut().unwrap();
+                let depth = &mut expression_function_braces.last_mut().unwrap().1;
                 *depth = (*depth).saturating_sub(1);
                 if *depth == 0 {
                     pop_scope(&mut index, &mut scope_stack, &located.position);
@@ -226,7 +254,7 @@ fn analyze_tokens(tokens: &[LocatedToken]) -> SemanticIndex {
             Token::Arrow if parameter_depth.is_none() && scope_stack.len() > 1 => {
                 // Expression-bodied functions do not have a matching `end`.
                 if matches!(previous, Some(Token::RightParen)) {
-                    expression_function_braces.push(0);
+                    expression_function_braces.push((scope_stack[scope_stack.len() - 1], 0));
                 }
             }
             Token::Identifier(name) => {
@@ -380,6 +408,23 @@ fn is_match_binding(tokens: &[LocatedToken], position: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comprehension_scope_ends_at_its_closing_bracket() {
+        let source = "fn outer()\n    let values = [1 for item in [1] if item > 0]\n    let next = 2\n    return next\nend\nlet done = 3\n";
+        let index = analyze(source);
+        let symbol = |name| {
+            index
+                .symbols
+                .iter()
+                .find(|symbol| symbol.name == name)
+                .unwrap()
+        };
+        assert_ne!(symbol("item").scope, symbol("next").scope);
+        assert_eq!(symbol("next").scope, symbol("values").scope);
+        assert_eq!(symbol("done").scope, 0);
+        assert!(index.scopes[symbol("item").scope].end.is_some());
+    }
 
     #[test]
     fn resolves_shadowed_names_to_distinct_symbols() {
