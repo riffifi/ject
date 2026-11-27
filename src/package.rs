@@ -2209,7 +2209,14 @@ mod tests {
             );
             install(&dependency)?;
             let lock = fs::read_to_string(app.join(LOCK_FILE)).unwrap();
-            assert!(lock.contains("source = \"git+") && lock.contains('#'));
+            let parsed: toml::Value = toml::from_str(&lock).unwrap();
+            let packages = parsed["package"].as_array().unwrap();
+            let git_source = packages
+                .iter()
+                .find(|package| package["name"].as_str() == Some("demo"))
+                .and_then(|package| package["source"].as_str())
+                .unwrap();
+            assert!(git_source.starts_with("git+") && git_source.contains('#'));
 
             fs::write(repository.join("src/lib.ject"), "export value = 2\n").unwrap();
             git(&["add", "."]);
